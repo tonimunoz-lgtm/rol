@@ -1,4 +1,4 @@
-const CACHE_NAME = "runica-cache-v1";
+const CACHE_NAME = "runica-cache-v2";
 const APP_SHELL = [
   "/index.html",
   "/master.html",
@@ -29,16 +29,23 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Estrategia: network-first para todo lo que sea Firebase / CDN de MindAR,
-// cache-first solo para el shell propio de la app (para que funcione offline
-// aunque el escaneo AR y la sincronización necesiten red real).
+// Estrategia: network-first para el shell propio de la app (así siempre ves
+// la última versión desplegada), con fallback a caché solo si no hay red
+// (para que funcione offline). Los recursos externos (Firebase, CDN de
+// MindAR) no se tocan aquí, se gestionan solos.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   const isOwnAsset = APP_SHELL.some((path) => url.pathname === path);
 
   if (isOwnAsset) {
     event.respondWith(
-      caches.match(event.request).then((cached) => cached || fetch(event.request))
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
     );
   }
 });

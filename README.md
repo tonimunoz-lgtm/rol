@@ -75,6 +75,12 @@ función serverless (gratis en el plan Hobby, sin CLI, sin cuentas de servicio).
 la función verifica que quien pregunta es tu usuario master consultando Firestore con su propio
 token de sesión — sin necesitar credenciales adicionales.
 
+> **Nota sobre el formato de la clave**: si tu clave de Gemini empieza por `AQ.` en vez de
+> `AIza...`, es el nuevo formato "auth key" que Google está implantando progresivamente. Estas
+> claves no funcionan con librerías que las envíen como parámetro `?key=` en la URL — por eso
+> `api/generar-partida.js` llama directamente a la API REST de Gemini con la cabecera
+> `x-goog-api-key`, que es compatible con ambos formatos.
+
 ## Paso 5 — Marcadores AR (MindAR), sin Firebase Storage
 
 Los archivos de marcadores (`targets.mind` y, más adelante, vídeos/imágenes) se sirven como

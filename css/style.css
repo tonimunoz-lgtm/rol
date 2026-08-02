@@ -1,0 +1,220 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap');
+
+:root {
+  --ink: #14110D;
+  --ink-soft: #1E1A14;
+  --parchment: #E8DCC0;
+  --parchment-dim: #cbbf9f;
+  --amber: #C9A227;
+  --amber-glow: #F0C93B;
+  --moss: #2E5339;
+  --rust: #8C3B2E;
+  --font-display: 'Cinzel', serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--ink);
+  color: var(--parchment);
+  font-family: var(--font-body);
+  height: 100%;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  color: var(--amber);
+  margin: 0 0 .4em 0;
+}
+
+.mono { font-family: var(--font-mono); }
+
+a { color: var(--amber); }
+
+button {
+  font-family: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--amber);
+  background: transparent;
+  color: var(--parchment);
+  border-radius: var(--radius);
+  padding: 0.7em 1.2em;
+  transition: background .15s ease, color .15s ease, transform .1s ease;
+}
+button:hover { background: var(--amber); color: var(--ink); }
+button:active { transform: scale(0.97); }
+button.primary { background: var(--amber); color: var(--ink); }
+button.primary:hover { background: var(--amber-glow); }
+button.danger { border-color: var(--rust); }
+button.danger:hover { background: var(--rust); color: var(--parchment); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+
+input, select, textarea {
+  font-family: var(--font-body);
+  background: var(--ink-soft);
+  border: 1px solid #3a3226;
+  color: var(--parchment);
+  border-radius: var(--radius);
+  padding: 0.6em 0.8em;
+}
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+.card {
+  background: var(--ink-soft);
+  border: 1px solid #3a3226;
+  border-radius: var(--radius);
+  padding: 1.2em;
+}
+
+/* ---------- Vista Jugador ---------- */
+#player-view {
+  position: relative;
+  height: 100vh;
+  width: 100vw;
+}
+
+#hud-top {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  padding: .8em 1em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(to bottom, rgba(20,17,13,0.85), transparent);
+  z-index: 20;
+  pointer-events: none;
+}
+#hud-top * { pointer-events: auto; }
+
+.player-name { font-family: var(--font-display); font-size: 1rem; color: var(--amber); }
+
+#narration-box {
+  position: fixed;
+  bottom: 90px;
+  left: 1em; right: 1em;
+  background: rgba(20,17,13,0.9);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  padding: 1em;
+  max-height: 30vh;
+  overflow-y: auto;
+  display: none;
+  z-index: 20;
+}
+#narration-box.visible { display: block; }
+#narration-box p { line-height: 1.5; }
+
+#hud-bottom {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 0.8em;
+  background: linear-gradient(to top, rgba(20,17,13,0.95), transparent);
+  z-index: 20;
+}
+
+.stat-pill {
+  font-family: var(--font-mono);
+  font-size: .85rem;
+  border: 1px solid var(--moss);
+  border-radius: 999px;
+  padding: .3em .9em;
+}
+
+/* Anillo rúnico — firma visual, se enciende al reconocer un marcador */
+.rune-ring {
+  position: fixed;
+  top: 50%; left: 50%;
+  width: 180px; height: 180px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid var(--amber);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 15;
+  box-shadow: 0 0 0 rgba(240, 201, 59, 0);
+  transition: opacity .3s ease;
+}
+.rune-ring.active {
+  opacity: 1;
+  animation: rune-pulse 1.6s ease-in-out infinite;
+}
+@keyframes rune-pulse {
+  0%   { box-shadow: 0 0 10px 2px rgba(240, 201, 59, 0.25); transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+  50%  { box-shadow: 0 0 34px 10px rgba(240, 201, 59, 0.55); transform: translate(-50%, -50%) rotate(180deg) scale(1.04); }
+  100% { box-shadow: 0 0 10px 2px rgba(240, 201, 59, 0.25); transform: translate(-50%, -50%) rotate(360deg) scale(1); }
+}
+
+#scanning-hint {
+  position: fixed;
+  bottom: 25%;
+  left: 0; right: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  color: var(--parchment-dim);
+  font-size: .95rem;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* ---------- Vista Master (panel admin) ---------- */
+#master-view {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+#master-sidebar {
+  background: var(--ink-soft);
+  border-right: 1px solid #3a3226;
+  padding: 1.5em 1em;
+}
+#master-sidebar nav a {
+  display: block;
+  padding: .6em .8em;
+  border-radius: var(--radius);
+  color: var(--parchment);
+  text-decoration: none;
+  margin-bottom: .3em;
+  font-size: .95rem;
+}
+#master-sidebar nav a.active,
+#master-sidebar nav a:hover {
+  background: var(--ink);
+  color: var(--amber);
+}
+#master-content {
+  padding: 2em;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+.section-panel { display: none; }
+.section-panel.active { display: block; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1em; }
+
+.field { margin-bottom: 1em; display: flex; flex-direction: column; gap: .35em; }
+.field label { font-size: .85rem; color: var(--parchment-dim); }
+
+@media (max-width: 720px) {
+  #master-view { grid-template-columns: 1fr; }
+  #master-sidebar { display: flex; overflow-x: auto; border-right: none; border-bottom: 1px solid #3a3226; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rune-ring.active { animation: none; opacity: 1; }
+}

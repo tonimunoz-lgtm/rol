@@ -4,6 +4,7 @@ import {
   signInAnonymously, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, onSnapshot,
   collection, addDoc, serverTimestamp,
+  query, where, getDocs,
 } from "./firebase-config.js";
 
 const els = {
@@ -18,7 +19,16 @@ const els = {
   runeRing: document.getElementById("rune-ring"),
   scanningHint: document.getElementById("scanning-hint"),
   arContainer: document.getElementById("ar-scene-container"),
+  btnFicha: document.getElementById("btn-ficha"),
+  btnCerrarFicha: document.getElementById("btn-cerrar-ficha"),
+  fichaModal: document.getElementById("ficha-modal"),
+  fichaNombre: document.getElementById("ficha-nombre"),
+  fichaRazaClase: document.getElementById("ficha-raza-clase"),
+  fichaAtributos: document.getElementById("ficha-atributos"),
+  fichaHabilidades: document.getElementById("ficha-habilidades"),
 };
+
+let jugadorRefActual = null;
 
 let currentPartidaId = localStorage.getItem("runica_partidaId") || null;
 let currentJugadorId = localStorage.getItem("runica_jugadorId") || null;
@@ -72,36 +82,102 @@ function showJoinScreen() {
       errorEl.textContent = "No existe ninguna partida con ese código.";
       return;
     }
-    // Crear (o recuperar) al jugador dentro de la partida
-    const jugadorRef = await addDoc(collection(db, "partidas", code, "jugadores"), {
-      nombre: name,
-      uid: currentUid,
-      vida: 10,
-      inventario: [],
-      unidoEn: serverTimestamp(),
+    await mostrarSeleccionPersonaje(overlay, code, name);
+  });
+}
+
+// ---------- 2b. Selección de personaje (plantillas creadas por el master) ----------
+async function mostrarSeleccionPersonaje(overlay, code, nombreJugador) {
+  const plantillasSnap = await getDocs(collection(db, "partidas", code, "plantillasPersonaje"));
+  if (plantillasSnap.empty) {
+    overlay.innerHTML = `
+      <h1 class="display">Rúnica</h1>
+      <p style="color:var(--parchment-dim); max-width:320px;">
+        El Master todavía no ha creado personajes para esta partida. Espera un momento y recarga la página.
+      </p>
+    `;
+    return;
+  }
+
+  // Averiguamos qué personajes ya están asignados a otro jugador
+  const jugadoresSnap = await getDocs(collection(db, "partidas", code, "jugadores"));
+  const idsOcupados = new Set(jugadoresSnap.docs.map((d) => d.data().personajeId).filter(Boolean));
+
+  overlay.innerHTML = `
+    <h1 class="display" style="font-size:1.3rem;">Elige tu personaje</h1>
+    <div id="personajes-grid" style="display:flex; flex-direction:column; gap:.8em; width:100%; max-width:420px; overflow-y:auto; max-height:60vh;"></div>
+  `;
+  const grid = overlay.querySelector("#personajes-grid");
+
+  plantillasSnap.forEach((docSnap) => {
+    const p = docSnap.data();
+    const ocupado = idsOcupados.has(docSnap.id);
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.textAlign = "left";
+    card.innerHTML = `
+      <strong class="display" style="font-size:1rem;">${p.nombre}</strong>
+      <p class="mono" style="font-size:.75rem; color:var(--parchment-dim); margin:.3em 0;">${p.raza || ""} · ${p.clase || ""}</p>
+      <p style="font-size:.85rem;">${p.descripcion || ""}</p>
+      <p style="font-size:.8rem;">❤ ${p.vidaBase} &nbsp; · &nbsp; ${(p.habilidades || []).length} habilidad(es)</p>
+      <button class="btn-elegir-personaje ${ocupado ? "" : "primary"}" data-id="${docSnap.id}" ${ocupado ? "disabled" : ""} style="width:100%; margin-top:.6em;">
+        ${ocupado ? "Ya elegido" : "Elegir este personaje"}
+      </button>
+    `;
+    grid.appendChild(card);
+  });
+
+  grid.querySelectorAll(".btn-elegir-personaje").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const plantillaId = btn.dataset.id;
+      const plantillaSnap = plantillasSnap.docs.find((d) => d.id === plantillaId);
+      const p = plantillaSnap.data();
+
+      const habilidadesUsos = {};
+      (p.habilidades || []).forEach((h, idx) => {
+        habilidadesUsos[idx] = h.usosPorPartida > 0 ? h.usosPorPartida : -1; // -1 = ilimitado
+      });
+
+      const jugadorRef = await addDoc(collection(db, "partidas", code, "jugadores"), {
+        nombre: nombreJugador,
+        uid: currentUid,
+        personajeId: plantillaId,
+        nombrePersonaje: p.nombre,
+        raza: p.raza || "",
+        clase: p.clase || "",
+        atributos: p.atributos || {},
+        habilidades: p.habilidades || [],
+        habilidadesUsos,
+        vida: p.vidaBase,
+        vidaMax: p.vidaBase,
+        inventario: [],
+        unidoEn: serverTimestamp(),
+      });
+
+      currentPartidaId = code;
+      currentJugadorId = jugadorRef.id;
+      localStorage.setItem("runica_partidaId", code);
+      localStorage.setItem("runica_jugadorId", jugadorRef.id);
+
+      overlay.remove();
+      await bootGame();
     });
-
-    currentPartidaId = code;
-    currentJugadorId = jugadorRef.id;
-    localStorage.setItem("runica_partidaId", code);
-    localStorage.setItem("runica_jugadorId", jugadorRef.id);
-
-    overlay.remove();
-    await bootGame();
   });
 }
 
 // ---------- 3. Arrancar la partida: ficha, marcadores AR, eventos en vivo ----------
 async function bootGame() {
   const jugadorRef = doc(db, "partidas", currentPartidaId, "jugadores", currentJugadorId);
+  jugadorRefActual = jugadorRef;
 
   // Ficha del jugador en tiempo real
   onSnapshot(jugadorRef, (snap) => {
     if (!snap.exists()) return;
     const data = snap.data();
     els.playerName.textContent = data.nombre;
-    els.hpPill.textContent = `❤ ${data.vida}`;
+    els.hpPill.textContent = `❤ ${data.vida}/${data.vidaMax ?? data.vida}`;
     els.invPill.textContent = `🎒 ${(data.inventario || []).length}`;
+    renderFicha(data);
   });
 
   // Eventos en vivo lanzados por el master (narración, alertas, combate...)
@@ -138,6 +214,91 @@ els.btnSpeak.addEventListener("click", () => {
   speechSynthesis.cancel();
   speechSynthesis.speak(utter);
 });
+
+// ---------- 4b. Ficha de personaje: atributos y habilidades ----------
+els.btnFicha.addEventListener("click", () => els.fichaModal.classList.add("visible"));
+els.btnCerrarFicha.addEventListener("click", () => els.fichaModal.classList.remove("visible"));
+
+const NOMBRES_ATRIBUTOS = {
+  fuerza: "FUE", destreza: "DES", vigor: "VIG", inteligencia: "INT", carisma: "CAR",
+};
+
+function renderFicha(data) {
+  els.fichaNombre.textContent = data.nombrePersonaje || data.nombre;
+  els.fichaRazaClase.textContent = [data.raza, data.clase].filter(Boolean).join(" · ");
+
+  const atributos = data.atributos || {};
+  els.fichaAtributos.innerHTML = Object.entries(NOMBRES_ATRIBUTOS)
+    .map(
+      ([key, label]) => `
+      <div class="atributo-pill">
+        ${atributos[key] ?? "—"}
+        <span>${label}</span>
+      </div>`
+    )
+    .join("");
+
+  const habilidades = data.habilidades || [];
+  const usos = data.habilidadesUsos || {};
+  els.fichaHabilidades.innerHTML = "";
+
+  if (habilidades.length === 0) {
+    els.fichaHabilidades.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Este personaje no tiene habilidades especiales.</p>`;
+    return;
+  }
+
+  habilidades.forEach((h, idx) => {
+    const restantes = usos[idx];
+    const ilimitada = restantes === -1;
+    const agotada = !ilimitada && restantes <= 0;
+    const etiquetaUsos = ilimitada ? "∞" : `${restantes} uso(s)`;
+
+    const card = document.createElement("div");
+    card.className = "habilidad-card";
+    card.innerHTML = `
+      <div class="h-info">
+        <div class="h-nombre">${h.nombre} ${h.dado !== "ninguno" ? `<span class="mono" style="color:var(--parchment-dim);">(${h.dado})</span>` : ""}</div>
+        <p class="h-desc">${h.descripcion || ""}</p>
+      </div>
+      <div style="text-align:right;">
+        <div class="h-usos mono">${h.tipo === "pasiva" ? "Pasiva" : etiquetaUsos}</div>
+        ${h.tipo === "activa" ? `<button class="btn-usar-habilidad" data-idx="${idx}" ${agotada ? "disabled" : ""} style="margin-top:.4em; font-size:.75rem;">Usar</button>` : ""}
+      </div>
+    `;
+    els.fichaHabilidades.appendChild(card);
+  });
+
+  els.fichaHabilidades.querySelectorAll(".btn-usar-habilidad").forEach((btn) => {
+    btn.addEventListener("click", () => usarHabilidad(Number(btn.dataset.idx), data));
+  });
+}
+
+async function usarHabilidad(idx, data) {
+  const habilidad = (data.habilidades || [])[idx];
+  if (!habilidad) return;
+  const usosActuales = data.habilidadesUsos || {};
+  const restantes = usosActuales[idx];
+
+  let tirada = null;
+  if (habilidad.dado && habilidad.dado !== "ninguno") {
+    const caras = Number(habilidad.dado.replace("d", ""));
+    tirada = 1 + Math.floor(Math.random() * caras);
+  }
+
+  const nuevosUsos = { ...usosActuales };
+  if (restantes !== -1) nuevosUsos[idx] = Math.max(0, restantes - 1);
+
+  await updateDoc(jugadorRefActual, { habilidadesUsos: nuevosUsos });
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "habilidad",
+    jugadorId: currentJugadorId,
+    nombreJugador: data.nombre,
+    habilidad: habilidad.nombre,
+    tirada,
+    timestamp: serverTimestamp(),
+  });
+}
 
 // ---------- 5. Dados ----------
 els.btnDice.addEventListener("click", async () => {

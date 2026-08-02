@@ -2,7 +2,7 @@
 import {
   auth, db, storage,
   signInWithEmailAndPassword, onAuthStateChanged,
-  doc, getDoc, setDoc, updateDoc, onSnapshot,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
   collection, addDoc, serverTimestamp,
   ref, uploadBytes, getDownloadURL,
 } from "./firebase-config.js";
@@ -112,6 +112,9 @@ $("btn-generar").addEventListener("click", async () => {
     $("h-detalle").value = detalle;
 
     status.textContent = `Partida creada. Código para los jugadores: ${codigo}`;
+    escucharJugadoresEnVivo(codigo);
+    escucharPersonajes(codigo);
+    escucharLogEventos(codigo);
     document.querySelector('[data-section="historia"]').click();
   } catch (err) {
     console.error(err);
@@ -135,6 +138,30 @@ async function cargarPartidaExistente(codigo) {
   $("h-sinopsis").value = data.sinopsis || "";
   $("h-detalle").value = data.detalle || "";
   escucharJugadoresEnVivo(codigo);
+  escucharPersonajes(codigo);
+  escucharLogEventos(codigo);
+}
+
+function escucharLogEventos(codigo) {
+  const eventosCol = collection(db, "partidas", codigo, "eventos");
+  onSnapshot(eventosCol, (snap) => {
+    const log = $("log-eventos");
+    const lineas = [];
+    snap.forEach((docSnap) => {
+      const e = docSnap.data();
+      if (e.tipo === "tirada") {
+        lineas.push(`🎲 Un jugador ha sacado un ${e.resultado}`);
+      } else if (e.tipo === "habilidad") {
+        lineas.push(
+          `✨ ${e.nombreJugador || "Jugador"} ha usado "${e.habilidad}"${e.tirada ? ` → tirada: ${e.tirada}` : ""}`
+        );
+      } else if (e.tipo === "narracion") {
+        lineas.push(`📢 Narración: ${e.texto}`);
+      }
+    });
+    log.innerHTML = lineas.map((l) => `<div>${l}</div>`).join("") || "<em>Sin eventos todavía.</em>";
+    log.scrollTop = log.scrollHeight;
+  });
 }
 
 // ---------- Guardar edición de historia ----------
@@ -170,6 +197,143 @@ $("btn-lanzar-narracion").addEventListener("click", async () => {
   $("narracion-en-vivo").value = "";
 });
 
+// ---------- Personajes: plantillas con atributos y habilidades ----------
+let unsubscribePersonajes = null;
+
+function escucharPersonajes(codigo) {
+  if (unsubscribePersonajes) unsubscribePersonajes();
+  const col = collection(db, "partidas", codigo, "plantillasPersonaje");
+  unsubscribePersonajes = onSnapshot(col, (snap) => {
+    const cont = $("lista-personajes");
+    cont.innerHTML = "";
+    if (snap.empty) {
+      cont.innerHTML = `<p style="color:var(--parchment-dim);">Todavía no has creado ningún personaje.</p>`;
+      return;
+    }
+    snap.forEach((docSnap) => {
+      const p = docSnap.data();
+      const card = document.createElement("div");
+      card.className = "card";
+      const numHabilidades = (p.habilidades || []).length;
+      card.innerHTML = `
+        <strong class="display" style="font-size:1rem;">${p.nombre}</strong>
+        <p class="mono" style="font-size:.75rem; color:var(--parchment-dim); margin:.3em 0;">${p.raza} · ${p.clase}</p>
+        <p style="font-size:.85rem;">❤ ${p.vidaBase} &nbsp; · &nbsp; ${numHabilidades} habilidad(es)</p>
+        <div style="display:flex; gap:.5em; margin-top:.6em;">
+          <button class="btn-editar-personaje" data-id="${docSnap.id}" style="font-size:.75rem;">Editar</button>
+          <button class="btn-borrar-personaje danger" data-id="${docSnap.id}" style="font-size:.75rem;">Borrar</button>
+        </div>
+      `;
+      cont.appendChild(card);
+    });
+
+    cont.querySelectorAll(".btn-editar-personaje").forEach((btn) =>
+      btn.addEventListener("click", () => abrirEditorPersonaje(btn.dataset.id))
+    );
+    cont.querySelectorAll(".btn-borrar-personaje").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Borrar este personaje?")) return;
+        await deleteDoc(doc(db, "partidas", currentPartidaId, "plantillasPersonaje", btn.dataset.id));
+      })
+    );
+  });
+}
+
+function crearFilaHabilidad(habilidad = null) {
+  const tpl = document.getElementById("tpl-habilidad-row");
+  const row = tpl.content.firstElementChild.cloneNode(true);
+  if (habilidad) {
+    row.querySelector(".h-nombre").value = habilidad.nombre || "";
+    row.querySelector(".h-tipo").value = habilidad.tipo || "activa";
+    row.querySelector(".h-dado").value = habilidad.dado || "d20";
+    row.querySelector(".h-usos").value = habilidad.usosPorPartida ?? 3;
+    row.querySelector(".h-descripcion").value = habilidad.descripcion || "";
+  }
+  row.querySelector(".btn-quitar-habilidad").addEventListener("click", () => row.remove());
+  $("lista-habilidades-editor").appendChild(row);
+}
+
+$("btn-add-habilidad").addEventListener("click", () => crearFilaHabilidad());
+
+$("btn-nuevo-personaje").addEventListener("click", () => abrirEditorPersonaje(null));
+
+$("btn-cancelar-personaje").addEventListener("click", () => {
+  $("editor-personaje").style.display = "none";
+});
+
+async function abrirEditorPersonaje(personajeId) {
+  $("editor-personaje").style.display = "block";
+  $("lista-habilidades-editor").innerHTML = "";
+  $("p-id").value = personajeId || "";
+
+  if (!personajeId) {
+    $("editor-personaje-titulo").textContent = "Nuevo personaje";
+    ["p-nombre", "p-raza", "p-clase", "p-descripcion"].forEach((id) => ($(id).value = ""));
+    ["p-vida", "p-fuerza", "p-destreza", "p-vigor", "p-inteligencia", "p-carisma"].forEach(
+      (id) => ($(id).value = 10)
+    );
+    crearFilaHabilidad();
+    return;
+  }
+
+  $("editor-personaje-titulo").textContent = "Editar personaje";
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId, "plantillasPersonaje", personajeId));
+  if (!snap.exists()) return;
+  const p = snap.data();
+  $("p-nombre").value = p.nombre || "";
+  $("p-raza").value = p.raza || "";
+  $("p-clase").value = p.clase || "";
+  $("p-descripcion").value = p.descripcion || "";
+  $("p-vida").value = p.vidaBase ?? 10;
+  const a = p.atributos || {};
+  $("p-fuerza").value = a.fuerza ?? 10;
+  $("p-destreza").value = a.destreza ?? 10;
+  $("p-vigor").value = a.vigor ?? 10;
+  $("p-inteligencia").value = a.inteligencia ?? 10;
+  $("p-carisma").value = a.carisma ?? 10;
+  (p.habilidades || []).forEach((h) => crearFilaHabilidad(h));
+}
+
+$("btn-guardar-personaje").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const nombre = $("p-nombre").value.trim();
+  if (!nombre) return alert("El personaje necesita un nombre.");
+
+  const habilidades = Array.from(document.querySelectorAll("#lista-habilidades-editor .habilidad-row")).map(
+    (row) => ({
+      nombre: row.querySelector(".h-nombre").value.trim(),
+      tipo: row.querySelector(".h-tipo").value,
+      dado: row.querySelector(".h-dado").value,
+      usosPorPartida: Number(row.querySelector(".h-usos").value) || 0,
+      descripcion: row.querySelector(".h-descripcion").value.trim(),
+    })
+  );
+
+  const datos = {
+    nombre,
+    raza: $("p-raza").value.trim(),
+    clase: $("p-clase").value.trim(),
+    descripcion: $("p-descripcion").value.trim(),
+    vidaBase: Number($("p-vida").value) || 10,
+    atributos: {
+      fuerza: Number($("p-fuerza").value) || 10,
+      destreza: Number($("p-destreza").value) || 10,
+      vigor: Number($("p-vigor").value) || 10,
+      inteligencia: Number($("p-inteligencia").value) || 10,
+      carisma: Number($("p-carisma").value) || 10,
+    },
+    habilidades,
+  };
+
+  const personajeId = $("p-id").value;
+  if (personajeId) {
+    await updateDoc(doc(db, "partidas", currentPartidaId, "plantillasPersonaje", personajeId), datos);
+  } else {
+    await addDoc(collection(db, "partidas", currentPartidaId, "plantillasPersonaje"), datos);
+  }
+  $("editor-personaje").style.display = "none";
+});
+
 // ---------- Jugadores conectados en vivo ----------
 function escucharJugadoresEnVivo(codigo) {
   const jugadoresCol = collection(db, "partidas", codigo, "jugadores");
@@ -180,7 +344,10 @@ function escucharJugadoresEnVivo(codigo) {
       const j = docSnap.data();
       const card = document.createElement("div");
       card.className = "card";
-      card.innerHTML = `<strong>${j.nombre}</strong><br/><span class="mono">❤ ${j.vida}</span>`;
+      const personajeInfo = j.nombrePersonaje
+        ? `<div class="mono" style="font-size:.75rem; color:var(--parchment-dim);">${j.nombrePersonaje} · ${j.clase || ""}</div>`
+        : "";
+      card.innerHTML = `<strong>${j.nombre}</strong>${personajeInfo}<br/><span class="mono">❤ ${j.vida}/${j.vidaMax ?? j.vida}</span>`;
       cont.appendChild(card);
     });
   });

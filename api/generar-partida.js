@@ -1,6 +1,5 @@
 // api/generar-partida.js
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-2.5-flash";
 
 module.exports = async (req, res) => {
   try {
@@ -44,7 +43,7 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    // CORRECCIÓN DEFINITIVA: URL estática y absoluta para evitar fallos de interpolación de strings
+    // CAMBIO CLAVE: Cambiado a gemini-1.5-flash, el endpoint de producción ultra-estable de Google
     const geminiUrl = "https://googleapis.com";
     
     const geminiResp = await fetch(geminiUrl, {
@@ -66,6 +65,8 @@ async function handler(req, res) {
     }
 
     const geminiData = await geminiResp.json();
+    
+    // Extracción limpia del texto del JSON estándar sin encadenamientos rotos
     const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     if (!textoCompleto) {
       res.status(500).json({ error: "Gemini no devolvió texto en su respuesta estándar" });

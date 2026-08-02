@@ -43,7 +43,7 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    // CAMBIO CLAVE: Cambiado a gemini-1.5-flash, el endpoint de producción ultra-estable de Google
+    // CAMBIO CRÍTICO: Usamos la versión estable oficial /v1/ en lugar de v1beta
     const geminiUrl = "https://googleapis.com";
     
     const geminiResp = await fetch(geminiUrl, {
@@ -59,24 +59,33 @@ async function handler(req, res) {
 
     if (!geminiResp.ok) {
       const errorBody = await geminiResp.text();
-      console.error("Error de la API de Gemini:", geminiResp.status, errorBody);
-      res.status(500).json({ error: `Gemini respondió ${geminiResp.status}: ${errorBody.slice(0, 200)}` });
+      console.error("Error directo de la API de Gemini:", geminiResp.status, errorBody);
+      res.status(500).json({ error: `Gemini respondió ${geminiResp.status}: ${errorBody.slice(0, 150)}` });
       return;
     }
 
     const geminiData = await geminiResp.json();
     
-    // Extracción limpia del texto del JSON estándar sin encadenamientos rotos
-    const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    // Extracción ultra-segura mapeando el árbol de datos oficial
+    const textoCompleto = geminiData && 
+                          geminiData.candidates && 
+                          geminiData.candidates[0] && 
+                          geminiData.candidates[0].content && 
+                          geminiData.candidates[0].content.parts && 
+                          geminiData.candidates[0].content.parts[0] && 
+                          geminiData.candidates[0].content.parts[0].text ? 
+                          geminiData.candidates[0].content.parts[0].text : "";
+
     if (!textoCompleto) {
-      res.status(500).json({ error: "Gemini no devolvió texto en su respuesta estándar" });
+      console.error("Estructura JSON recibida inesperada:", JSON.stringify(geminiData));
+      res.status(500).json({ error: "Gemini no devolvió texto en el formato esperado" });
       return;
     }
 
     const { sinopsis, detalle } = separarSinopsisYDetalle(textoCompleto);
     res.status(200).json({ sinopsis, detalle });
   } catch (err) {
-    console.error(err);
+    console.error("Error en la ejecución del fetch a Gemini:", err);
     res.status(500).json({ error: `Error generando contenido con IA: ${err.message}` });
   }
 }

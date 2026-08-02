@@ -1,5 +1,48 @@
-node_modules/
-.env
-.firebaserc
-functions/node_modules/
-.DS_Store
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function esMaster() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/masters/$(request.auth.uid));
+    }
+
+    function esElMasterDeEstaPartida(partidaId) {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/partidas/$(partidaId)).data.masterUid == request.auth.uid;
+    }
+
+    // Solo lectura del propio doc; la creación de masters se hace desde
+    // la consola de Firebase o con el Admin SDK, nunca desde el cliente.
+    match /masters/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /partidas/{partidaId} {
+      allow read: if request.auth != null; // los jugadores necesitan leer para unirse por código
+      allow create: if esMaster();
+      allow update, delete: if esElMasterDeEstaPartida(partidaId);
+
+      match /jugadores/{jugadorId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null; // cualquiera autenticado (anónimo) puede unirse
+        allow update: if request.auth != null &&
+          (resource.data.uid == request.auth.uid || esElMasterDeEstaPartida(partidaId));
+        allow delete: if esElMasterDeEstaPartida(partidaId);
+      }
+
+      match /marcadores/{marcadorId} {
+        allow read: if request.auth != null;
+        allow write: if esElMasterDeEstaPartida(partidaId);
+      }
+
+      match /eventos/{eventoId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null; // dados de jugadores + narración de master
+        allow update, delete: if esElMasterDeEstaPartida(partidaId);
+      }
+    }
+  }
+}

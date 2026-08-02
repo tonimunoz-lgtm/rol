@@ -92,7 +92,14 @@ $("btn-generar").addEventListener("click", async () => {
       },
       body: JSON.stringify({ configuracion }),
     });
-    if (!resp.ok) throw new Error(`Cloud Function respondió ${resp.status}`);
+    if (!resp.ok) {
+      let detalle = "";
+      try {
+        const body = await resp.json();
+        detalle = body.error || "";
+      } catch (_) {}
+      throw new Error(`Respuesta ${resp.status}${detalle ? `: ${detalle}` : ""}`);
+    }
     const { sinopsis, detalle } = await resp.json();
 
     await setDoc(doc(db, "partidas", codigo), {
@@ -117,7 +124,7 @@ $("btn-generar").addEventListener("click", async () => {
     document.querySelector('[data-section="historia"]').click();
   } catch (err) {
     console.error(err);
-    status.textContent = "Error generando la partida. Revisa la variable GEMINI_API_KEY en Vercel.";
+    status.textContent = `Error generando la partida: ${err.message}`;
   } finally {
     $("btn-generar").disabled = false;
   }

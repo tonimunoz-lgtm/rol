@@ -1,5 +1,6 @@
 // api/generar-partida.js
-// Limpiamos cualquier espacio o salto de línea invisible que se haya colado al pegar la clave en Vercel
+const https = require("https");
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
 
 module.exports = async (req, res) => {
@@ -43,59 +44,81 @@ async function handler(req, res) {
 
   const prompt = construirPrompt(configuracion);
 
-  try {
-    const geminiUrl = `https://googleapis.com{GEMINI_API_KEY}`;
-    
-    const geminiResp = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
+  // Cuerpo de la petición en el formato exacto que exige Google
+  const postData = JSON.stringify({
+    contents: [
+      {
+        parts: [
           {
-            parts: [
-              {
-                text: prompt
-              }
-            ]
+            text: prompt
           }
         ]
-      }),
+      }
+    ]
+  });
+
+  try {
+    // Realizamos la llamada usando el módulo nativo de Node.js "https" para evitar el fallo de "fetch failed"
+    const textoCompleto = await new Promise((resolve, reject) => {
+      const opciones = {
+        hostname: "://googleapis.com",
+        port: 443,
+        path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(postData)
+        }
+      };
+
+      const reqGoogle = https.request(opciones, (resGoogle) => {
+        let cuerpo = "";
+        resGoogle.on("data", (chunk) => { cuerpo += chunk; });
+        resGoogle.on("end", () => {
+          if (resGoogle.statusCode !== 200) {
+            reject(new Error(`Google respondió con estado ${resGoogle.statusCode}: ${cuerpo.slice(0, 150)}`));
+            return;
+          }
+          try {
+            const geminiData = JSON.parse(cuerpo);
+            // Extracción segura tradicional compatible con cualquier versión de Node
+            let texto = "";
+            if (
+              geminiData &&
+              geminiData.candidates &&
+              geminiData.candidates[0] &&
+              geminiData.candidates[0].content &&
+              geminiData.candidates[0].content.parts &&
+              geminiData.candidates[0].content.parts[0]
+            ) {
+              texto = geminiData.candidates[0].content.parts[0].text || "";
+            }
+            resolve(texto);
+          } catch (e) {
+            reject(new Error("Error parseando el JSON de respuesta de Gemini"));
+          }
+        });
+      });
+
+      reqGoogle.on("error", (errorNet) => {
+        reject(errorNet);
+      });
+
+      // Escribimos el JSON y cerramos la conexión de red
+      reqGoogle.write(postData);
+      reqGoogle.end();
     });
 
-    if (!geminiResp.ok) {
-      const errorBody = await geminiResp.text();
-      console.error("Error directo de la API de Gemini:", geminiResp.status, errorBody);
-      res.status(500).json({ error: `Gemini respondió ${geminiResp.status}: ${errorBody.slice(0, 150)}` });
-      return;
-    }
-
-    const geminiData = await geminiResp.json();
-    
-    // CORRECCIÓN SINTÁCTICA CRÍTICA: Comprobación segura y tradicional compatible con Vercel
-    let textoCompleto = "";
-    if (
-      geminiData &&
-      geminiData.candidates &&
-      geminiData.candidates[0] &&
-      geminiData.candidates[0].content &&
-      geminiData.candidates[0].content.parts &&
-      geminiData.candidates[0].content.parts[0]
-    ) {
-      textoCompleto = geminiData.candidates[0].content.parts[0].text || "";
-    }
-
     if (!textoCompleto) {
-      console.error("Estructura JSON recibida inesperada:", JSON.stringify(geminiData));
-      res.status(500).json({ error: "Gemini no devolvió texto en el formato esperado" });
+      res.status(500).json({ error: "Gemini devolvió una respuesta de texto vacía" });
       return;
     }
 
     const { sinopsis, detalle } = separarSinopsisYDetalle(textoCompleto);
     res.status(200).json({ sinopsis, detalle });
+
   } catch (err) {
-    console.error("Error en la ejecución del fetch a Gemini:", err);
+    console.error("Error en la conexión HTTPS a Gemini:", err.message);
     res.status(500).json({ error: `Error generando contenido con IA: ${err.message}` });
   }
 }

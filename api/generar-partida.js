@@ -1,14 +1,10 @@
 // api/generar-partida.js
-// Función serverless de Vercel (gratis en el plan Hobby). Sustituye a la
-// Cloud Function de Firebase para no depender del plan Blaze.
+// Función serverless de Vercel (gratis en el plan Hobby).
 //
-// NOTA sobre la API key AQ.: Al estar ligadas a cuentas de servicio, Google exige 
-// autenticación OAuth2. Generamos un JWT firmado usando 'crypto' nativo para 
-// obtener el token de acceso oficial sin meter librerías de Google.
+// NOTA sobre la API key AQ.: Google está migrando las claves de Gemini a formato "AQ.".
+// Estas claves NO funcionan como parámetro ?key= en la URL, pero SÍ funcionan pasándolas
+// en la cabecera HTTP `x-goog-api-key`. Quitamos la librería oficial y usamos fetch nativo.
 
-const crypto = require("crypto");
-
-// Extraemos los datos necesarios si la variable viene en formato string plano o JSON
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = "gemini-2.5-flash";
 const FIREBASE_PROJECT_ID = "femjoc";
@@ -23,71 +19,6 @@ module.exports = async (req, res) => {
     }
   }
 };
-
-// Función auxiliar para obtener un Token de Acceso OAuth2 usando la clave AQ.
-async function obtenerAccessToken(apiKeyRaw) {
-  try {
-    // Si tu GEMINI_API_KEY en Vercel es el JSON completo de la cuenta de servicio:
-    const credentials = JSON.parse(apiKeyRaw);
-    const clientEmail = credentials.client_email;
-    const privateKey = credentials.private_key;
-
-    const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + 3600; // 1 hora de validez
-
-    // Payload estándar para solicitar acceso a las APIs de Google/Gemini
-    const payload = {
-      iss: clientEmail,
-      sub: clientEmail,
-      aud: "https://googleapis.com",
-      iat: iat,
-      exp: exp,
-      scope: "https://googleapis.com",
-    };
-
-    const header = { alg: "RS256", typ: "JWT" };
-
-    const base64UrlEncode = (obj) =>
-      Buffer.from(JSON.stringify(obj))
-        .toString("base64")
-        .replace(/=/g, "")
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_");
-
-    const unsignedToken = `${base64UrlEncode(header)}.${base64UrlEncode(payload)}`;
-    
-    // Firmamos el JWT de forma nativa con RSA-SHA256
-    const signer = crypto.createSign("RSA-SHA256");
-    signer.update(unsignedToken);
-    const signature = signer.sign(privateKey, "base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-    const jwt = `${unsignedToken}.${signature}`;
-
-    // Intercambiamos el JWT por un token de acceso federado
-    const tokenResp = await fetch("https://googleapis.com", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion: jwt,
-      }),
-    });
-
-    if (!tokenResp.ok) {
-      const errText = await tokenResp.text();
-      throw new Error(`Error de intercambio OAuth2: ${errText}`);
-    }
-
-    const tokenData = await tokenResp.json();
-    return tokenData.access_token;
-  } catch (e) {
-    // Si no es un JSON y es una API key clásica (AIza), la devolvemos tal cual
-    return null;
-  }
-}
 
 async function handler(req, res) {
   if (req.method !== "POST") {
@@ -113,7 +44,7 @@ async function handler(req, res) {
     return;
   }
 
-  const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/masters/${uid}`;
+  const firestoreUrl = `https://googleapis.com{FIREBASE_PROJECT_ID}/databases/(default)/documents/masters/${uid}`;
   try {
     const checkResp = await fetch(firestoreUrl, {
       headers: { Authorization: `Bearer ${idToken}` },
@@ -136,24 +67,15 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+    const geminiUrl = `https://googleapis.com{GEMINI_MODEL}:generateContent`;
     
-    const headers = { "Content-Type": "application/json" };
-    
-    // Intentamos resolver el token de cuenta de servicio (Claves nuevas AQ.)
-    const accessToken = await obtenerAccessToken(GEMINI_API_KEY);
-    
-    if (accessToken) {
-      // Si devolvió token, autenticamos vía OAuth2 (Formato AQ.)
-      headers["Authorization"] = `Bearer ${accessToken}`;
-    } else {
-      // Si falló el parseo JSON, asume que es una clave clásica AIza vieja
-      headers["x-goog-api-key"] = GEMINI_API_KEY;
-    }
-
+    // Enviamos la clave AQ de texto tal cual la copiaste de tu pantalla, usando la cabecera correcta
     const geminiResp = await fetch(geminiUrl, {
       method: "POST",
-      headers: headers,
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY, 
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
       }),

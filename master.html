@@ -111,19 +111,63 @@
       <p id="generar-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
     </section>
 
-    <!-- ---------- Historia generada (editable) ---------- -->
+    <!-- ---------- Historia generada (editable, separada por partes) ---------- -->
     <section id="section-historia" class="section-panel">
       <h2 class="display">Historia y trama</h2>
-      <div class="field">
-        <label>Sinopsis / trama general</label>
-        <textarea id="h-sinopsis" rows="6"></textarea>
+
+      <div id="historia-subtabs" style="display:flex; gap:.4em; flex-wrap:wrap; margin-bottom:1em;">
+        <button class="historia-subtab-btn active" data-subtab="sinopsis" style="font-size:.85rem;">Sinopsis</button>
+        <button class="historia-subtab-btn" data-subtab="pnjs" style="font-size:.85rem;">PNJs</button>
+        <button class="historia-subtab-btn" data-subtab="pistas" style="font-size:.85rem;">Pistas</button>
+        <button class="historia-subtab-btn" data-subtab="trampas" style="font-size:.85rem;">Trampas y encuentros</button>
+        <button class="historia-subtab-btn" data-subtab="giro" style="font-size:.85rem;">Giro final</button>
       </div>
-      <div class="field">
-        <label>PNJs, pistas y encuentros generados (edítalos como quieras)</label>
-        <textarea id="h-detalle" rows="14"></textarea>
+
+      <div id="historia-subtab-sinopsis" class="historia-subtab active">
+        <div class="field">
+          <label>Sinopsis / trama general (lo que el master debe conocer)</label>
+          <textarea id="h-sinopsis" rows="10"></textarea>
+        </div>
+        <button id="btn-guardar-sinopsis" class="primary">Guardar sinopsis</button>
       </div>
-      <button id="btn-guardar-historia" class="primary">Guardar cambios</button>
+
+      <div id="historia-subtab-pnjs" class="historia-subtab" style="display:none;">
+        <p style="color:var(--parchment-dim); font-size:.85rem;">Personajes no jugadores: personalidad, motivación y cómo interactúan con los jugadores.</p>
+        <div id="lista-pnjs"></div>
+        <button class="btn-add-lista-item" data-lista="pnjs" style="font-size:.85rem;">+ Añadir PNJ</button>
+        <button id="btn-guardar-pnjs" class="primary" style="margin-left:.5em;">Guardar PNJs</button>
+      </div>
+
+      <div id="historia-subtab-pistas" class="historia-subtab" style="display:none;">
+        <p style="color:var(--parchment-dim); font-size:.85rem;">Pistas que los jugadores irán descubriendo, ideales para asociar a marcadores AR.</p>
+        <div id="lista-pistas"></div>
+        <button class="btn-add-lista-item" data-lista="pistas" style="font-size:.85rem;">+ Añadir pista</button>
+        <button id="btn-guardar-pistas" class="primary" style="margin-left:.5em;">Guardar pistas</button>
+      </div>
+
+      <div id="historia-subtab-trampas" class="historia-subtab" style="display:none;">
+        <p style="color:var(--parchment-dim); font-size:.85rem;">Trampas, enigmas y encuentros, con su mecánica y consecuencia sugeridas.</p>
+        <div id="lista-trampas"></div>
+        <button class="btn-add-lista-item" data-lista="trampas" style="font-size:.85rem;">+ Añadir trampa/encuentro</button>
+        <button id="btn-guardar-trampas" class="primary" style="margin-left:.5em;">Guardar trampas/encuentros</button>
+      </div>
+
+      <div id="historia-subtab-giro" class="historia-subtab" style="display:none;">
+        <div class="field">
+          <label>Giro o revelación final</label>
+          <textarea id="h-giro" rows="6"></textarea>
+        </div>
+        <button id="btn-guardar-giro" class="primary">Guardar giro final</button>
+      </div>
     </section>
+
+    <template id="tpl-lista-item">
+      <div class="card lista-item-row" style="margin-bottom:.6em; padding:.8em;">
+        <div class="field"><label>Título</label><input class="li-titulo" placeholder="Nombre / título" /></div>
+        <div class="field"><label>Descripción</label><textarea class="li-texto" rows="3"></textarea></div>
+        <button class="btn-quitar-item danger" style="font-size:.75rem;">Quitar</button>
+      </div>
+    </template>
 
     <!-- ---------- Personajes ---------- -->
     <section id="section-personajes" class="section-panel">
@@ -179,12 +223,36 @@
         <div id="lista-habilidades-editor"></div>
         <button id="btn-add-habilidad" style="font-size:.85rem; margin-bottom:1em;">+ Añadir habilidad</button>
 
+        <h4 style="margin-bottom:.3em;">Inventario inicial</h4>
+        <div id="lista-inventario-editor"></div>
+        <button id="btn-add-objeto" style="font-size:.85rem; margin-bottom:1em;">+ Añadir objeto</button>
+
         <div style="display:flex; gap:.6em;">
           <button id="btn-guardar-personaje" class="primary">Guardar personaje</button>
           <button id="btn-cancelar-personaje">Cancelar</button>
         </div>
       </div>
     </section>
+
+    <template id="tpl-objeto-row">
+      <div class="card objeto-row" style="margin-bottom:.6em; padding:.8em;">
+        <div class="grid-2">
+          <div class="field"><label>Nombre del objeto</label><input class="o-nombre" placeholder="Poción de savia élfica" /></div>
+          <div class="field"><label>Cantidad</label><input class="o-cantidad" type="number" min="1" value="1" /></div>
+          <div class="field">
+            <label>Efecto al usarlo</label>
+            <select class="o-efecto-tipo">
+              <option value="ninguno">Ninguno (solo narrativo)</option>
+              <option value="curar">Cura vida</option>
+              <option value="danio">Inflige daño</option>
+            </select>
+          </div>
+          <div class="field"><label>Valor del efecto</label><input class="o-efecto-valor" type="number" min="0" value="0" /></div>
+        </div>
+        <div class="field"><label>Descripción</label><input class="o-descripcion" placeholder="Qué es y para qué sirve" /></div>
+        <button class="btn-quitar-objeto danger" style="font-size:.75rem;">Quitar objeto</button>
+      </div>
+    </template>
 
     <!-- ---------- Marcadores AR ---------- -->
     <section id="section-marcadores" class="section-panel">
@@ -224,6 +292,10 @@
       <div id="lista-jugadores-vivo" class="grid-2"></div>
 
       <h3 style="margin-top:1.5em;">Registro de la partida</h3>
+      <p style="color:var(--parchment-dim); font-size:.8rem;">
+        Aquí ves en vivo: tiradas de dado, habilidades usadas, objetos consumidos, narraciones
+        lanzadas, y lo que los jugadores escriben que quieren hacer.
+      </p>
       <div id="log-eventos" class="card mono" style="font-size:.8rem; max-height:280px; overflow-y:auto;"></div>
     </section>
 

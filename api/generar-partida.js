@@ -43,20 +43,17 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    // Endpoint oficial de producción v1 para Google AI Studio
-    const geminiUrl = "https://googleapis.com";
+    // CORRECCIÓN ESPECÍFICA: La API REST oficial requiere la clave en la URL mediante el parámetro ?key=
+    const geminiUrl = `https://googleapis.com{GEMINI_API_KEY}`;
     
     const geminiResp = await fetch(geminiUrl, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY, 
+        "Content-Type": "application/json"
       },
-      // CORRECCIÓN REST CRÍTICA: Añadido obligatoriamente el rol "user" requerido en la especificación HTTP nativa
       body: JSON.stringify({
         contents: [
           {
-            role: "user",
             parts: [
               {
                 text: prompt
@@ -76,7 +73,7 @@ async function handler(req, res) {
 
     const geminiData = await geminiResp.json();
     
-    // Extracción segura del árbol JSON mapeando con el payload oficial de respuesta
+    // Extracción segura y compatible con Node.js en Vercel
     const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!textoCompleto) {

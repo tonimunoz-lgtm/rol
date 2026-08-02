@@ -19,6 +19,13 @@ const GEMINI_API_KEY_FALLBACK = "AQ.Ab8RN6Ik5y1QQxNMd62UylPz7gYS9Qg2M7g0lNqyCW0m
 exports.generarPartida = onRequest(
   { secrets: [GEMINI_API_KEY], cors: true, region: "europe-west1" },
   async (req, res) => {
+    
+    // CORRECCIÓ: Permet que Firebase Functions v2 gestioni la petició de validació prèvia de CORS (Preflight)
+    if (req.method === "OPTIONS") {
+      return res.end();
+    }
+
+    // Un cop passat el filtre de CORS, comprovem que la petició de dades sigui un POST
     if (req.method !== "POST") {
       return res.status(405).send("Método no permitido");
     }

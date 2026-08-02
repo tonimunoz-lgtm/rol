@@ -94,6 +94,7 @@ async function handler(req, res) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -111,8 +112,13 @@ async function handler(req, res) {
       return;
     }
 
-    const { sinopsis, detalle } = separarSinopsisYDetalle(textoCompleto);
-    res.status(200).json({ sinopsis, detalle });
+    const partida = parsearJson(textoCompleto);
+    if (!partida) {
+      res.status(500).json({ error: "La IA no devolvió un JSON válido. Prueba a generar de nuevo." });
+      return;
+    }
+
+    res.status(200).json(partida);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: `Error generando contenido con IA: ${err.message}` });
@@ -121,8 +127,9 @@ async function handler(req, res) {
 
 function construirPrompt(c) {
   return `
-Eres el asistente de un Master de un juego de rol de mesa colaborativo con realidad aumentada.
-Genera el contenido de una partida con estas características:
+Eres el asistente de un Master de un juego de rol de mesa colaborativo con realidad aumentada,
+ambientado con marcadores físicos repartidos por una sala. Genera una partida completa y rica
+en detalle con estas características:
 
 - Nombre: ${c.nombre}
 - Duración: ${c.duracion}
@@ -135,21 +142,63 @@ Genera el contenido de una partida con estas características:
 - Tribus/razas/facciones: ${c.facciones}
 - Número de jugadores: ${c.numeroJugadores}
 
-Responde EXACTAMENTE con este formato, sin nada más antes o después:
+Responde ÚNICAMENTE con un JSON válido (sin texto antes ni después, sin bloques de markdown),
+con exactamente esta forma:
 
-SINOPSIS:
-(2-3 párrafos con la trama general que el master debe conocer)
+{
+  "sinopsis": "4-6 párrafos con la trama general que el master debe conocer: contexto, conflicto central, qué está en juego y cómo empieza la sesión",
+  "pnjs": [
+    { "titulo": "Nombre del PNJ (raza/rol)", "texto": "Personalidad, motivación, secretos, cómo interactúa con los jugadores" }
+  ],
+  "pistas": [
+    { "titulo": "Nombre corto de la pista", "texto": "Qué descubren los jugadores y cómo conecta con la trama" }
+  ],
+  "trampasEncuentros": [
+    { "titulo": "Nombre del encuentro/trampa/enigma", "texto": "Descripción, mecánica sugerida y consecuencia de fallar o superarlo" }
+  ],
+  "giroFinal": "El giro o revelación final de la partida",
+  "personajesSugeridos": [
+    {
+      "nombre": "Nombre del personaje jugable",
+      "raza": "Raza o especie",
+      "clase": "Clase o rol de combate/narrativo",
+      "descripcion": "Trasfondo breve, 2-3 frases",
+      "vidaBase": 10,
+      "atributos": { "fuerza": 10, "destreza": 10, "vigor": 10, "inteligencia": 10, "carisma": 10 },
+      "habilidades": [
+        { "nombre": "Nombre de la habilidad", "tipo": "activa", "dado": "d20", "usosPorPartida": 3, "descripcion": "Efecto de la habilidad" }
+      ],
+      "inventarioInicial": [
+        { "nombre": "Nombre del objeto", "cantidad": 1, "descripcion": "Qué es y para qué sirve", "efecto": { "tipo": "curar", "valor": 5 } }
+      ]
+    }
+  ]
+}
 
-DETALLE:
-(lista de PNJs con su personalidad y motivación, lista de pistas que se descubrirán en marcadores AR,
-2-3 encuentros o retos, y un posible giro final)
+Genera exactamente ${c.numeroJugadores} personajes en "personajesSugeridos", variados entre sí
+(clases y roles distintos, complementarios en combate/exploración/social), cada uno con 2-4
+habilidades y 1-3 objetos de inventario inicial coherentes con la ambientación. El campo
+"efecto.tipo" de los objetos debe ser uno de: "curar", "danio", "ninguno". Ajusta el número de
+PNJs, pistas y trampasEncuentros según la duración y dificultad indicadas (una partida larga o
+difícil necesita más contenido). Los atributos deben ir de 1 a 20. Escribe todo en español.
 `.trim();
 }
 
-function separarSinopsisYDetalle(texto) {
-  const idxDetalle = texto.indexOf("DETALLE:");
-  if (idxDetalle === -1) return { sinopsis: texto.trim(), detalle: "" };
-  const sinopsis = texto.slice(0, idxDetalle).replace("SINOPSIS:", "").trim();
-  const detalle = texto.slice(idxDetalle).replace("DETALLE:", "").trim();
-  return { sinopsis, detalle };
+function parsearJson(texto) {
+  let limpio = texto.trim();
+  // Por si el modelo envuelve la respuesta en bloques de markdown pese a la instrucción.
+  limpio = limpio.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "");
+  try {
+    return JSON.parse(limpio);
+  } catch (e) {
+    // Último intento: coger solo desde la primera { hasta la última }
+    const inicio = limpio.indexOf("{");
+    const fin = limpio.lastIndexOf("}");
+    if (inicio === -1 || fin === -1) return null;
+    try {
+      return JSON.parse(limpio.slice(inicio, fin + 1));
+    } catch (e2) {
+      return null;
+    }
+  }
 }

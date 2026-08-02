@@ -208,6 +208,12 @@ input:focus, select:focus, textarea:focus {
 .habilidad-card .h-usos { font-family: var(--font-mono); font-size: .75rem; white-space: nowrap; }
 
 /* ---------- Vista Master (panel admin) ---------- */
+
+/* SOLUCIÓN AL PARPADEO: El contenedor de login inicia invisible por defecto */
+#login-view {
+  display: none;
+}
+
 #master-view {
   display: grid;
   grid-template-columns: 240px 1fr;

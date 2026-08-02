@@ -1,6 +1,7 @@
 // api/generar-partida.js
 const https = require("https");
 
+// Netegem espais en blanc que s'hagin pogut colar a les variables de Vercel
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
 
 module.exports = async (req, res) => {
@@ -44,7 +45,7 @@ async function handler(req, res) {
 
   const prompt = construirPrompt(configuracion);
 
-  // Cuerpo de la petición en el formato exacto que exige Google
+  // Cos del JSON en el format exacte que demana l'API REST de Google
   const postData = JSON.stringify({
     contents: [
       {
@@ -58,11 +59,13 @@ async function handler(req, res) {
   });
 
   try {
-    // Realizamos la llamada usando el módulo nativo de Node.js "https" para evitar el fallo de "fetch failed"
+    // Executem la connexió utilitzant el mòdul blindat https passat a Promesa
     const textoCompleto = await new Promise((resolve, reject) => {
       const opciones = {
-        hostname: "://googleapis.com",
+        // CORRECCIÓ DE XARXA: El hostname ha de ser ÚNICAMENT el domini net (sense https:// al davant)
+        hostname: "generativelanguage.googleapis.com",
         port: 443,
+        // Tota la resta de l'adreça i la clat tipus AQ. viatgen aquí
         path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         method: "POST",
         headers: {
@@ -81,7 +84,8 @@ async function handler(req, res) {
           }
           try {
             const geminiData = JSON.parse(cuerpo);
-            // Extracción segura tradicional compatible con cualquier versión de Node
+            
+            // Extracció tradicional i ultra-segura sense operadors que puguin fallar a Node v18/20
             let texto = "";
             if (
               geminiData &&
@@ -101,10 +105,11 @@ async function handler(req, res) {
       });
 
       reqGoogle.on("error", (errorNet) => {
+        // Captura qualsevol error de connexió físic o de DNS
         reject(errorNet);
       });
 
-      // Escribimos el JSON y cerramos la conexión de red
+      // Enviem les dades i tanquem el flux de xarxa cap a Google
       reqGoogle.write(postData);
       reqGoogle.end();
     });

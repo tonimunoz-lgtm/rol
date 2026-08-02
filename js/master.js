@@ -1,15 +1,14 @@
 // js/master.js — Panel del Master
 import {
-  auth, db, storage,
+  auth, db,
   signInWithEmailAndPassword, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
   collection, addDoc, serverTimestamp,
-  ref, uploadBytes, getDownloadURL,
 } from "./firebase-config.js";
 
-// URL de la Cloud Function que llama a Gemini de forma segura (server-side).
-// Sustituye esto por la URL real tras desplegar `functions/index.js` (ver README > Fase 3).
-const GENERAR_PARTIDA_URL = "https://europe-west1-femjoc.cloudfunctions.net/generarPartida";
+// URL de la función serverless de Vercel que llama a Gemini de forma segura.
+// Al ser una ruta relativa dentro del mismo dominio, no hay problemas de CORS.
+const GENERAR_PARTIDA_URL = "/api/generar-partida";
 
 const $ = (id) => document.getElementById(id);
 let currentPartidaId = localStorage.getItem("runica_master_partidaId") || null;
@@ -118,7 +117,7 @@ $("btn-generar").addEventListener("click", async () => {
     document.querySelector('[data-section="historia"]').click();
   } catch (err) {
     console.error(err);
-    status.textContent = "Error generando la partida. Revisa que la Cloud Function esté desplegada.";
+    status.textContent = "Error generando la partida. Revisa la variable GEMINI_API_KEY en Vercel.";
   } finally {
     $("btn-generar").disabled = false;
   }
@@ -173,15 +172,13 @@ $("btn-guardar-historia").addEventListener("click", async () => {
   });
 });
 
-// ---------- Subida de targets.mind ----------
-$("upload-targets").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file || !currentPartidaId) return;
-  const fileRef = ref(storage, `partidas/${currentPartidaId}/targets.mind`);
-  await uploadBytes(fileRef, file);
-  const url = await getDownloadURL(fileRef);
-  await updateDoc(doc(db, "partidas", currentPartidaId), { marcadoresTargetUrl: url });
-  alert("targets.mind subido correctamente.");
+// ---------- Ruta del targets.mind (archivo estático servido por Vercel) ----------
+$("btn-guardar-targets-path").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const ruta = $("targets-path").value.trim();
+  if (!ruta) return;
+  await updateDoc(doc(db, "partidas", currentPartidaId), { marcadoresTargetUrl: ruta });
+  $("targets-status").textContent = "Ruta guardada correctamente.";
 });
 
 // ---------- Narración en vivo ----------

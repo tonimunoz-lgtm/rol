@@ -17,6 +17,17 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const FIREBASE_PROJECT_ID = "femjoc";
 
 module.exports = async (req, res) => {
+  try {
+    await handler(req, res);
+  } catch (err) {
+    console.error("Error no controlado:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: `Error interno: ${err.message}` });
+    }
+  }
+};
+
+async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Método no permitido" });
     return;
@@ -80,7 +91,7 @@ module.exports = async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Error generando contenido con IA" });
   }
-};
+}
 
 function construirPrompt(c) {
   return `

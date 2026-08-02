@@ -38,6 +38,11 @@ service cloud.firestore {
         allow write: if esElMasterDeEstaPartida(partidaId);
       }
 
+      match /plantillasPersonaje/{plantillaId} {
+        allow read: if request.auth != null;
+        allow write: if esElMasterDeEstaPartida(partidaId);
+      }
+
       match /eventos/{eventoId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null; // dados de jugadores + narración de master

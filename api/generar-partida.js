@@ -43,7 +43,7 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    // CAMBIO CRÍTICO: Usamos la versión estable oficial /v1/ en lugar de v1beta
+    // Endpoint oficial de producción v1 para Google AI Studio
     const geminiUrl = "https://googleapis.com";
     
     const geminiResp = await fetch(geminiUrl, {
@@ -52,8 +52,18 @@ async function handler(req, res) {
         "Content-Type": "application/json",
         "x-goog-api-key": GEMINI_API_KEY, 
       },
+      // CORRECCIÓN REST CRÍTICA: Añadido obligatoriamente el rol "user" requerido en la especificación HTTP nativa
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: prompt
+              }
+            ]
+          }
+        ]
       }),
     });
 
@@ -66,15 +76,8 @@ async function handler(req, res) {
 
     const geminiData = await geminiResp.json();
     
-    // Extracción ultra-segura mapeando el árbol de datos oficial
-    const textoCompleto = geminiData && 
-                          geminiData.candidates && 
-                          geminiData.candidates[0] && 
-                          geminiData.candidates[0].content && 
-                          geminiData.candidates[0].content.parts && 
-                          geminiData.candidates[0].content.parts[0] && 
-                          geminiData.candidates[0].content.parts[0].text ? 
-                          geminiData.candidates[0].content.parts[0].text : "";
+    // Extracción segura del árbol JSON mapeando con el payload oficial de respuesta
+    const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!textoCompleto) {
       console.error("Estructura JSON recibida inesperada:", JSON.stringify(geminiData));

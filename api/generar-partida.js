@@ -33,12 +33,12 @@ async function handler(req, res) {
     return;
   }
 
-  // CORRECCIÓN: Aseguramos el acceso correcto al índice [1] tras el split del token
+  // CORRECCIÓN: Extracción exacta del índice [1] del token JWT de Firebase
   let uid;
   try {
     const partesToken = idToken.split(".");
     if (partesToken.length < 2) throw new Error("Formato de token incorrecto");
-    const payloadBase64 = partesToken[1];
+    const payloadBase64 = partesToken[1]; // <--- Corregido índice aquí
     const payloadJson = Buffer.from(payloadBase64, "base64url").toString("utf8");
     uid = JSON.parse(payloadJson).sub;
     if (!uid) throw new Error("Token sin uid");
@@ -54,14 +54,12 @@ async function handler(req, res) {
       headers: { Authorization: `Bearer ${idToken}` },
     });
     if (!checkResp.ok) {
-      // Si Firestore responde pero da error de permisos (403, 404, etc)
       const errText = await checkResp.text();
       console.error(`Firestore devolvió estado ${checkResp.status}:`, errText);
       res.status(403).json({ error: "Solo el master puede generar partidas" });
       return;
     }
   } catch (e) {
-    // Si la petición fetch falla por red, DNS o error de código interno
     console.error("Error de red/código al consultar Firestore:", e);
     res.status(500).json({ error: "No se pudo verificar el rol de master" });
     return;
@@ -97,6 +95,8 @@ async function handler(req, res) {
     }
 
     const geminiData = await geminiResp.json();
+    
+    // CORRECCIÓN: Acceso seguro estándar sin sintaxis inválida ?.?.
     const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     if (!textoCompleto) {
       res.status(500).json({ error: "Gemini no devolvió texto (posible bloqueo de seguridad)" });

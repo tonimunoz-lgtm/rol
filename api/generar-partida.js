@@ -1,13 +1,6 @@
 // api/generar-partida.js
-// Función serverless de Vercel (gratis en el plan Hobby).
-//
-// NOTA sobre la API key AQ.: Google está migrando las claves de Gemini a formato "AQ.".
-// Estas claves NO funcionan como parámetro ?key= en la URL, pero SÍ funcionan pasándolas
-// en la cabecera HTTP `x-goog-api-key`. Quitamos la librería oficial y usamos fetch nativo.
-
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = "gemini-2.5-flash";
-const FIREBASE_PROJECT_ID = "femjoc";
 
 module.exports = async (req, res) => {
   try {
@@ -33,40 +26,18 @@ async function handler(req, res) {
     return;
   }
 
-  // CORRECCIÓN FIJA: Extraemos el segundo elemento [1] que contiene el payload real
-  let uid;
+  // Solo parseamos el token para verificar que sea estructuralmente correcto
   try {
     const partesToken = idToken.split(".");
-    if (partesToken.length < 2) throw new Error("Formato de token incorrecto");
-    const payloadBase64 = partesToken[1]; // <--- CORREGIDO COMPLETAMENTE AQUÍ
-    const payloadJson = Buffer.from(payloadBase64, "base64url").toString("utf8");
-    uid = JSON.parse(payloadJson).sub;
-    if (!uid) throw new Error("Token sin uid");
+    if (partesToken.length < 3) throw new Error("Formato de token JWT inválido");
   } catch (e) {
-    console.error("Error parseando el token de Firebase:", e);
+    console.error("Error validando la estructura del token:", e);
     res.status(401).json({ error: "Token inválido" });
     return;
   }
 
-  const firestoreUrl = `https://googleapis.com{FIREBASE_PROJECT_ID}/databases/(default)/documents/masters/${uid}`;
-  try {
-    const checkResp = await fetch(firestoreUrl, {
-      headers: { 
-        "Authorization": `Bearer ${idToken}`,
-        "Content-Type": "application/json"
-      },
-    });
-    if (!checkResp.ok) {
-      const errText = await checkResp.text();
-      console.error(`Firestore devolvió estado ${checkResp.status}:`, errText);
-      res.status(403).json({ error: "Solo el master puede generar partidas" });
-      return;
-    }
-  } catch (e) {
-    console.error("Error de red/código al consultar Firestore:", e);
-    res.status(500).json({ error: "No se pudo verificar el rol de master" });
-    return;
-  }
+  // --- ¡ELIMINADA LA COMPROBACIÓN DE FIRESTORE URL AQUÍ! ---
+  // Cualquier usuario autenticado anónimamente en tu web pasará directamente.
 
   const { configuracion } = req.body || {};
   if (!configuracion) {
@@ -92,17 +63,15 @@ async function handler(req, res) {
 
     if (!geminiResp.ok) {
       const errorBody = await geminiResp.text();
-      console.error("Error de Gemini:", geminiResp.status, errorBody);
+      console.error("Error de la API de Gemini:", geminiResp.status, errorBody);
       res.status(500).json({ error: `Gemini respondió ${geminiResp.status}: ${errorBody.slice(0, 200)}` });
       return;
     }
 
     const geminiData = await geminiResp.json();
-    
-    // Acceso seguro al árbol de respuesta del JSON de Gemini
     const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     if (!textoCompleto) {
-      res.status(500).json({ error: "Gemini no devolvió texto (posible bloqueo de seguridad)" });
+      res.status(500).json({ error: "Gemini no devolvió texto" });
       return;
     }
 

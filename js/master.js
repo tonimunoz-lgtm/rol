@@ -1,38 +1,41 @@
 // js/master.js — Panel del Master
 import {
   auth, db,
-  signInAnonymously, onAuthStateChanged,
+  signInWithEmailAndPassword, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
   collection, addDoc, serverTimestamp,
 } from "./firebase-config.js";
 
+// URL de la función serverless de Vercel que llama a Gemini de forma segura.
+// Al ser una ruta relativa dentro del mismo dominio, no hay problemas de CORS.
 const GENERAR_PARTIDA_URL = "/api/generar-partida";
+
 const $ = (id) => document.getElementById(id);
 let currentPartidaId = localStorage.getItem("runica_master_partidaId") || null;
 
-// ---------- Autenticación Anónima Automática y Abierta ----------
-async function asegurarAutenticacion() {
-  if (!auth.currentUser) {
-    try {
-      await signInAnonymously(auth);
-      console.log("Acceso concedido de forma anónima.");
-    } catch (err) {
-      console.error("Error en login anónimo:", err);
-    }
+// ---------- Login ----------
+$("login-btn").addEventListener("click", async () => {
+  const email = $("login-email").value.trim();
+  const pass = $("login-pass").value;
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch (err) {
+    $("login-error").textContent = "Credenciales incorrectas.";
   }
-}
+});
 
-asegurarAutenticacion();
+$("logout-btn").addEventListener("click", () => auth.signOut());
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    if ($("login-view")) $("login-view").style.display = "block";
+    $("login-view").style.display = "block";
     $("master-view").style.display = "none";
     return;
   }
-  
-  // Acceso directo a la interfaz del Máster para cualquiera
-  if ($("login-view")) $("login-view").style.display = "none";
+  // NOTA DE SEGURIDAD: esto solo oculta/muestra UI. El control real de que
+  // este usuario es "master" lo hacen las reglas de Firestore (ver README),
+  // comprobando un documento en /masters/{uid}.
+  $("login-view").style.display = "none";
   $("master-view").style.display = "grid";
 
   if (currentPartidaId) {
@@ -40,7 +43,6 @@ onAuthStateChanged(auth, async (user) => {
     cargarPartidaExistente(currentPartidaId);
   }
 });
-
 
 // ---------- Navegación entre secciones ----------
 document.querySelectorAll("#master-sidebar nav a").forEach((link) => {
@@ -77,13 +79,10 @@ $("btn-generar").addEventListener("click", async () => {
   status.textContent = "Generando trama con IA... (puede tardar unos segundos)";
   $("btn-generar").disabled = true;
 
+  // Generamos un código corto de partida (ID legible para que los jugadores lo tecleen)
   const codigo = generarCodigoPartida();
 
   try {
-    if (!auth.currentUser) {
-      throw new Error("No hay un usuario autenticado todavía. Espera un segundo y vuelve a intentarlo.");
-    }
-
     const idToken = await auth.currentUser.getIdToken();
     const resp = await fetch(GENERAR_PARTIDA_URL, {
       method: "POST",
@@ -93,7 +92,6 @@ $("btn-generar").addEventListener("click", async () => {
       },
       body: JSON.stringify({ configuracion }),
     });
-    
     if (!resp.ok) {
       let detalle = "";
       try {
@@ -172,6 +170,7 @@ function escucharLogEventos(codigo) {
   });
 }
 
+// ---------- Guardar edición de historia ----------
 $("btn-guardar-historia").addEventListener("click", async () => {
   if (!currentPartidaId) return;
   await updateDoc(doc(db, "partidas", currentPartidaId), {
@@ -180,6 +179,7 @@ $("btn-guardar-historia").addEventListener("click", async () => {
   });
 });
 
+// ---------- Ruta del targets.mind (archivo estático servido por Vercel) ----------
 $("btn-guardar-targets-path").addEventListener("click", async () => {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
   const ruta = $("targets-path").value.trim();
@@ -188,6 +188,7 @@ $("btn-guardar-targets-path").addEventListener("click", async () => {
   $("targets-status").textContent = "Ruta guardada correctamente.";
 });
 
+// ---------- Narración en vivo ----------
 $("btn-lanzar-narracion").addEventListener("click", async () => {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
   const texto = $("narracion-en-vivo").value.trim();
@@ -200,6 +201,7 @@ $("btn-lanzar-narracion").addEventListener("click", async () => {
   $("narracion-en-vivo").value = "";
 });
 
+// ---------- Personajes: plantillas con atributos y habilidades ----------
 let unsubscribePersonajes = null;
 
 function escucharPersonajes(codigo) {
@@ -216,12 +218,141 @@ function escucharPersonajes(codigo) {
       const p = docSnap.data();
       const card = document.createElement("div");
       card.className = "card";
-      card.innerHTML = `<strong class="display" style="font-size:1rem;">${p.nombre}</strong>`;
+      const numHabilidades = (p.habilidades || []).length;
+      card.innerHTML = `
+        <strong class="display" style="font-size:1rem;">${p.nombre}</strong>
+        <p class="mono" style="font-size:.75rem; color:var(--parchment-dim); margin:.3em 0;">${p.raza} · ${p.clase}</p>
+        <p style="font-size:.85rem;">❤ ${p.vidaBase} &nbsp; · &nbsp; ${numHabilidades} habilidad(es)</p>
+        <div style="display:flex; gap:.5em; margin-top:.6em;">
+          <button class="btn-editar-personaje" data-id="${docSnap.id}" style="font-size:.75rem;">Editar</button>
+          <button class="btn-borrar-personaje danger" data-id="${docSnap.id}" style="font-size:.75rem;">Borrar</button>
+        </div>
+      `;
       cont.appendChild(card);
     });
+
+    cont.querySelectorAll(".btn-editar-personaje").forEach((btn) =>
+      btn.addEventListener("click", () => abrirEditorPersonaje(btn.dataset.id))
+    );
+    cont.querySelectorAll(".btn-borrar-personaje").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Borrar este personaje?")) return;
+        await deleteDoc(doc(db, "partidas", currentPartidaId, "plantillasPersonaje", btn.dataset.id));
+      })
+    );
   });
 }
 
+function crearFilaHabilidad(habilidad = null) {
+  const tpl = document.getElementById("tpl-habilidad-row");
+  const row = tpl.content.firstElementChild.cloneNode(true);
+  if (habilidad) {
+    row.querySelector(".h-nombre").value = habilidad.nombre || "";
+    row.querySelector(".h-tipo").value = habilidad.tipo || "activa";
+    row.querySelector(".h-dado").value = habilidad.dado || "d20";
+    row.querySelector(".h-usos").value = habilidad.usosPorPartida ?? 3;
+    row.querySelector(".h-descripcion").value = habilidad.descripcion || "";
+  }
+  row.querySelector(".btn-quitar-habilidad").addEventListener("click", () => row.remove());
+  $("lista-habilidades-editor").appendChild(row);
+}
+
+$("btn-add-habilidad").addEventListener("click", () => crearFilaHabilidad());
+
+$("btn-nuevo-personaje").addEventListener("click", () => abrirEditorPersonaje(null));
+
+$("btn-cancelar-personaje").addEventListener("click", () => {
+  $("editor-personaje").style.display = "none";
+});
+
+async function abrirEditorPersonaje(personajeId) {
+  $("editor-personaje").style.display = "block";
+  $("lista-habilidades-editor").innerHTML = "";
+  $("p-id").value = personajeId || "";
+
+  if (!personajeId) {
+    $("editor-personaje-titulo").textContent = "Nuevo personaje";
+    ["p-nombre", "p-raza", "p-clase", "p-descripcion"].forEach((id) => ($(id).value = ""));
+    ["p-vida", "p-fuerza", "p-destreza", "p-vigor", "p-inteligencia", "p-carisma"].forEach(
+      (id) => ($(id).value = 10)
+    );
+    crearFilaHabilidad();
+    return;
+  }
+
+  $("editor-personaje-titulo").textContent = "Editar personaje";
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId, "plantillasPersonaje", personajeId));
+  if (!snap.exists()) return;
+  const p = snap.data();
+  $("p-nombre").value = p.nombre || "";
+  $("p-raza").value = p.raza || "";
+  $("p-clase").value = p.clase || "";
+  $("p-descripcion").value = p.descripcion || "";
+  $("p-vida").value = p.vidaBase ?? 10;
+  const a = p.atributos || {};
+  $("p-fuerza").value = a.fuerza ?? 10;
+  $("p-destreza").value = a.destreza ?? 10;
+  $("p-vigor").value = a.vigor ?? 10;
+  $("p-inteligencia").value = a.inteligencia ?? 10;
+  $("p-carisma").value = a.carisma ?? 10;
+  (p.habilidades || []).forEach((h) => crearFilaHabilidad(h));
+}
+
+$("btn-guardar-personaje").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const nombre = $("p-nombre").value.trim();
+  if (!nombre) return alert("El personaje necesita un nombre.");
+
+  const habilidades = Array.from(document.querySelectorAll("#lista-habilidades-editor .habilidad-row")).map(
+    (row) => ({
+      nombre: row.querySelector(".h-nombre").value.trim(),
+      tipo: row.querySelector(".h-tipo").value,
+      dado: row.querySelector(".h-dado").value,
+      usosPorPartida: Number(row.querySelector(".h-usos").value) || 0,
+      descripcion: row.querySelector(".h-descripcion").value.trim(),
+    })
+  );
+
+  const datos = {
+    nombre,
+    raza: $("p-raza").value.trim(),
+    clase: $("p-clase").value.trim(),
+    descripcion: $("p-descripcion").value.trim(),
+    vidaBase: Number($("p-vida").value) || 10,
+    atributos: {
+      fuerza: Number($("p-fuerza").value) || 10,
+      destreza: Number($("p-destreza").value) || 10,
+      vigor: Number($("p-vigor").value) || 10,
+      inteligencia: Number($("p-inteligencia").value) || 10,
+      carisma: Number($("p-carisma").value) || 10,
+    },
+    habilidades,
+  };
+
+  const personajeId = $("p-id").value;
+  if (personajeId) {
+    await updateDoc(doc(db, "partidas", currentPartidaId, "plantillasPersonaje", personajeId), datos);
+  } else {
+    await addDoc(collection(db, "partidas", currentPartidaId, "plantillasPersonaje"), datos);
+  }
+  $("editor-personaje").style.display = "none";
+});
+
+// ---------- Jugadores conectados en vivo ----------
 function escucharJugadoresEnVivo(codigo) {
-  // Aquí va tu función original para escuchar la lista de jugadores en vivo
+  const jugadoresCol = collection(db, "partidas", codigo, "jugadores");
+  onSnapshot(jugadoresCol, (snap) => {
+    const cont = $("lista-jugadores-vivo");
+    cont.innerHTML = "";
+    snap.forEach((docSnap) => {
+      const j = docSnap.data();
+      const card = document.createElement("div");
+      card.className = "card";
+      const personajeInfo = j.nombrePersonaje
+        ? `<div class="mono" style="font-size:.75rem; color:var(--parchment-dim);">${j.nombrePersonaje} · ${j.clase || ""}</div>`
+        : "";
+      card.innerHTML = `<strong>${j.nombre}</strong>${personajeInfo}<br/><span class="mono">❤ ${j.vida}/${j.vidaMax ?? j.vida}</span>`;
+      cont.appendChild(card);
+    });
+  });
 }

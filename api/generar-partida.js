@@ -1,8 +1,26 @@
 // api/generar-partida.js
-const https = require("https");
+// Función serverless de Vercel (gratis en el plan Hobby). Sustituye a la
+// Cloud Function de Firebase para no depender del plan Blaze.
+//
+// NOTA sobre la API key: Google está migrando las claves de Gemini de las
+// clásicas "AIza..." a un nuevo formato "AQ...." (auth key, ligada a una
+// cuenta de servicio). Las claves nuevas NO funcionan si se envían como
+// parámetro ?key= en la URL (así lo hacía la librería @google/generative-ai),
+// hay que enviarlas en la cabecera `x-goog-api-key`. Por eso aquí llamamos
+// directamente a la API REST con fetch, sin depender de esa librería.
+//
+// Seguridad sin plan de pago ni cuentas de servicio:
+// El master envía su ID Token de Firebase Auth. En vez de verificarlo con
+// firebase-admin (que exigiría credenciales de cuenta de servicio), le
+// pedimos directamente a Firestore (con ese mismo token, vía su API REST)
+// que nos confirme si existe /masters/{uid}. Firestore ya valida el token
+// por nosotros: si es falso o ha caducado, la petición fallará sola.
 
-// Netegem espais en blanc que s'hagin pogut colar a les variables de Vercel
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
+// Guarda esto en Vercel → Project Settings → Environment Variables,
+// nunca hace falta escribirlo en el código ni en el repositorio.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = "gemini-2.5-flash";
+const FIREBASE_PROJECT_ID = "femjoc";
 
 module.exports = async (req, res) => {
   try {
@@ -28,12 +46,35 @@ async function handler(req, res) {
     return;
   }
 
+  // Extraemos el uid del token SOLO para construir la ruta a comprobar.
+  // No hace falta verificar la firma aquí: Firestore la verificará de
+  // verdad al recibir este mismo token como Bearer en la petición REST.
+  let uid;
   try {
-    const partesToken = idToken.split(".");
-    if (partesToken.length < 3) throw new Error("Formato de token JWT inválido");
+    const payloadBase64 = idToken.split(".")[1];
+    const payloadJson = Buffer.from(payloadBase64, "base64url").toString("utf8");
+    uid = JSON.parse(payloadJson).sub;
+    if (!uid) throw new Error("Token sin uid");
   } catch (e) {
-    console.error("Error validando la estructura del token:", e);
     res.status(401).json({ error: "Token inválido" });
+    return;
+  }
+
+  // Comprobación real de permisos: le pedimos a Firestore el documento
+  // /masters/{uid} usando el token del que dice ser el master. Si el token
+  // no es válido o no es ese uid, Firestore responderá con error y aquí
+  // cortamos. Si el documento no existe, también cortamos.
+  const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/masters/${uid}`;
+  try {
+    const checkResp = await fetch(firestoreUrl, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!checkResp.ok) {
+      res.status(403).json({ error: "Solo el master puede generar partidas" });
+      return;
+    }
+  } catch (e) {
+    res.status(500).json({ error: "No se pudo verificar el rol de master" });
     return;
   }
 
@@ -45,85 +86,37 @@ async function handler(req, res) {
 
   const prompt = construirPrompt(configuracion);
 
-  // Cos del JSON en el format exacte que demana l'API REST de Google
-  const postData = JSON.stringify({
-    contents: [
-      {
-        parts: [
-          {
-            text: prompt
-          }
-        ]
-      }
-    ]
-  });
-
   try {
-    // Executem la connexió utilitzant el mòdul blindat https passat a Promesa
-    const textoCompleto = await new Promise((resolve, reject) => {
-      const opciones = {
-        // CORRECCIÓ DE XARXA: El hostname ha de ser ÚNICAMENT el domini net (sense https:// al davant)
-        hostname: "generativelanguage.googleapis.com",
-        port: 443,
-        // Tota la resta de l'adreça i la clat tipus AQ. viatgen aquí
-        path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(postData)
-        }
-      };
-
-      const reqGoogle = https.request(opciones, (resGoogle) => {
-        let cuerpo = "";
-        resGoogle.on("data", (chunk) => { cuerpo += chunk; });
-        resGoogle.on("end", () => {
-          if (resGoogle.statusCode !== 200) {
-            reject(new Error(`Google respondió con estado ${resGoogle.statusCode}: ${cuerpo.slice(0, 150)}`));
-            return;
-          }
-          try {
-            const geminiData = JSON.parse(cuerpo);
-            
-            // Extracció tradicional i ultra-segura sense operadors que puguin fallar a Node v18/20
-            let texto = "";
-            if (
-              geminiData &&
-              geminiData.candidates &&
-              geminiData.candidates[0] &&
-              geminiData.candidates[0].content &&
-              geminiData.candidates[0].content.parts &&
-              geminiData.candidates[0].content.parts[0]
-            ) {
-              texto = geminiData.candidates[0].content.parts[0].text || "";
-            }
-            resolve(texto);
-          } catch (e) {
-            reject(new Error("Error parseando el JSON de respuesta de Gemini"));
-          }
-        });
-      });
-
-      reqGoogle.on("error", (errorNet) => {
-        // Captura qualsevol error de connexió físic o de DNS
-        reject(errorNet);
-      });
-
-      // Enviem les dades i tanquem el flux de xarxa cap a Google
-      reqGoogle.write(postData);
-      reqGoogle.end();
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+    const geminiResp = await fetch(geminiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
     });
 
+    if (!geminiResp.ok) {
+      const errorBody = await geminiResp.text();
+      console.error("Error de Gemini:", geminiResp.status, errorBody);
+      res.status(500).json({ error: `Gemini respondió ${geminiResp.status}: ${errorBody.slice(0, 200)}` });
+      return;
+    }
+
+    const geminiData = await geminiResp.json();
+    const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     if (!textoCompleto) {
-      res.status(500).json({ error: "Gemini devolvió una respuesta de texto vacía" });
+      res.status(500).json({ error: "Gemini no devolvió texto (posible bloqueo de seguridad)" });
       return;
     }
 
     const { sinopsis, detalle } = separarSinopsisYDetalle(textoCompleto);
     res.status(200).json({ sinopsis, detalle });
-
   } catch (err) {
-    console.error("Error en la conexión HTTPS a Gemini:", err.message);
+    console.error(err);
     res.status(500).json({ error: `Error generando contenido con IA: ${err.message}` });
   }
 }

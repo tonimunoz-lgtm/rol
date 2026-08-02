@@ -6,45 +6,33 @@ import {
   collection, addDoc, serverTimestamp,
 } from "./firebase-config.js";
 
-// URL de la función serverless de Vercel que llama a Gemini de forma segura.
 const GENERAR_PARTIDA_URL = "/api/generar-partida";
-
 const $ = (id) => document.getElementById(id);
 let currentPartidaId = localStorage.getItem("runica_master_partidaId") || null;
 
-// ---------- Login Anónimo Automático para el Máster ----------
-// Eliminamos el evento de botón manual. Ahora se loguea solo al cargar.
-async function iniciarSesionMaster() {
+// ---------- Autenticación Anónima Automática y Abierta ----------
+async function asegurarAutenticacion() {
   if (!auth.currentUser) {
     try {
       await signInAnonymously(auth);
-      console.log("Máster autenticado automáticamente de forma anónima.");
+      console.log("Acceso concedido de forma anónima.");
     } catch (err) {
-      console.error("Error en el login anónimo:", err);
-      if ($("login-error")) $("login-error").textContent = "Error al conectar con el servidor de juego.";
+      console.error("Error en login anónimo:", err);
     }
   }
 }
 
-// Ejecutar el login anónimo de inmediato al cargar el script
-iniciarSesionMaster();
-
-$("logout-btn").addEventListener("click", () => auth.signOut());
+asegurarAutenticacion();
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    $("login-view").style.display = "block";
+    if ($("login-view")) $("login-view").style.display = "block";
     $("master-view").style.display = "none";
     return;
   }
   
-  // Imprime esto en tu consola para saber qué ID poner en Firestore
-  console.log("TU COMPROBACIÓN DE FIRESTORE: Crea un documento en /masters/ con este ID exacto ->", user.uid);
-
-  // NOTA DE SEGURIDAD: esto solo oculta/muestra UI. El control real de que
-  // este usuario es "master" lo hacen las reglas de Firestore,
-  // comprobando un documento en /masters/{uid}.
-  $("login-view").style.display = "none";
+  // Acceso directo a la interfaz del Máster para cualquiera
+  if ($("login-view")) $("login-view").style.display = "none";
   $("master-view").style.display = "grid";
 
   if (currentPartidaId) {
@@ -52,6 +40,7 @@ onAuthStateChanged(auth, async (user) => {
     cargarPartidaExistente(currentPartidaId);
   }
 });
+
 
 // ---------- Navegación entre secciones ----------
 document.querySelectorAll("#master-sidebar nav a").forEach((link) => {

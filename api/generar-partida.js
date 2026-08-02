@@ -1,13 +1,10 @@
 // api/generar-partida.js
-// Función serverless de Vercel (gratis en el plan Hobby). Sustituye a la
-// Cloud Function de Firebase para no depender del plan Blaze.
+// Función serverless de Vercel (gratis en el plan Hobby).
 //
-// NOTA sobre la API key: Google está migrando las claves de Gemini de las
-// clásicas "AIza..." a un nuevo formato "AQ...." (auth key, ligada a una
-// cuenta de servicio). Las claves nuevas NO funcionan si se envían como
-// parámetro ?key= en la URL (así lo hacía la librería @google/generative-ai),
-// hay que enviarlas en la cabecera `x-goog-api-key`. Por eso aquí llamamos
-// directamente a la API REST con fetch, sin depender de esa librería.
+// Usamos Groq en vez de Gemini: tier gratuito generoso, sin tarjeta, y una
+// autenticación estándar (Authorization: Bearer) sin los líos de formato de
+// clave que está teniendo Gemini ahora mismo (claves "AQ." rechazadas).
+// La API de Groq es compatible con el formato de OpenAI (chat completions).
 //
 // Seguridad sin plan de pago ni cuentas de servicio:
 // El master envía su ID Token de Firebase Auth. En vez de verificarlo con
@@ -18,8 +15,8 @@
 
 // Guarda esto en Vercel → Project Settings → Environment Variables,
 // nunca hace falta escribirlo en el código ni en el repositorio.
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = "openai/gpt-oss-120b";
 const FIREBASE_PROJECT_ID = "femjoc";
 
 module.exports = async (req, res) => {
@@ -87,29 +84,30 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-    const geminiResp = await fetch(geminiUrl, {
+    const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
+    const groqResp = await fetch(groqUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
+        Authorization: `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: prompt }],
       }),
     });
 
-    if (!geminiResp.ok) {
-      const errorBody = await geminiResp.text();
-      console.error("Error de Gemini:", geminiResp.status, errorBody);
-      res.status(500).json({ error: `Gemini respondió ${geminiResp.status}: ${errorBody.slice(0, 200)}` });
+    if (!groqResp.ok) {
+      const errorBody = await groqResp.text();
+      console.error("Error de Groq:", groqResp.status, errorBody);
+      res.status(500).json({ error: `Groq respondió ${groqResp.status}: ${errorBody.slice(0, 200)}` });
       return;
     }
 
-    const geminiData = await geminiResp.json();
-    const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const groqData = await groqResp.json();
+    const textoCompleto = groqData?.choices?.[0]?.message?.content || "";
     if (!textoCompleto) {
-      res.status(500).json({ error: "Gemini no devolvió texto (posible bloqueo de seguridad)" });
+      res.status(500).json({ error: "Groq no devolvió texto" });
       return;
     }
 

@@ -189,15 +189,25 @@
     <!-- ---------- Marcadores AR ---------- -->
     <section id="section-marcadores" class="section-panel">
       <h2 class="display">Marcadores AR</h2>
-      <p style="color:var(--parchment-dim);">
-        1) Genera tu archivo <code>targets.mind</code> con el
-        <a href="https://hiukim.github.io/mind-ar-js-doc/tools/compile" target="_blank">compilador oficial de MindAR</a>
-        a partir de las fotos de tu sala. 2) Súbelo aquí. 3) Asocia cada marcador a su contenido.
+      <p style="color:var(--parchment-dim); max-width:640px;">
+        Como no usamos Firebase Storage (requiere plan de pago), los archivos de marcadores se
+        sirven como archivos estáticos directamente desde tu repositorio, gratis en Vercel.
       </p>
+      <ol style="color:var(--parchment-dim); font-size:.9rem; max-width:640px;">
+        <li>Genera tu <code>targets.mind</code> con el
+          <a href="https://hiukim.github.io/mind-ar-js-doc/tools/compile" target="_blank">compilador oficial de MindAR</a>
+          a partir de las fotos de tu sala.</li>
+        <li>Sube ese archivo a tu repositorio de GitHub, dentro de una carpeta
+          <code>/marcadores/</code> en la raíz (créala si no existe, con "Add file" → "Upload files").</li>
+        <li>Pega aquí la ruta con la que Vercel lo sirve (normalmente <code>/marcadores/targets.mind</code>).</li>
+      </ol>
       <div class="field">
-        <label>Subir targets.mind</label>
-        <input id="upload-targets" type="file" accept=".mind" />
+        <label>Ruta del archivo targets.mind</label>
+        <input id="targets-path" placeholder="/marcadores/targets.mind" />
       </div>
+      <button id="btn-guardar-targets-path" class="primary">Guardar ruta</button>
+      <p id="targets-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
+
       <div id="lista-marcadores" class="grid-2" style="margin-top:1em;"></div>
       <button id="btn-nuevo-marcador" style="margin-top:1em;">+ Asociar nuevo marcador</button>
     </section>

@@ -1,74 +1,100 @@
 # Rúnica — Juego de rol colaborativo con AR por marcadores
 
-PWA en HTML/JS puro (sin build) + Firebase + Gemini API + Web Speech API, desplegable en Vercel.
+PWA en HTML/JS puro (sin build) + Firebase (Spark, gratis) + Gemini API vía Vercel + Web Speech API.
+100% gratuito: no requiere plan Blaze de Firebase ni tarjeta de crédito en ningún servicio.
 
 ## Estructura
 
 ```
-index.html          → vista jugador (cámara AR con MindAR)
-master.html          → panel del master (crea partida, marcadores, narración en vivo)
-manifest.json        → PWA instalable
-service-worker.js    → cache offline del shell
-css/style.css        → sistema de diseño
+index.html              → vista jugador (cámara AR con MindAR)
+master.html             → panel del master (crea partida, marcadores, narración en vivo)
+manifest.json           → PWA instalable
+service-worker.js       → cache offline del shell
+css/style.css           → sistema de diseño
 js/firebase-config.js
-js/app.js             → lógica jugador
-js/master.js          → lógica master
-functions/index.js    → Cloud Function que llama a Gemini (la key vive aquí, no en el cliente)
+js/app.js                → lógica jugador
+js/master.js             → lógica master
+api/generar-partida.js   → función serverless de Vercel que llama a Gemini (la key vive aquí, no en el cliente)
+package.json             → dependencias de la función serverless
 firestore.rules
-storage.rules
 firebase.json
-icons/                → logo generado (icon-192.png, icon-512.png, icon-maskable-512.png)
+icons/                   → logo generado (icon-192.png, icon-512.png, icon-maskable-512.png)
 ```
 
 ## Paso 1 — Subir el repo a GitHub
 
+Sube todos los archivos de este proyecto a la raíz de tu repositorio (no dentro de una subcarpeta).
+Si usas la web de GitHub: "Add file" → "Upload files" → arrastra todo el contenido descomprimido.
+Si usas terminal:
 ```bash
 cd rol-ar-game
-git add .
-git commit -m "Base inicial: PWA + AR + Firebase + wizard IA"
+git add -A
+git commit -m "Base del proyecto"
 git branch -M main
-git remote add origin https://github.com/TU_USUARIO/rol-ar-game.git
-git push -u origin main
+git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
+git push -u origin main --force
 ```
 
 ## Paso 2 — Conectar con Vercel
 
-Como ya tienes `rol-gamma.vercel.app`, solo tienes que apuntar ese proyecto de Vercel a este repo de GitHub (Vercel → Project Settings → Git → conectar repositorio). Al ser HTML/JS puro, Vercel no necesita build command ni output directory: sirve `index.html` directamente. Cada `git push` a `main` desplegará automáticamente.
+Con `rol-gamma.vercel.app` ya creado, apúntalo a este repo (Vercel → Project Settings → Git →
+conectar repositorio). Es HTML/JS puro: sin build command, sin output directory especial. Cada
+push a `main` despliega automáticamente, y `api/generar-partida.js` se detecta solo como función
+serverless.
 
-## Paso 3 — Firebase: Auth, Firestore y Storage
+## Paso 3 — Firebase: Auth y Firestore (plan gratuito Spark, sin Storage ni Blaze)
 
 En la consola de Firebase del proyecto `femjoc`:
 
-1. **Authentication** → habilita **Anónimo** (para jugadores) y **Email/contraseña** (para el master).
-2. Crea manualmente tu usuario master (Authentication → Add user).
-3. **Firestore Database** → créala en modo producción, región `europe-west1`.
-4. **Storage** → actívalo, misma región.
-5. Despliega las reglas incluidas:
-   ```bash
-   npm install -g firebase-tools
-   firebase login
-   firebase use femjoc
-   firebase deploy --only firestore:rules,storage:rules
-   ```
-6. **Muy importante**: para que tu usuario master tenga permisos, crea a mano en Firestore un documento en la colección `masters` con el **UID de tu usuario** como ID del documento (puede estar vacío, solo debe existir). Lo ves en Authentication → tu usuario → UID.
+1. **Authentication** → Sign-in method → habilita **Anónimo** y **Email/contraseña**.
+2. **Authentication** → Users → "Add user" → crea tu usuario master (email + contraseña).
+3. **Firestore Database** → créala en modo producción, región `europe-west1`. Firestore es
+   gratis en el plan Spark, con cuotas diarias amplias — no hace falta Blaze para esto.
+4. Copia el **UID** de tu usuario master (pestaña Users) y crea a mano un documento:
+   Firestore → "Start collection" → ID: `masters` → ID del documento: pega tu UID → guarda vacío.
+5. Despliega las reglas de Firestore sin CLI: Firestore Database → pestaña **"Reglas"** → borra
+   lo que haya → pega el contenido de `firestore.rules` (está en este repo) → **Publicar**.
 
-## Paso 4 — Cloud Function con Gemini (la IA que genera la partida)
+No usamos Firebase Storage ni Cloud Functions en absoluto, así que no hace falta el plan Blaze
+para nada de este proyecto.
 
-1. Consigue tu API key de Gemini en [Google AI Studio](https://aistudio.google.com/app/apikey) (**genera una nueva**, no reutilices la que pegaste antes en el chat).
-2. Guarda la key como secreto de Firebase (nunca en el código):
-   ```bash
-   firebase functions:secrets:set GEMINI_API_KEY
-   ```
-3. Instala dependencias y despliega:
-   ```bash
-   cd functions
-   npm install
-   cd ..
-   firebase deploy --only functions
-   ```
-4. Copia la URL que te da el deploy y pégala en `js/master.js`, constante `GENERAR_PARTIDA_URL`.
+## Paso 4 — La IA (Gemini) vía función serverless de Vercel
 
-## Paso 4b — Sistema de fichas de personaje y habilidades
+La llamada a Gemini vive en `api/generar-partida.js`, que Vercel detecta automáticamente como
+función serverless (gratis en el plan Hobby, sin CLI, sin cuentas de servicio).
+
+1. En tu proyecto de Vercel (`rol-gamma`) → **Settings → Environment Variables**.
+2. Añade una variable:
+   - Nombre: `GEMINI_API_KEY`
+   - Valor: tu clave de [Google AI Studio](https://aistudio.google.com/app/apikey)
+   - Entorno: Production (y Preview si quieres probar en ramas)
+3. Guarda y haz un **Redeploy** (Deployments → los tres puntos del último deploy → "Redeploy"),
+   para que la función serverless recoja la variable nueva.
+
+`js/master.js` ya llama a `/api/generar-partida` (misma URL de tu web, sin problemas de CORS), y
+la función verifica que quien pregunta es tu usuario master consultando Firestore con su propio
+token de sesión — sin necesitar credenciales adicionales.
+
+## Paso 5 — Marcadores AR (MindAR), sin Firebase Storage
+
+Los archivos de marcadores (`targets.mind` y, más adelante, vídeos/imágenes) se sirven como
+archivos estáticos directamente desde el repositorio — Vercel los sirve gratis, igual que
+`index.html`.
+
+1. Haz una foto nítida y con buen contraste de cada zona/objeto de la sala (evita superficies
+   lisas o repetitivas).
+2. Ve al [compilador oficial de MindAR](https://hiukim.github.io/mind-ar-js-doc/tools/compile),
+   sube todas las fotos juntas y descarga el `targets.mind` resultante (un único archivo sirve
+   para varios marcadores, cada uno con un índice 0, 1, 2...).
+3. Súbelo a tu repo de GitHub, dentro de una carpeta nueva `/marcadores/` en la raíz
+   (GitHub → "Add file" → "Upload files").
+4. Desde `/master.html` → "Marcadores AR", pega la ruta (`/marcadores/targets.mind`) y guarda.
+
+La asociación fina "marcador índice N → vídeo/pista concreta" es la siguiente pieza a construir
+(ahora mismo el escaneo ya detecta los marcadores del `targets.mind`, pero todos disparan el
+mismo comportamiento genérico).
+
+## Paso 6 — Sistema de fichas de personaje y habilidades
 
 Desde `/master.html` → **Personajes**:
 
@@ -84,27 +110,26 @@ Desde `/master.html` → **Personajes**:
 
 Crea tantas plantillas como jugadores esperas tener (o más, para que puedan elegir).
 
-## Paso 5 — Marcadores AR (MindAR)
+## Paso 7 — Probarlo
 
-1. Haz una foto nítida y con buen contraste de cada zona/objeto de la sala que quieras convertir en marcador (evita superficies lisas o repetitivas).
-2. Ve al [compilador oficial de MindAR](https://hiukim.github.io/mind-ar-js-doc/tools/compile), sube todas las fotos juntas y descarga el `targets.mind` resultante (un único archivo sirve para varios marcadores, cada uno con un índice 0, 1, 2...).
-3. Desde el panel del master (`/master.html` → "Marcadores AR"), sube ese `targets.mind`.
-4. Asocia cada índice de marcador a su contenido (vídeo, imagen, texto, pista) — esta parte de asociación fina la iteramos en el siguiente paso de desarrollo, ahora mismo el scaffold ya carga la escena AR y detecta los marcadores.
-
-## Paso 6 — Probarlo
-
-- Jugador: abre `https://rol-gamma.vercel.app/` en el móvil, introduce el código de partida que te dé el master.
-- Master: abre `https://rol-gamma.vercel.app/master.html`, inicia sesión, rellena el wizard y pulsa "Generar partida con IA".
+- Jugador: abre `https://rol-gamma.vercel.app/` en el móvil, introduce el código de partida que
+  te dé el master.
+- Master: abre `https://rol-gamma.vercel.app/master.html`, inicia sesión, rellena el wizard y
+  pulsa "Generar partida con IA".
 
 ## Sobre las claves
 
-- `firebaseConfig` en `js/firebase-config.js` es pública por diseño — no pasa nada por que esté en el código del cliente. La seguridad real la dan `firestore.rules` y `storage.rules`.
-- La API key de Gemini **nunca** debe estar en el frontend. Vive solo en `functions/index.js`, como secreto de Firebase.
-- La clave que pegaste en el chat (`AQ.Ab8...`) no la he usado en ningún archivo — regenérala desde su consola de origen si es una clave de API real.
+- `firebaseConfig` en `js/firebase-config.js` es pública por diseño — no pasa nada por que esté
+  en el código del cliente. La seguridad real la da `firestore.rules`.
+- La API key de Gemini se guarda como **variable de entorno en Vercel** (`GEMINI_API_KEY`), no en
+  el código ni en el repositorio. Solo la lee `api/generar-partida.js`, que corre en el servidor
+  — nunca llega al navegador. Cuando puedas, rótala en Google AI Studio y actualiza el valor en
+  Vercel (no hace falta tocar código, solo un "Redeploy").
 
 ## Siguientes pasos sugeridos
 
-- Editor visual en el panel master para arrastrar cada foto-marcador y asignarle vídeo/pista sin tocar Firestore a mano.
-- Ficha de personaje completa (habilidades, clases, inventario con objetos reales).
+- Asociación fina de cada marcador AR a su vídeo/pista/PNJ concreto.
 - Sistema de combate por turnos sincronizado entre los 20 jugadores.
-- Mejorar la voz con ElevenLabs (tier gratuito limitado) si Web Speech API se queda corta en expresividad.
+- Inventario con objetos reales recogidos en los marcadores.
+- Mejorar la voz con ElevenLabs (tier gratuito limitado) si Web Speech API se queda corta en
+  expresividad.

@@ -170,6 +170,43 @@ input:focus, select:focus, textarea:focus {
   pointer-events: none;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(20, 17, 13, 0.92);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1em;
+}
+.modal-overlay.visible { display: flex; }
+
+.atributo-pill {
+  font-family: var(--font-mono);
+  text-align: center;
+  border: 1px solid var(--moss);
+  border-radius: var(--radius);
+  padding: .5em .3em;
+  font-size: .85rem;
+}
+.atributo-pill span { display: block; font-size: .65rem; color: var(--parchment-dim); }
+
+.habilidad-card {
+  border: 1px solid #3a3226;
+  border-radius: var(--radius);
+  padding: .7em .9em;
+  margin-bottom: .6em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .8em;
+}
+.habilidad-card .h-info { flex: 1; }
+.habilidad-card .h-nombre { font-weight: 600; color: var(--amber); font-size: .9rem; }
+.habilidad-card .h-desc { font-size: .8rem; color: var(--parchment-dim); margin: .2em 0 0 0; }
+.habilidad-card .h-usos { font-family: var(--font-mono); font-size: .75rem; white-space: nowrap; }
+
 /* ---------- Vista Master (panel admin) ---------- */
 #master-view {
   display: grid;

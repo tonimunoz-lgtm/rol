@@ -10,6 +10,12 @@ admin.initializeApp();
 // Se define aquí y se asigna con: firebase functions:secrets:set GEMINI_API_KEY
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
+// Valor de respaldo temporal (solo se usa si el secreto de arriba no está
+// configurado todavía). Vive SOLO aquí, en el servidor — nunca se envía al
+// navegador. En cuanto puedas, rota esta clave en Google AI Studio, borra
+// esta línea y usa exclusivamente `firebase functions:secrets:set`.
+const GEMINI_API_KEY_FALLBACK = "AQ.Ab8RN6Ik5y1QQxNMd62UylPz7gYS9Qg2M7g0lNqyCW0mXCBKbg";
+
 exports.generarPartida = onRequest(
   { secrets: [GEMINI_API_KEY], cors: true, region: "europe-west1" },
   async (req, res) => {
@@ -43,7 +49,8 @@ exports.generarPartida = onRequest(
 
     // 3. Llamar a Gemini
     try {
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
+      const apiKey = GEMINI_API_KEY.value() || GEMINI_API_KEY_FALLBACK;
+      const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       const result = await model.generateContent(prompt);
       const textoCompleto = result.response.text();

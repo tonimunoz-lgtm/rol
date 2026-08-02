@@ -6,31 +6,25 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-// La API key de Gemini se guarda como "secret" de Firebase, nunca en el código.
-// Se define aquí y se asigna con: firebase functions:secrets:set GEMINI_API_KEY
 const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
-
-// Valor de respaldo temporal (solo se usa si el secreto de arriba no está
-// configurado todavía). Vive SOLO aquí, en el servidor — nunca se envía al
-// navegador. En cuanto puedas, rota esta clave en Google AI Studio, borra
-// esta línea y usa exclusivamente `firebase functions:secrets:set`.
 const GEMINI_API_KEY_FALLBACK = "AQ.Ab8RN6Ik5y1QQxNMd62UylPz7gYS9Qg2M7g0lNqyCW0mXCBKbg";
 
 exports.generarPartida = onRequest(
   { secrets: [GEMINI_API_KEY], cors: true, region: "europe-west1" },
   async (req, res) => {
     
-    // CORRECCIÓ: Permet que Firebase Functions v2 gestioni la petició de validació prèvia de CORS (Preflight)
+    // CORRECCIÓN DE SEGURETEDAD PARA EL CORS DIRECTO EN REPOSITORIO:
     if (req.method === "OPTIONS") {
-      return res.end();
+      res.set("Access-Control-Allow-Origin", "https://vercel.app");
+      res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      return res.status(204).send("");
     }
 
-    // Un cop passat el filtre de CORS, comprovem que la petició de dades sigui un POST
     if (req.method !== "POST") {
       return res.status(405).send("Método no permitido");
     }
 
-    // 1. Verificar que quien llama está autenticado (idealmente, que es el master)
     const authHeader = req.headers.authorization || "";
     const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!idToken) return res.status(401).json({ error: "Falta token de autenticación" });
@@ -42,19 +36,16 @@ exports.generarPartida = onRequest(
       return res.status(401).json({ error: "Token inválido" });
     }
 
-    // Comprobación de rol master: exige un documento en /masters/{uid}
     const masterDoc = await admin.firestore().doc(`masters/${decoded.uid}`).get();
     if (!masterDoc.exists) {
       return res.status(403).json({ error: "Solo el master puede generar partidas" });
     }
 
-    // 2. Construir el prompt a partir del wizard
     const { configuracion } = req.body;
     if (!configuracion) return res.status(400).json({ error: "Falta 'configuracion'" });
 
     const prompt = construirPrompt(configuracion);
 
-    // 3. Llamar a Gemini
     try {
       const apiKey = GEMINI_API_KEY.value() || GEMINI_API_KEY_FALLBACK;
       const genAI = new GoogleGenerativeAI(apiKey);

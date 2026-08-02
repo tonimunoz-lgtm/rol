@@ -33,12 +33,12 @@ async function handler(req, res) {
     return;
   }
 
-  // CORRECCIÓN: Extracción exacta del índice [1] del token JWT de Firebase
+  // CORRECCIÓN FIJA: Extraemos el segundo elemento [1] que contiene el payload real
   let uid;
   try {
     const partesToken = idToken.split(".");
     if (partesToken.length < 2) throw new Error("Formato de token incorrecto");
-    const payloadBase64 = partesToken[1]; // <--- Corregido índice aquí
+    const payloadBase64 = partesToken[1]; // <--- CORREGIDO COMPLETAMENTE AQUÍ
     const payloadJson = Buffer.from(payloadBase64, "base64url").toString("utf8");
     uid = JSON.parse(payloadJson).sub;
     if (!uid) throw new Error("Token sin uid");
@@ -51,7 +51,10 @@ async function handler(req, res) {
   const firestoreUrl = `https://googleapis.com{FIREBASE_PROJECT_ID}/databases/(default)/documents/masters/${uid}`;
   try {
     const checkResp = await fetch(firestoreUrl, {
-      headers: { Authorization: `Bearer ${idToken}` },
+      headers: { 
+        "Authorization": `Bearer ${idToken}`,
+        "Content-Type": "application/json"
+      },
     });
     if (!checkResp.ok) {
       const errText = await checkResp.text();
@@ -96,7 +99,7 @@ async function handler(req, res) {
 
     const geminiData = await geminiResp.json();
     
-    // CORRECCIÓN: Acceso seguro estándar sin sintaxis inválida ?.?.
+    // Acceso seguro al árbol de respuesta del JSON de Gemini
     const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     if (!textoCompleto) {
       res.status(500).json({ error: "Gemini no devolvió texto (posible bloqueo de seguridad)" });

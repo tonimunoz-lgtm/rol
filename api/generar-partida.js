@@ -33,13 +33,17 @@ async function handler(req, res) {
     return;
   }
 
+  // CORRECCIÓN: Aseguramos el acceso correcto al índice [1] tras el split del token
   let uid;
   try {
-    const payloadBase64 = idToken.split(".")[1];
+    const partesToken = idToken.split(".");
+    if (partesToken.length < 2) throw new Error("Formato de token incorrecto");
+    const payloadBase64 = partesToken[1];
     const payloadJson = Buffer.from(payloadBase64, "base64url").toString("utf8");
     uid = JSON.parse(payloadJson).sub;
     if (!uid) throw new Error("Token sin uid");
   } catch (e) {
+    console.error("Error parseando el token de Firebase:", e);
     res.status(401).json({ error: "Token inválido" });
     return;
   }
@@ -50,10 +54,15 @@ async function handler(req, res) {
       headers: { Authorization: `Bearer ${idToken}` },
     });
     if (!checkResp.ok) {
+      // Si Firestore responde pero da error de permisos (403, 404, etc)
+      const errText = await checkResp.text();
+      console.error(`Firestore devolvió estado ${checkResp.status}:`, errText);
       res.status(403).json({ error: "Solo el master puede generar partidas" });
       return;
     }
   } catch (e) {
+    // Si la petición fetch falla por red, DNS o error de código interno
+    console.error("Error de red/código al consultar Firestore:", e);
     res.status(500).json({ error: "No se pudo verificar el rol de master" });
     return;
   }
@@ -69,7 +78,6 @@ async function handler(req, res) {
   try {
     const geminiUrl = `https://googleapis.com{GEMINI_MODEL}:generateContent`;
     
-    // Enviamos la clave AQ de texto tal cual la copiaste de tu pantalla, usando la cabecera correcta
     const geminiResp = await fetch(geminiUrl, {
       method: "POST",
       headers: {

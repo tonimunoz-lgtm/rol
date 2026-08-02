@@ -43,7 +43,6 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    // CORRECCIÓN ESPECÍFICA: La API REST oficial requiere la clave en la URL mediante el parámetro ?key=
     const geminiUrl = `https://googleapis.com{GEMINI_API_KEY}`;
     
     const geminiResp = await fetch(geminiUrl, {
@@ -73,7 +72,7 @@ async function handler(req, res) {
 
     const geminiData = await geminiResp.json();
     
-    // Extracción segura y compatible con Node.js en Vercel
+    // CORRECCIÓN SINTÁCTICA CRÍTICA: Extracción limpia compatible con Vercel sin ?.?.
     const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!textoCompleto) {

@@ -2,6 +2,13 @@
 // Función serverless de Vercel (gratis en el plan Hobby). Sustituye a la
 // Cloud Function de Firebase para no depender del plan Blaze.
 //
+// NOTA sobre la API key: Google está migrando las claves de Gemini de las
+// clásicas "AIza..." a un nuevo formato "AQ...." (auth key, ligada a una
+// cuenta de servicio). Las claves nuevas NO funcionan si se envían como
+// parámetro ?key= en la URL (así lo hacía la librería @google/generative-ai),
+// hay que enviarlas en la cabecera `x-goog-api-key`. Por eso aquí llamamos
+// directamente a la API REST con fetch, sin depender de esa librería.
+//
 // Seguridad sin plan de pago ni cuentas de servicio:
 // El master envía su ID Token de Firebase Auth. En vez de verificarlo con
 // firebase-admin (que exigiría credenciales de cuenta de servicio), le
@@ -12,6 +19,7 @@
 // Guarda esto en Vercel → Project Settings → Environment Variables,
 // nunca hace falta escribirlo en el código ni en el repositorio.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = "gemini-2.5-flash";
 const FIREBASE_PROJECT_ID = "femjoc";
 
 module.exports = async (req, res) => {
@@ -79,42 +87,37 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    // URL oficial de la API REST de Gemini para el modelo especificado
-    const geminiUrl = "https://googleapis.com";
-
-    // Petición HTTP nativa usando la cabecera x-goog-api-key requerida por las claves AQ.
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
     const geminiResp = await fetch(geminiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
+        "x-goog-api-key": GEMINI_API_KEY,
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }]
-      })
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
     });
 
     if (!geminiResp.ok) {
-      const errorData = await geminiResp.json().catch(() => ({}));
-      console.error("Error de la API de Gemini:", errorData);
-      throw new Error(`Gemini respondió con estado ${geminiResp.status}`);
+      const errorBody = await geminiResp.text();
+      console.error("Error de Gemini:", geminiResp.status, errorBody);
+      res.status(500).json({ error: `Gemini respondió ${geminiResp.status}: ${errorBody.slice(0, 200)}` });
+      return;
     }
 
-    const data = await geminiResp.json();
-    
-    // Extracción segura del texto del formato JSON estándar de Gemini
-    const textoCompleto = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const geminiData = await geminiResp.json();
+    const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     if (!textoCompleto) {
-      throw new Error("La respuesta de Gemini no contiene texto válido");
+      res.status(500).json({ error: "Gemini no devolvió texto (posible bloqueo de seguridad)" });
+      return;
     }
 
     const { sinopsis, detalle } = separarSinopsisYDetalle(textoCompleto);
     res.status(200).json({ sinopsis, detalle });
   } catch (err) {
-    console.error("Error en el bloque de Gemini:", err);
-    res.status(500).json({ error: "Error generando contenido con IA" });
+    console.error(err);
+    res.status(500).json({ error: `Error generando contenido con IA: ${err.message}` });
   }
 }
 

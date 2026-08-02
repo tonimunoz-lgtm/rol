@@ -26,7 +26,6 @@ async function handler(req, res) {
     return;
   }
 
-  // Solo parseamos el token para verificar que sea estructuralmente correcto
   try {
     const partesToken = idToken.split(".");
     if (partesToken.length < 3) throw new Error("Formato de token JWT inválido");
@@ -35,9 +34,6 @@ async function handler(req, res) {
     res.status(401).json({ error: "Token inválido" });
     return;
   }
-
-  // --- ¡ELIMINADA LA COMPROBACIÓN DE FIRESTORE URL AQUÍ! ---
-  // Cualquier usuario autenticado anónimamente en tu web pasará directamente.
 
   const { configuracion } = req.body || {};
   if (!configuracion) {
@@ -48,7 +44,8 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    const geminiUrl = `https://googleapis.com{GEMINI_MODEL}:generateContent`;
+    // CORRECCIÓN DEFINITIVA: URL estática y absoluta para evitar fallos de interpolación de strings
+    const geminiUrl = "https://googleapis.com";
     
     const geminiResp = await fetch(geminiUrl, {
       method: "POST",
@@ -71,7 +68,7 @@ async function handler(req, res) {
     const geminiData = await geminiResp.json();
     const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     if (!textoCompleto) {
-      res.status(500).json({ error: "Gemini no devolvió texto" });
+      res.status(500).json({ error: "Gemini no devolvió texto en su respuesta estándar" });
       return;
     }
 

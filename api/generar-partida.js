@@ -1,5 +1,6 @@
 // api/generar-partida.js
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// Limpiamos cualquier espacio o salto de línea invisible que se haya colado al pegar la clave en Vercel
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : "";
 
 module.exports = async (req, res) => {
   try {
@@ -72,8 +73,18 @@ async function handler(req, res) {
 
     const geminiData = await geminiResp.json();
     
-    // CORRECCIÓN SINTÁCTICA CRÍTICA: Extracción limpia compatible con Vercel sin ?.?.
-    const textoCompleto = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    // CORRECCIÓN SINTÁCTICA CRÍTICA: Comprobación segura y tradicional compatible con Vercel
+    let textoCompleto = "";
+    if (
+      geminiData &&
+      geminiData.candidates &&
+      geminiData.candidates[0] &&
+      geminiData.candidates[0].content &&
+      geminiData.candidates[0].content.parts &&
+      geminiData.candidates[0].content.parts[0]
+    ) {
+      textoCompleto = geminiData.candidates[0].content.parts[0].text || "";
+    }
 
     if (!textoCompleto) {
       console.error("Estructura JSON recibida inesperada:", JSON.stringify(geminiData));

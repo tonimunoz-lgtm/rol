@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Rúnica — Escanea la sala</title>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#14110D" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png" />
+<link rel="stylesheet" href="/css/style.css" />
+
+<!-- A-Frame + MindAR (image tracking). Se cargan desde CDN, se ejecutan en el móvil del jugador. -->
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+</head>
+<body>
+
+<div id="player-view">
+
+  <div id="hud-top">
+    <span class="player-name mono" id="player-name-label">Cargando...</span>
+    <button id="btn-logout" style="font-size:.75rem;padding:.4em .8em;">Salir</button>
+  </div>
+
+  <div class="rune-ring" id="rune-ring"></div>
+  <div id="scanning-hint">Apunta la cámara a un marcador de la sala</div>
+
+  <div id="narration-box">
+    <p id="narration-text"></p>
+    <button id="btn-speak" class="primary" style="margin-top:.5em;">🔊 Escuchar narración</button>
+  </div>
+
+  <!-- La escena AR se inyecta aquí en tiempo de ejecución (ver js/app.js),
+       porque los marcadores y sus contenidos dependen de la partida activa. -->
+  <div id="ar-scene-container"></div>
+
+  <div id="hud-bottom">
+    <span class="stat-pill" id="stat-hp">❤ --</span>
+    <button id="btn-dice" class="primary">🎲 Tirar dado</button>
+    <span class="stat-pill" id="stat-inventory">🎒 --</span>
+  </div>
+
+</div>
+
+<script type="module" src="/js/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js').catch(console.warn);
+    });
+  }
+</script>
+</body>
+</html>

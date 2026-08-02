@@ -1,0 +1,42 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#1E1A14"/>
+      <stop offset="100%" stop-color="#14110D"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F0C93B"/>
+      <stop offset="100%" stop-color="#C9A227"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- anillo rúnico exterior -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="url(#gold)" stroke-width="6" opacity="0.9"/>
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#C9A227" stroke-width="2" opacity="0.5"/>
+
+  <!-- marcas rúnicas alrededor del anillo -->
+  <g stroke="url(#gold)" stroke-width="5" stroke-linecap="round">
+    <line x1="256" y1="56" x2="256" y2="86"/>
+    <line x1="256" y1="426" x2="256" y2="456"/>
+    <line x1="56" y1="256" x2="86" y2="256"/>
+    <line x1="426" y1="256" x2="456" y2="256"/>
+    <line x1="114" y1="114" x2="135" y2="135"/>
+    <line x1="377" y1="377" x2="398" y2="398"/>
+    <line x1="114" y1="398" x2="135" y2="377"/>
+    <line x1="377" y1="135" x2="398" y2="114"/>
+  </g>
+
+  <!-- d20 estilizado en el centro -->
+  <g transform="translate(256,266)">
+    <polygon points="0,-110 95,-55 95,55 0,110 -95,55 -95,-55"
+      fill="none" stroke="url(#gold)" stroke-width="7" stroke-linejoin="round"/>
+    <polygon points="0,-110 95,-55 0,0 -95,-55" fill="#C9A227" opacity="0.18"/>
+    <polygon points="0,110 95,55 0,0 -95,55" fill="#C9A227" opacity="0.12"/>
+    <line x1="0" y1="-110" x2="0" y2="110" stroke="url(#gold)" stroke-width="3" opacity="0.6"/>
+    <line x1="-95" y1="-55" x2="95" y2="55" stroke="url(#gold)" stroke-width="3" opacity="0.6"/>
+    <line x1="95" y1="-55" x2="-95" y2="55" stroke="url(#gold)" stroke-width="3" opacity="0.6"/>
+    <text x="0" y="14" text-anchor="middle" font-family="Georgia, serif" font-size="46" fill="#E8DCC0">20</text>
+  </g>
+</svg>

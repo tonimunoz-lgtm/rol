@@ -9,8 +9,6 @@
 // que nos confirme si existe /masters/{uid}. Firestore ya valida el token
 // por nosotros: si es falso o ha caducado, la petición fallará sola.
 
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
 // Guarda esto en Vercel → Project Settings → Environment Variables,
 // nunca hace falta escribirlo en el código ni en el repositorio.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -81,14 +79,41 @@ async function handler(req, res) {
   const prompt = construirPrompt(configuracion);
 
   try {
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent(prompt);
-    const textoCompleto = result.response.text();
+    // URL oficial de la API REST de Gemini para el modelo especificado
+    const geminiUrl = "https://googleapis.com";
+
+    // Petición HTTP nativa usando la cabecera x-goog-api-key requerida por las claves AQ.
+    const geminiResp = await fetch(geminiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      })
+    });
+
+    if (!geminiResp.ok) {
+      const errorData = await geminiResp.json().catch(() => ({}));
+      console.error("Error de la API de Gemini:", errorData);
+      throw new Error(`Gemini respondió con estado ${geminiResp.status}`);
+    }
+
+    const data = await geminiResp.json();
+    
+    // Extracción segura del texto del formato JSON estándar de Gemini
+    const textoCompleto = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!textoCompleto) {
+      throw new Error("La respuesta de Gemini no contiene texto válido");
+    }
+
     const { sinopsis, detalle } = separarSinopsisYDetalle(textoCompleto);
     res.status(200).json({ sinopsis, detalle });
   } catch (err) {
-    console.error(err);
+    console.error("Error en el bloque de Gemini:", err);
     res.status(500).json({ error: "Error generando contenido con IA" });
   }
 }

@@ -4,7 +4,7 @@ import {
   signInAnonymously, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, onSnapshot,
   collection, addDoc, serverTimestamp,
-  query, where, getDocs,
+  query, where, getDocs, runTransaction,
 } from "./firebase-config.js";
 
 const els = {
@@ -56,6 +56,10 @@ let ordenCombateActual = [];
 let jugadorDataActual = null;
 
 let jugadorRefActual = null;
+let guionActual = [];
+let escenaActualLocal = 0;
+let ultimaEscenaMostrada = null;
+let combateActivoAnterior = false;
 
 let currentPartidaId = localStorage.getItem("runica_partidaId") || null;
 let currentJugadorId = localStorage.getItem("runica_jugadorId") || null;
@@ -258,6 +262,27 @@ async function bootGame() {
     if (data.musicaAmbienteUrl && els.musicaAmbiente.getAttribute("src") !== data.musicaAmbienteUrl) {
       els.musicaAmbiente.src = data.musicaAmbienteUrl;
     }
+
+    // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
+    const combateActivoAhora = !!data.combate?.activo;
+    if (combateActivoAnterior && !combateActivoAhora) {
+      verificarAvanceGuion({ tipo: "combate_terminado" });
+    }
+    combateActivoAnterior = combateActivoAhora;
+
+    // Enemigos derrotados (vida a 0) pueden disparar el avance de escena
+    (data.enemigos || []).forEach((en) => {
+      if (en.vida <= 0) verificarAvanceGuion({ tipo: "enemigo_derrotado", valor: en.nombre });
+    });
+
+    // Guion: guardamos el estado y mostramos la narración si ha cambiado de escena
+    guionActual = data.guion || [];
+    const idx = data.escenaActual ?? 0;
+    escenaActualLocal = idx;
+    if (idx !== ultimaEscenaMostrada && guionActual[idx]) {
+      ultimaEscenaMostrada = idx;
+      if (guionActual[idx].narracion) mostrarNarracion(guionActual[idx].narracion);
+    }
   });
 
   // Eventos en vivo lanzados por el master o por otros jugadores
@@ -320,6 +345,45 @@ function renderCombateJugador(combate) {
     els.combateDañoForm.style.display = ordenCombateActual.length > 0 || enemigosCombateActual.length > 0 ? "flex" : "none";
   } else {
     els.combateDañoForm.style.display = "none";
+  }
+}
+
+// ---------- 3c. Guion automático: comprueba si la escena actual debe avanzar ----------
+async function verificarAvanceGuion(contexto) {
+  if (!guionActual || guionActual.length === 0) return;
+  const idx = escenaActualLocal ?? 0;
+  const escena = guionActual[idx];
+  if (!escena || !escena.trigger || escena.trigger.tipo === "manual") return;
+  if (idx + 1 >= guionActual.length) return; // no hay escena siguiente
+
+  const t = escena.trigger;
+  const normaliza = (v) => String(v ?? "").trim().toLowerCase();
+  let cumple = false;
+  if (t.tipo === "marcador" && contexto.tipo === "marcador" && Number(t.valor) === Number(contexto.valor)) {
+    cumple = true;
+  } else if (t.tipo === "objeto" && contexto.tipo === "objeto" && normaliza(t.valor) === normaliza(contexto.valor)) {
+    cumple = true;
+  } else if (
+    t.tipo === "enemigo_derrotado" &&
+    contexto.tipo === "enemigo_derrotado" &&
+    normaliza(t.valor) === normaliza(contexto.valor)
+  ) {
+    cumple = true;
+  } else if (t.tipo === "combate_terminado" && contexto.tipo === "combate_terminado") {
+    cumple = true;
+  }
+  if (!cumple) return;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "partidas", currentPartidaId);
+      const snap = await tx.get(ref);
+      const actual = snap.data()?.escenaActual ?? 0;
+      if (actual !== idx) return; // otro jugador ya la avanzó, no dupliques
+      tx.update(ref, { escenaActual: idx + 1 });
+    });
+  } catch (e) {
+    console.warn("No se pudo avanzar de escena:", e.message);
   }
 }
 
@@ -939,6 +1003,7 @@ function manejarMarcadorEncontrado(marcador) {
   } else if (marcador.tipo === "objeto" && marcador.objeto) {
     recogerObjeto(marcador);
   }
+  verificarAvanceGuion({ tipo: "marcador", valor: marcador.targetIndex });
 }
 
 // ---------- 6b. Recoger un objeto de un marcador (una vez por jugador) ----------
@@ -977,4 +1042,6 @@ async function recogerObjeto(marcador) {
     objeto: marcador.objeto.nombre,
     timestamp: serverTimestamp(),
   });
+
+  verificarAvanceGuion({ tipo: "objeto", valor: marcador.objeto.nombre });
 }

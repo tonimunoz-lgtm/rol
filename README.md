@@ -135,6 +135,17 @@ Crea tantas plantillas como jugadores esperas tener (o más, para que puedan ele
   el código ni en el repositorio. Solo la lee `api/generar-partida.js`, que corre en el servidor
   — nunca llega al navegador. Si quieres rotarla, cambia el valor en Vercel y haz Redeploy.
 
+## Imágenes de ambientación (Pexels)
+
+En el panel "Inspeccionar" del jugador (pestaña Imágenes) se muestran fotos libres de derechos
+relacionadas con el lugar/estilo/época de la partida, buscadas automáticamente vía Pexels.
+
+1. Crea una cuenta gratuita en [pexels.com/api](https://www.pexels.com/api/) y copia tu API key.
+2. En Vercel → Settings → Environment Variables, añade `PEXELS_API_KEY` con esa clave → Redeploy.
+
+Si no la configuras, la pestaña de imágenes simplemente queda vacía; el resto de la app sigue
+funcionando igual.
+
 ## Voz IA opcional (ElevenLabs)
 
 Por defecto se usa la voz del dispositivo (Web Speech API, gratis, ilimitada). Si quieres probar

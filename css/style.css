@@ -296,7 +296,7 @@ h1.display::after, h2.display::after {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: var(--ink);
+  background: radial-gradient(circle at 50% 30%, #241d14 0%, var(--ink) 70%);
   overflow: hidden;
 }
 .fondo-img {
@@ -317,7 +317,7 @@ h1.display::after, h2.display::after {
   left: 0; right: 0;
   bottom: 92px;
   height: 42vh;
-  z-index: 16;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;

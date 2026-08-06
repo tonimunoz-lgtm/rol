@@ -25,6 +25,7 @@
       <a href="#" data-section="historia">Historia generada</a>
       <a href="#" data-section="personajes">Personajes</a>
       <a href="#" data-section="marcadores">Marcadores AR</a>
+      <a href="#" data-section="combate">Combate</a>
       <a href="#" data-section="en-vivo">Partida en vivo</a>
     </nav>
     <div style="margin-top:2em; font-size:.75rem; color:var(--parchment-dim);">
@@ -264,9 +265,10 @@
       <ol style="color:var(--parchment-dim); font-size:.9rem; max-width:640px;">
         <li>Genera tu <code>targets.mind</code> con el
           <a href="https://hiukim.github.io/mind-ar-js-doc/tools/compile" target="_blank">compilador oficial de MindAR</a>
-          a partir de las fotos de tu sala.</li>
-        <li>Sube ese archivo a tu repositorio de GitHub, dentro de una carpeta
-          <code>/marcadores/</code> en la raíz (créala si no existe, con "Add file" → "Upload files").</li>
+          a partir de las fotos de tu sala. Cada foto que subas ahí ocupa un índice (0, 1, 2...)
+          en el orden en que la subiste — apunta ese orden, lo necesitarás abajo.</li>
+        <li>Sube ese archivo (y los vídeos/imágenes que quieras usar) a tu repositorio de GitHub,
+          dentro de una carpeta <code>/marcadores/</code> en la raíz.</li>
         <li>Pega aquí la ruta con la que Vercel lo sirve (normalmente <code>/marcadores/targets.mind</code>).</li>
       </ol>
       <div class="field">
@@ -276,8 +278,106 @@
       <button id="btn-guardar-targets-path" class="primary">Guardar ruta</button>
       <p id="targets-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
 
-      <div id="lista-marcadores" class="grid-2" style="margin-top:1em;"></div>
-      <button id="btn-nuevo-marcador" style="margin-top:1em;">+ Asociar nuevo marcador</button>
+      <h3 style="margin-top:1.5em;">Contenido de cada marcador</h3>
+      <p style="color:var(--parchment-dim); font-size:.85rem;">
+        Asocia cada índice del <code>targets.mind</code> a lo que debe pasar cuando un jugador lo
+        enfoque con la cámara: reproducir un vídeo, mostrar una imagen, lanzar una narración con
+        voz, o entregar un objeto al inventario del jugador.
+      </p>
+      <div id="lista-marcadores"></div>
+      <button id="btn-nuevo-marcador" class="primary">+ Asociar nuevo marcador</button>
+
+      <div id="editor-marcador" class="card" style="margin-top:1.5em; display:none; max-width:640px;">
+        <h3 id="editor-marcador-titulo">Nuevo marcador</h3>
+        <input type="hidden" id="m-id" />
+        <div class="grid-2">
+          <div class="field">
+            <label>Índice del marcador (0, 1, 2... según el orden en targets.mind)</label>
+            <input id="m-index" type="number" min="0" value="0" />
+          </div>
+          <div class="field">
+            <label>Nombre (solo para identificarlo aquí)</label>
+            <input id="m-nombre" placeholder="Estantería del fondo" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Tipo de contenido</label>
+          <select id="m-tipo">
+            <option value="narracion">Narración (texto + voz)</option>
+            <option value="video">Vídeo</option>
+            <option value="imagen">Imagen</option>
+            <option value="objeto">Objeto para el inventario</option>
+          </select>
+        </div>
+
+        <div id="m-campos-narracion" class="m-campos">
+          <div class="field">
+            <label>Texto a mostrar y leer en voz alta</label>
+            <textarea id="m-texto" rows="4"></textarea>
+          </div>
+        </div>
+
+        <div id="m-campos-video" class="m-campos" style="display:none;">
+          <div class="field">
+            <label>Ruta del vídeo (dentro de /marcadores/ en tu repo)</label>
+            <input id="m-archivo-video" placeholder="/marcadores/video1.mp4" />
+          </div>
+        </div>
+
+        <div id="m-campos-imagen" class="m-campos" style="display:none;">
+          <div class="field">
+            <label>Ruta de la imagen (dentro de /marcadores/ en tu repo)</label>
+            <input id="m-archivo-imagen" placeholder="/marcadores/pista1.jpg" />
+          </div>
+        </div>
+
+        <div id="m-campos-objeto" class="m-campos" style="display:none;">
+          <div class="grid-2">
+            <div class="field"><label>Nombre del objeto</label><input id="m-obj-nombre" placeholder="Llave oxidada" /></div>
+            <div class="field"><label>Cantidad</label><input id="m-obj-cantidad" type="number" min="1" value="1" /></div>
+            <div class="field">
+              <label>Efecto al usarlo</label>
+              <select id="m-obj-efecto-tipo">
+                <option value="ninguno">Ninguno (solo narrativo)</option>
+                <option value="curar">Cura vida</option>
+                <option value="danio">Inflige daño</option>
+              </select>
+            </div>
+            <div class="field"><label>Valor del efecto</label><input id="m-obj-efecto-valor" type="number" min="0" value="0" /></div>
+          </div>
+          <div class="field"><label>Descripción del objeto</label><input id="m-obj-descripcion" placeholder="Qué es y para qué sirve" /></div>
+        </div>
+
+        <div style="display:flex; gap:.6em; margin-top:1em;">
+          <button id="btn-guardar-marcador" class="primary">Guardar marcador</button>
+          <button id="btn-cancelar-marcador">Cancelar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Combate por turnos ---------- -->
+    <section id="section-combate" class="section-panel">
+      <h2 class="display">Combate por turnos</h2>
+      <p style="color:var(--parchment-dim); max-width:640px;">
+        Al iniciar combate se tira iniciativa (1d20 + destreza) para cada jugador seleccionado y
+        se ordena de mayor a menor. Tú controlas el avance de turno; cada jugador ve en su móvil
+        de quién es el turno y puede lanzar su dado cuando le toque.
+      </p>
+
+      <div id="combate-inactivo">
+        <h3>Selecciona quién participa</h3>
+        <div id="lista-participantes-combate" class="grid-2"></div>
+        <button id="btn-iniciar-combate" class="primary" style="margin-top:1em;">⚔️ Iniciar combate</button>
+      </div>
+
+      <div id="combate-activo" style="display:none;">
+        <p class="mono" id="combate-ronda" style="color:var(--amber);"></p>
+        <div id="orden-combate"></div>
+        <div style="display:flex; gap:.6em; margin-top:1em;">
+          <button id="btn-siguiente-turno" class="primary">Siguiente turno →</button>
+          <button id="btn-terminar-combate" class="danger">Terminar combate</button>
+        </div>
+      </div>
     </section>
 
     <!-- ---------- Partida en vivo ---------- -->

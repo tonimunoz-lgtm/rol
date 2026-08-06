@@ -386,9 +386,14 @@
     <section id="section-en-vivo" class="section-panel">
       <h2 class="display">Partida en vivo</h2>
       <div class="field">
-        <label>Enviar narración a todos los jugadores</label>
+        <label>Enviar narración a todos los jugadores (se lee en voz alta)</label>
         <textarea id="narracion-en-vivo" rows="3" placeholder="Describe lo que ocurre ahora..."></textarea>
         <button id="btn-lanzar-narracion" class="primary">📢 Lanzar a todos</button>
+      </div>
+      <div class="field">
+        <label>Escribir en el chat como Master (aparece en "Inspeccionar" de los jugadores, sin voz)</label>
+        <textarea id="chat-master-texto" rows="2" placeholder="Un PNJ responde, un comentario, una pista suelta..."></textarea>
+        <button id="btn-enviar-chat-master">💬 Enviar al chat</button>
       </div>
       <h3>Jugadores conectados</h3>
       <div id="lista-jugadores-vivo" class="grid-2"></div>

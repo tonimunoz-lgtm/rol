@@ -136,7 +136,7 @@ function llamarGroq(url, prompt, forzarJson) {
   const body = {
     model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
-    max_tokens: 8000,
+    max_tokens: 3500,
     temperature: 0.7,
   };
   if (forzarJson) body.response_format = { type: "json_object" };
@@ -152,6 +152,11 @@ function llamarGroq(url, prompt, forzarJson) {
 }
 
 function construirPrompt(c) {
+  // Límite de personajes autogenerados para no exceder el presupuesto de
+  // tokens del plan gratuito de Groq; si hay más jugadores, el master añade
+  // el resto a mano desde "Personajes" (mismo editor, sin límite ahí).
+  const numPersonajes = Math.min(Number(c.numeroJugadores) || 6, 8);
+
   return `
 Eres el asistente de un Master de un juego de rol de mesa colaborativo con realidad aumentada,
 ambientado con marcadores físicos repartidos por una sala. Genera una partida completa y rica
@@ -172,7 +177,7 @@ Responde ÚNICAMENTE con un JSON válido (sin texto antes ni después, sin bloqu
 con exactamente esta forma:
 
 {
-  "sinopsis": "4-6 párrafos con la trama general que el master debe conocer: contexto, conflicto central, qué está en juego y cómo empieza la sesión",
+  "sinopsis": "3-4 párrafos con la trama general que el master debe conocer: contexto, conflicto central, qué está en juego y cómo empieza la sesión",
   "pnjs": [
     { "titulo": "Nombre del PNJ (raza/rol)", "texto": "Personalidad, motivación, secretos, cómo interactúa con los jugadores" }
   ],
@@ -201,12 +206,15 @@ con exactamente esta forma:
   ]
 }
 
-Genera exactamente ${c.numeroJugadores} personajes en "personajesSugeridos", variados entre sí
-(clases y roles distintos, complementarios en combate/exploración/social), cada uno con 2-4
-habilidades y 1-3 objetos de inventario inicial coherentes con la ambientación. El campo
-"efecto.tipo" de los objetos debe ser uno de: "curar", "danio", "ninguno". Ajusta el número de
-PNJs, pistas y trampasEncuentros según la duración y dificultad indicadas (una partida larga o
-difícil necesita más contenido). Los atributos deben ir de 1 a 20. Escribe todo en español.
+Genera exactamente ${numPersonajes} personajes en "personajesSugeridos" (aunque se hayan pedido
+${c.numeroJugadores} jugadores, limita los personajes generados a ${numPersonajes} para no
+exceder el espacio de respuesta disponible), variados entre sí (clases y roles distintos,
+complementarios en combate/exploración/social), cada uno con 2-3 habilidades y 1-2 objetos de
+inventario inicial coherentes con la ambientación. El campo "efecto.tipo" de los objetos debe ser
+uno de: "curar", "danio", "ninguno". Ajusta el número de PNJs (máximo 4), pistas (máximo 5) y
+trampasEncuentros (máximo 4) según la duración y dificultad indicadas, sin excederte de esos
+máximos. Los atributos deben ir de 1 a 20. Sé conciso en los textos (2-4 frases cada uno). Escribe
+todo en español.
 `.trim();
 }
 

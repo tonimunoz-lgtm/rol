@@ -151,6 +151,8 @@ $("btn-generar").addEventListener("click", async () => {
             dado: h.dado || "d20",
             usosPorPartida: Number(h.usosPorPartida) || 0,
             descripcion: h.descripcion || "",
+            atributo: "ninguno",
+            esAtaque: false,
           })),
           inventarioInicial: (p.inventarioInicial || []).map((o) => ({
             nombre: o.nombre || "",
@@ -296,7 +298,11 @@ function escucharLogEventos(codigo) {
         lineas.push(`🎲 Un jugador ha sacado un ${e.resultado}`);
       } else if (e.tipo === "habilidad") {
         lineas.push(
-          `✨ ${e.nombreJugador || "Jugador"} ha usado "${e.habilidad}"${e.tirada ? ` → tirada: ${e.tirada}` : ""}`
+          `✨ ${e.nombreJugador || "Jugador"} ha usado "${e.habilidad}"${e.objetivoNombre ? ` contra ${e.objetivoNombre}` : ""}${e.tirada ? ` → tirada: ${e.tirada}` : ""}${e.daño ? ` (${e.daño} de daño)` : ""}`
+        );
+      } else if (e.tipo === "trampa") {
+        lineas.push(
+          `⚠️ ${e.nombreJugador || "Jugador"} ${e.superada ? "esquiva" : "cae en"} una trampa (tirada ${e.tirada})${!e.superada ? ` — ${e.danio} de daño` : ""}`
         );
       } else if (e.tipo === "objeto") {
         lineas.push(`🎒 ${e.nombreJugador || "Jugador"} ha usado "${e.objeto}"`);
@@ -334,6 +340,7 @@ const ETIQUETAS_TIPO_MARCADOR = {
   video: "🎬 Vídeo",
   imagen: "🖼️ Imagen",
   objeto: "🎒 Objeto",
+  trampa: "⚠️ Trampa",
 };
 
 function escucharMarcadores(codigo) {
@@ -484,6 +491,10 @@ async function abrirEditorMarcador(marcadorId) {
     $("m-obj-efecto-tipo").value = "ninguno";
     $("m-obj-efecto-valor").value = 0;
     $("m-obj-descripcion").value = "";
+    $("m-trampa-atributo").value = "destreza";
+    $("m-trampa-dificultad").value = 12;
+    $("m-trampa-danio").value = 5;
+    $("m-trampa-descripcion").value = "";
     actualizarCamposMarcador();
     return;
   }
@@ -509,6 +520,11 @@ async function abrirEditorMarcador(marcadorId) {
   $("m-obj-efecto-tipo").value = o.efecto?.tipo || "ninguno";
   $("m-obj-efecto-valor").value = o.efecto?.valor ?? 0;
   $("m-obj-descripcion").value = o.descripcion || "";
+  const tr = m.trampa || {};
+  $("m-trampa-atributo").value = tr.atributo || "destreza";
+  $("m-trampa-dificultad").value = tr.dificultad ?? 12;
+  $("m-trampa-danio").value = tr.danio ?? 5;
+  $("m-trampa-descripcion").value = tr.descripcion || "";
   actualizarCamposMarcador();
 }
 
@@ -539,6 +555,15 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
             },
           }
         : null,
+    trampa:
+      tipo === "trampa"
+        ? {
+            atributo: $("m-trampa-atributo").value,
+            dificultad: Number($("m-trampa-dificultad").value) || 12,
+            danio: Number($("m-trampa-danio").value) || 0,
+            descripcion: $("m-trampa-descripcion").value.trim(),
+          }
+        : null,
   };
 
   const marcadorId = $("m-id").value;
@@ -554,6 +579,8 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
 const ETIQUETAS_TRIGGER = {
   marcador: "Índice del marcador",
   objeto: "Nombre exacto del objeto",
+  objeto_usado: "Nombre exacto del objeto",
+  habilidad_usada: "Nombre exacto de la habilidad",
   enemigo_derrotado: "Nombre exacto del enemigo",
 };
 
@@ -900,6 +927,8 @@ function crearFilaHabilidad(habilidad = null) {
     row.querySelector(".h-dado").value = habilidad.dado || "d20";
     row.querySelector(".h-usos").value = habilidad.usosPorPartida ?? 3;
     row.querySelector(".h-descripcion").value = habilidad.descripcion || "";
+    row.querySelector(".h-atributo").value = habilidad.atributo || "ninguno";
+    row.querySelector(".h-es-ataque").checked = !!habilidad.esAtaque;
   }
   row.querySelector(".btn-quitar-habilidad").addEventListener("click", () => row.remove());
   $("lista-habilidades-editor").appendChild(row);
@@ -975,6 +1004,8 @@ $("btn-guardar-personaje").addEventListener("click", async () => {
       dado: row.querySelector(".h-dado").value,
       usosPorPartida: Number(row.querySelector(".h-usos").value) || 0,
       descripcion: row.querySelector(".h-descripcion").value.trim(),
+      atributo: row.querySelector(".h-atributo").value,
+      esAtaque: row.querySelector(".h-es-ataque").checked,
     })
   );
 

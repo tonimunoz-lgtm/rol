@@ -214,6 +214,7 @@ async function cargarPartidaExistente(codigo) {
 function cargarHistoriaEnUI(data) {
   $("h-sinopsis").value = data.sinopsis || "";
   $("h-giro").value = data.giroFinal || "";
+  $("musica-ambiente-path").value = data.musicaAmbienteUrl || "";
   renderListaEditor("lista-pnjs", data.pnjs || []);
   renderListaEditor("lista-pistas", data.pistas || []);
   renderListaEditor("lista-trampas", data.trampasEncuentros || []);
@@ -304,6 +305,8 @@ function escucharLogEventos(codigo) {
         lineas.push(`🗣️ ${e.nombreJugador || "Jugador"}: "${e.texto}"`);
       } else if (e.tipo === "chat_master") {
         lineas.push(`🎙️ Master: "${e.texto}"`);
+      } else if (e.tipo === "daño") {
+        lineas.push(`⚔️ ${e.atacante} inflige ${e.valor} de daño a ${e.objetivoNombre}`);
       }
     });
     log.innerHTML = lineas.map((l) => `<div>${l}</div>`).join("") || "<em>Sin eventos todavía.</em>";
@@ -377,7 +380,79 @@ function actualizarCamposMarcador() {
   document.querySelectorAll(".m-campos").forEach((el) => (el.style.display = "none"));
   const bloque = $(`m-campos-${tipo}`);
   if (bloque) bloque.style.display = "block";
+  if (tipo === "video" || tipo === "imagen") {
+    $("m-campos-posicion").style.display = "block";
+    sincronizarPreviewDesdeInputs();
+  }
 }
+
+// ---------- Editor visual de posición/escala (arrastrar y redimensionar) ----------
+const PREVIEW_PX = 220;
+const PX_POR_UNIDAD = 90;
+
+function sincronizarPreviewDesdeInputs() {
+  const ancho = parseFloat($("m-ancho").value) || 1;
+  const alto = parseFloat($("m-alto").value) || 0.6;
+  const x = parseFloat($("m-pos-x").value) || 0;
+  const y = parseFloat($("m-pos-y").value) || 0;
+  const item = $("m-preview-item");
+  const wPx = ancho * PX_POR_UNIDAD;
+  const hPx = alto * PX_POR_UNIDAD;
+  item.style.width = `${wPx}px`;
+  item.style.height = `${hPx}px`;
+  item.style.left = `${PREVIEW_PX / 2 + x * PX_POR_UNIDAD - wPx / 2}px`;
+  item.style.top = `${PREVIEW_PX / 2 - y * PX_POR_UNIDAD - hPx / 2}px`;
+}
+
+["m-ancho", "m-alto", "m-pos-x", "m-pos-y"].forEach((id) =>
+  $(id).addEventListener("input", sincronizarPreviewDesdeInputs)
+);
+
+let arrastrandoMarcador = false;
+$("m-preview-item").addEventListener("pointerdown", (e) => {
+  if (e.target.id === "m-preview-resize") return;
+  arrastrandoMarcador = true;
+  const rect = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.dataset.offsetX = e.clientX - rect.left;
+  e.currentTarget.dataset.offsetY = e.clientY - rect.top;
+  e.currentTarget.setPointerCapture(e.pointerId);
+});
+$("m-preview-item").addEventListener("pointermove", (e) => {
+  if (!arrastrandoMarcador) return;
+  const item = e.currentTarget;
+  const boxRect = $("m-preview-box").getBoundingClientRect();
+  const left = e.clientX - boxRect.left - Number(item.dataset.offsetX || 0);
+  const top = e.clientY - boxRect.top - Number(item.dataset.offsetY || 0);
+  item.style.left = `${left}px`;
+  item.style.top = `${top}px`;
+  const wPx = item.offsetWidth;
+  const hPx = item.offsetHeight;
+  $("m-pos-x").value = ((left + wPx / 2 - PREVIEW_PX / 2) / PX_POR_UNIDAD).toFixed(2);
+  $("m-pos-y").value = (-(top + hPx / 2 - PREVIEW_PX / 2) / PX_POR_UNIDAD).toFixed(2);
+});
+$("m-preview-item").addEventListener("pointerup", () => (arrastrandoMarcador = false));
+
+let redimensionandoMarcador = false;
+$("m-preview-resize").addEventListener("pointerdown", (e) => {
+  redimensionandoMarcador = true;
+  e.stopPropagation();
+  e.currentTarget.setPointerCapture(e.pointerId);
+});
+$("m-preview-resize").addEventListener("pointermove", (e) => {
+  if (!redimensionandoMarcador) return;
+  const item = $("m-preview-item");
+  const rect = item.getBoundingClientRect();
+  const wPx = Math.max(20, e.clientX - rect.left);
+  const hPx = Math.max(20, e.clientY - rect.top);
+  item.style.width = `${wPx}px`;
+  item.style.height = `${hPx}px`;
+  $("m-ancho").value = (wPx / PX_POR_UNIDAD).toFixed(2);
+  $("m-alto").value = (hPx / PX_POR_UNIDAD).toFixed(2);
+});
+$("m-preview-resize").addEventListener("pointerup", (e) => {
+  redimensionandoMarcador = false;
+  e.stopPropagation();
+});
 
 $("btn-nuevo-marcador").addEventListener("click", () => abrirEditorMarcador(null));
 $("btn-cancelar-marcador").addEventListener("click", () => {
@@ -396,6 +471,11 @@ async function abrirEditorMarcador(marcadorId) {
     $("m-texto").value = "";
     $("m-archivo-video").value = "";
     $("m-archivo-imagen").value = "";
+    $("m-ancho").value = 1;
+    $("m-alto").value = 0.6;
+    $("m-pos-x").value = 0;
+    $("m-pos-y").value = 0;
+    $("m-pos-z").value = 0;
     $("m-obj-nombre").value = "";
     $("m-obj-cantidad").value = 1;
     $("m-obj-efecto-tipo").value = "ninguno";
@@ -415,6 +495,11 @@ async function abrirEditorMarcador(marcadorId) {
   $("m-texto").value = m.texto || "";
   $("m-archivo-video").value = m.archivoUrl && m.tipo === "video" ? m.archivoUrl : "";
   $("m-archivo-imagen").value = m.archivoUrl && m.tipo === "imagen" ? m.archivoUrl : "";
+  $("m-ancho").value = m.ancho ?? 1;
+  $("m-alto").value = m.alto ?? 0.6;
+  $("m-pos-x").value = m.posX ?? 0;
+  $("m-pos-y").value = m.posY ?? 0;
+  $("m-pos-z").value = m.posZ ?? 0;
   const o = m.objeto || {};
   $("m-obj-nombre").value = o.nombre || "";
   $("m-obj-cantidad").value = o.cantidad ?? 1;
@@ -434,6 +519,11 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
     texto: tipo === "narracion" ? $("m-texto").value.trim() : "",
     archivoUrl:
       tipo === "video" ? $("m-archivo-video").value.trim() : tipo === "imagen" ? $("m-archivo-imagen").value.trim() : "",
+    ancho: parseFloat($("m-ancho").value) || 1,
+    alto: parseFloat($("m-alto").value) || 0.6,
+    posX: parseFloat($("m-pos-x").value) || 0,
+    posY: parseFloat($("m-pos-y").value) || 0,
+    posZ: parseFloat($("m-pos-z").value) || 0,
     objeto:
       tipo === "objeto"
         ? {
@@ -460,6 +550,7 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
 // ---------- Combate por turnos ----------
 let unsubscribeCombateJugadores = null;
 let jugadoresParaCombate = [];
+let enemigosActuales = [];
 
 function escucharParticipantesCombate(codigo) {
   if (unsubscribeCombateJugadores) unsubscribeCombateJugadores();
@@ -514,9 +605,62 @@ function escucharCombate(codigo) {
   if (unsubscribeCombate) unsubscribeCombate();
   unsubscribeCombate = onSnapshot(doc(db, "partidas", codigo), (snap) => {
     if (!snap.exists()) return;
-    renderCombate(snap.data().combate);
+    const data = snap.data();
+    renderCombate(data.combate);
+    enemigosActuales = data.enemigos || [];
+    renderEnemigos();
   });
 }
+
+function renderEnemigos() {
+  const cont = $("lista-enemigos");
+  if (enemigosActuales.length === 0) {
+    cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no hay enemigos.</p>`;
+    return;
+  }
+  cont.innerHTML = enemigosActuales
+    .map(
+      (en, idx) => `
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.5em;">
+      <div><strong>${en.nombre}</strong> <span class="mono" style="color:var(--parchment-dim);">❤ ${en.vida}/${en.vidaMax}</span></div>
+      <div style="display:flex; gap:.3em;">
+        <button class="btn-enemigo-ajustar" data-idx="${idx}" data-delta="-5" style="font-size:.7rem;">-5</button>
+        <button class="btn-enemigo-ajustar" data-idx="${idx}" data-delta="-1" style="font-size:.7rem;">-1</button>
+        <button class="btn-enemigo-ajustar" data-idx="${idx}" data-delta="1" style="font-size:.7rem;">+1</button>
+        <button class="btn-enemigo-quitar" data-idx="${idx}" class="danger" style="font-size:.7rem;">✕</button>
+      </div>
+    </div>`
+    )
+    .join("");
+
+  cont.querySelectorAll(".btn-enemigo-ajustar").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const idx = Number(btn.dataset.idx);
+      const delta = Number(btn.dataset.delta);
+      const nuevos = [...enemigosActuales];
+      nuevos[idx] = { ...nuevos[idx], vida: Math.max(0, Math.min(nuevos[idx].vidaMax, nuevos[idx].vida + delta)) };
+      await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
+    })
+  );
+  cont.querySelectorAll(".btn-enemigo-quitar").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const idx = Number(btn.dataset.idx);
+      const nuevos = enemigosActuales.filter((_, i) => i !== idx);
+      await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
+    })
+  );
+}
+
+$("btn-add-enemigo").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const nombre = $("en-nombre").value.trim();
+  const vida = Number($("en-vida").value) || 10;
+  if (!nombre) return alert("Ponle un nombre al enemigo.");
+  const nuevos = [...enemigosActuales, { nombre, vida, vidaMax: vida }];
+  await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
+  $("en-nombre").value = "";
+  $("en-vida").value = 10;
+});
 
 function renderCombate(combate) {
   const activo = combate?.activo;
@@ -581,6 +725,13 @@ $("btn-enviar-chat-master").addEventListener("click", async () => {
     timestamp: serverTimestamp(),
   });
   $("chat-master-texto").value = "";
+});
+
+$("btn-guardar-musica").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const ruta = $("musica-ambiente-path").value.trim();
+  await updateDoc(doc(db, "partidas", currentPartidaId), { musicaAmbienteUrl: ruta });
+  $("musica-status").textContent = "Guardado.";
 });
 
 // ---------- Personajes: plantillas con atributos, habilidades e inventario ----------

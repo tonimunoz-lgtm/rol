@@ -38,10 +38,9 @@ const els = {
   combateBarTexto: document.getElementById("combate-bar-texto"),
   btnToggleVoz: document.getElementById("btn-toggle-voz"),
   btnInspeccionar: document.getElementById("btn-inspeccionar"),
-  inspeccionarModal: document.getElementById("inspeccionar-modal"),
-  btnCerrarInspeccionar: document.getElementById("btn-cerrar-inspeccionar"),
-  chatFeed: document.getElementById("chat-feed"),
-  imagenesGrid: document.getElementById("imagenes-grid"),
+  fondoImgA: document.getElementById("fondo-img-a"),
+  fondoImgB: document.getElementById("fondo-img-b"),
+  chatOverlay: document.getElementById("chat-overlay"),
 };
 
 let jugadorDataActual = null;
@@ -262,12 +261,17 @@ async function bootGame() {
     });
   });
 
-  // Marcadores AR configurados por el master para esta partida
+  // Marcadores AR configurados por el master para esta partida — los
+  // guardamos listos, pero la escena/cámara no se construye hasta que el
+  // jugador pulse "Inspeccionar" (ver activarInspeccion).
   const partidaSnap = await getDoc(doc(db, "partidas", currentPartidaId));
   const config = partidaSnap.data() || {};
   const marcadoresSnap = await getDocs(collection(db, "partidas", currentPartidaId, "marcadores"));
-  const marcadores = marcadoresSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  await construirEscenaAR(config.marcadoresTargetUrl || null, marcadores);
+  targetsUrlGuardada = config.marcadoresTargetUrl || null;
+  marcadoresGuardados = marcadoresSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (!targetsUrlGuardada) {
+    els.scanningHint.textContent = "El Master aún no ha configurado los marcadores de esta sala.";
+  }
 
   cargarImagenesAmbientacion(config.configuracion);
 }
@@ -594,50 +598,60 @@ function generarAvatarSVG(raza, clase) {
   `;
 }
 
-// ---------- 5e. Panel "Inspeccionar": chat + imágenes ----------
-els.btnInspeccionar.addEventListener("click", () => els.inspeccionarModal.classList.add("visible"));
+// ---------- 5e. Inspeccionar: activa/desactiva la cámara AR bajo demanda ----------
+let sceneConstruida = false;
+let modoInspeccionActivo = false;
+let targetsUrlGuardada = null;
+let marcadoresGuardados = [];
 
-els.btnCerrarInspeccionar.addEventListener("click", () => {
-  els.inspeccionarModal.classList.remove("visible");
-  // "Cerrar y silenciar": corta cualquier narración que estuviera sonando.
-  if ("speechSynthesis" in window) speechSynthesis.cancel();
-  if (audioIAActual) audioIAActual.pause();
-});
-
-document.querySelectorAll(".insp-tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".insp-tab-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".insp-tab-content").forEach((c) => (c.style.display = "none"));
-    btn.classList.add("active");
-    document.getElementById(`insp-tab-${btn.dataset.tab}`).style.display = "block";
-  });
-});
-
-function añadirMensajeChat(evento) {
-  const div = document.createElement("div");
-  let autor = "Jugador";
-  let colorBorde = "var(--amber)";
-  let claseExtra = "";
-
-  if (evento.tipo === "chat_master") {
-    autor = "🎙️ Master";
-    claseExtra = "chat-master";
-  } else if (evento.tipo === "narracion") {
-    autor = "📖 Narración";
-    claseExtra = "chat-narracion";
+els.btnInspeccionar.addEventListener("click", async () => {
+  if (modoInspeccionActivo) {
+    desactivarInspeccion();
   } else {
-    autor = evento.nombrePersonaje || evento.nombreJugador || "Jugador";
-    colorBorde = colorDesdeTexto(autor);
+    await activarInspeccion();
+  }
+});
+
+async function activarInspeccion() {
+  if (!targetsUrlGuardada) {
+    els.scanningHint.textContent = "El Master aún no ha configurado los marcadores de esta sala.";
   }
 
-  div.className = `chat-msg ${claseExtra}`;
-  if (!claseExtra) div.style.borderLeftColor = colorBorde;
-  div.innerHTML = `<div class="chat-autor" style="color:${claseExtra ? "var(--amber)" : colorBorde};">${autor}</div><div class="chat-texto">${evento.texto}</div>`;
-  els.chatFeed.appendChild(div);
-  els.chatFeed.scrollTop = els.chatFeed.scrollHeight;
+  if (!sceneConstruida) {
+    await construirEscenaAR(targetsUrlGuardada, marcadoresGuardados);
+    sceneConstruida = true;
+  } else {
+    const sceneEl = els.arContainer.querySelector("a-scene");
+    sceneEl?.systems?.["mindar-image-system"]?.start();
+  }
+
+  els.arContainer.classList.add("activo");
+  pausarRotacionFondo();
+  modoInspeccionActivo = true;
+  els.btnInspeccionar.textContent = "✕ Cerrar cámara";
+  els.scanningHint.style.display = "block";
 }
 
-// ---------- 5f. Imágenes de ambientación (Pexels, libres de derechos) ----------
+function desactivarInspeccion() {
+  const sceneEl = els.arContainer.querySelector("a-scene");
+  try {
+    sceneEl?.systems?.["mindar-image-system"]?.stop();
+  } catch (e) {
+    /* nada que hacer si ya estaba parada */
+  }
+  els.arContainer.classList.remove("activo");
+  reanudarRotacionFondo();
+  modoInspeccionActivo = false;
+  els.btnInspeccionar.textContent = "🔍 Inspeccionar";
+  els.runeRing.classList.remove("active");
+  els.scanningHint.style.display = "none";
+}
+
+// ---------- 5f. Fondo ambiental: imágenes libres de derechos que rotan solas ----------
+let imagenesAmbiente = [];
+let indiceFondoActual = 0;
+let intervaloFondo = null;
+
 async function cargarImagenesAmbientacion(configuracion) {
   if (!configuracion) return;
   const query = [configuracion.lugar, configuracion.estilo, configuracion.epoca].filter(Boolean).join(" ");
@@ -651,12 +665,83 @@ async function cargarImagenesAmbientacion(configuracion) {
     });
     if (!resp.ok) return;
     const { imagenes } = await resp.json();
-    els.imagenesGrid.innerHTML = (imagenes || [])
-      .map((img) => `<img src="${img.url}" alt="" loading="lazy" title="Foto de ${img.autor} en Pexels" />`)
-      .join("");
+    imagenesAmbiente = imagenes || [];
+    if (imagenesAmbiente.length > 0) {
+      mostrarSiguienteFondo();
+      if (!modoInspeccionActivo) reanudarRotacionFondo();
+    }
   } catch (e) {
     console.warn("No se pudieron cargar imágenes de ambientación:", e.message);
   }
+}
+
+function mostrarSiguienteFondo() {
+  if (imagenesAmbiente.length === 0) return;
+  const siguiente = imagenesAmbiente[indiceFondoActual % imagenesAmbiente.length];
+  indiceFondoActual++;
+
+  const activaAhora = els.fondoImgA.classList.contains("activa") ? els.fondoImgA : els.fondoImgB;
+  const nueva = activaAhora === els.fondoImgA ? els.fondoImgB : els.fondoImgA;
+
+  nueva.onload = () => {
+    nueva.classList.add("activa");
+    activaAhora.classList.remove("activa");
+  };
+  nueva.src = siguiente.url;
+}
+
+function pausarRotacionFondo() {
+  if (intervaloFondo) {
+    clearInterval(intervaloFondo);
+    intervaloFondo = null;
+  }
+}
+
+function reanudarRotacionFondo() {
+  if (imagenesAmbiente.length > 0 && !intervaloFondo) {
+    intervaloFondo = setInterval(mostrarSiguienteFondo, 9000);
+  }
+}
+
+// ---------- 5g. Chat transparente superpuesto (estilo overlay de stream) ----------
+const MAX_LINEAS_CHAT = 6;
+const DURACION_LINEA_MS = 11000;
+
+function colorClaroDesdeTexto(texto) {
+  let hash = 0;
+  for (let i = 0; i < (texto || "").length; i++) hash = texto.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 75%, 68%)`;
+}
+
+function añadirMensajeChat(evento) {
+  let autor = "Jugador";
+  let color = "var(--amber)";
+
+  if (evento.tipo === "chat_master") {
+    autor = "Master";
+    color = "#F0C93B";
+  } else if (evento.tipo === "narracion") {
+    autor = "Narración";
+    color = "#cbbf9f";
+  } else {
+    autor = evento.nombrePersonaje || evento.nombreJugador || "Jugador";
+    color = colorClaroDesdeTexto(autor);
+  }
+
+  const linea = document.createElement("div");
+  linea.className = "chat-linea";
+  linea.innerHTML = `<span class="chat-autor" style="color:${color};">${autor}:</span> <span class="chat-texto">${evento.texto}</span>`;
+  els.chatOverlay.appendChild(linea);
+
+  while (els.chatOverlay.children.length > MAX_LINEAS_CHAT) {
+    els.chatOverlay.removeChild(els.chatOverlay.firstChild);
+  }
+
+  setTimeout(() => {
+    linea.classList.add("saliendo");
+    setTimeout(() => linea.remove(), 1000);
+  }, DURACION_LINEA_MS);
 }
 
 // ---------- 6. Escena AR (MindAR) construida dinámicamente ----------
@@ -698,7 +783,7 @@ async function construirEscenaAR(targetsUrl, marcadores) {
     .join("\n");
 
   const sceneHtml = `
-    <a-scene embedded mindar-image="imageTargetSrc: ${targetsUrl}; autoStart: true; uiScanning: no; uiLoading: no;"
+    <a-scene embedded mindar-image="imageTargetSrc: ${targetsUrl}; autoStart: false; uiScanning: no; uiLoading: no;"
       color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: true">
       <a-assets>${assetsHtml}</a-assets>
@@ -741,6 +826,15 @@ async function construirEscenaAR(targetsUrl, marcadores) {
   // todavía) igualmente activan el anillo rúnico como feedback genérico.
   sceneEl.addEventListener("targetFound", () => els.runeRing.classList.add("active"));
   sceneEl.addEventListener("targetLost", () => els.runeRing.classList.remove("active"));
+
+  // Arrancamos la cámara en cuanto la escena esté lista (autoStart está
+  // desactivado a propósito: la controla el botón "Inspeccionar").
+  const arrancarCamara = () => sceneEl.systems?.["mindar-image-system"]?.start();
+  if (sceneEl.hasLoaded) {
+    arrancarCamara();
+  } else {
+    sceneEl.addEventListener("loaded", arrancarCamara, { once: true });
+  }
 }
 
 function manejarMarcadorEncontrado(marcador) {

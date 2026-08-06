@@ -135,10 +135,25 @@ Crea tantas plantillas como jugadores esperas tener (o más, para que puedan ele
   el código ni en el repositorio. Solo la lee `api/generar-partida.js`, que corre en el servidor
   — nunca llega al navegador. Si quieres rotarla, cambia el valor en Vercel y haz Redeploy.
 
+## Voz IA opcional (ElevenLabs)
+
+Por defecto se usa la voz del dispositivo (Web Speech API, gratis, ilimitada). Si quieres probar
+una voz más expresiva, cada jugador puede tocar el botón 🔊/🎙️ arriba a la derecha para cambiar
+a "Voz IA" (ElevenLabs). Para activarla:
+
+1. Crea una cuenta en [elevenlabs.io](https://elevenlabs.io) (tier gratuito, cuota mensual de
+   caracteres limitada).
+2. Copia tu API key (perfil → API Keys).
+3. En Vercel → Settings → Environment Variables, añade `ELEVENLABS_API_KEY` con esa clave →
+   Redeploy.
+
+Si no configuras esta variable, el botón simplemente no hace nada especial y todo sigue
+funcionando con la voz del dispositivo.
+
 ## Siguientes pasos sugeridos
 
-- Asociación fina de cada marcador AR a su vídeo/pista/PNJ concreto.
-- Sistema de combate por turnos sincronizado entre los 20 jugadores.
-- Inventario con objetos reales recogidos en los marcadores.
-- Mejorar la voz con ElevenLabs (tier gratuito limitado) si Web Speech API se queda corta en
-  expresividad.
+- Editor visual para posicionar/escalar el vídeo o imagen de cada marcador en el espacio AR
+  (ahora mismo usan un tamaño y posición fijos).
+- Resolución de daño en combate más allá del dado (ahora mismo el combate ordena turnos e
+  iniciativa; el daño se gestiona narrativamente por el master con las tiradas y objetos).
+- Sonido ambiente / música de fondo.

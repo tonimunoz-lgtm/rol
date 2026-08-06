@@ -95,6 +95,26 @@ function showJoinScreen() {
       errorEl.textContent = "No existe ninguna partida con ese código.";
       return;
     }
+
+    // ¿Ya tenías un personaje en esta partida (misma sesión anónima, p.ej.
+    // tras pulsar "Salir" y volver a entrar)? Si es así, te reconectamos
+    // directamente en vez de forzarte a elegir personaje otra vez.
+    const jugadorExistenteQ = query(
+      collection(db, "partidas", code, "jugadores"),
+      where("uid", "==", currentUid)
+    );
+    const jugadorExistenteSnap = await getDocs(jugadorExistenteQ);
+    if (!jugadorExistenteSnap.empty) {
+      const jugadorDoc = jugadorExistenteSnap.docs[0];
+      currentPartidaId = code;
+      currentJugadorId = jugadorDoc.id;
+      localStorage.setItem("runica_partidaId", code);
+      localStorage.setItem("runica_jugadorId", jugadorDoc.id);
+      overlay.remove();
+      await bootGame();
+      return;
+    }
+
     await mostrarSeleccionPersonaje(overlay, code, name);
   });
 }

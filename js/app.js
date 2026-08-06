@@ -37,6 +37,11 @@ const els = {
   combateBar: document.getElementById("combate-bar"),
   combateBarTexto: document.getElementById("combate-bar-texto"),
   btnToggleVoz: document.getElementById("btn-toggle-voz"),
+  btnInspeccionar: document.getElementById("btn-inspeccionar"),
+  inspeccionarModal: document.getElementById("inspeccionar-modal"),
+  btnCerrarInspeccionar: document.getElementById("btn-cerrar-inspeccionar"),
+  chatFeed: document.getElementById("chat-feed"),
+  imagenesGrid: document.getElementById("imagenes-grid"),
 };
 
 let jugadorDataActual = null;
@@ -250,6 +255,9 @@ async function bootGame() {
         if (evento.tipo === "narracion") {
           mostrarNarracion(evento.texto);
         }
+        if (["narracion", "chat_master", "accion"].includes(evento.tipo)) {
+          añadirMensajeChat(evento);
+        }
       }
     });
   });
@@ -260,6 +268,8 @@ async function bootGame() {
   const marcadoresSnap = await getDocs(collection(db, "partidas", currentPartidaId, "marcadores"));
   const marcadores = marcadoresSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   await construirEscenaAR(config.marcadoresTargetUrl || null, marcadores);
+
+  cargarImagenesAmbientacion(config.configuracion);
 }
 
 // ---------- 3b. Combate en pantalla ----------
@@ -536,6 +546,7 @@ els.btnEnviarAccion.addEventListener("click", async () => {
     tipo: "accion",
     jugadorId: currentJugadorId,
     nombreJugador: els.playerName.textContent,
+    nombrePersonaje: jugadorDataActual?.nombrePersonaje || "",
     texto,
     timestamp: serverTimestamp(),
   });
@@ -581,6 +592,71 @@ function generarAvatarSVG(raza, clase) {
       <text x="50" y="62" text-anchor="middle" font-size="38">${icono}</text>
     </svg>
   `;
+}
+
+// ---------- 5e. Panel "Inspeccionar": chat + imágenes ----------
+els.btnInspeccionar.addEventListener("click", () => els.inspeccionarModal.classList.add("visible"));
+
+els.btnCerrarInspeccionar.addEventListener("click", () => {
+  els.inspeccionarModal.classList.remove("visible");
+  // "Cerrar y silenciar": corta cualquier narración que estuviera sonando.
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  if (audioIAActual) audioIAActual.pause();
+});
+
+document.querySelectorAll(".insp-tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".insp-tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".insp-tab-content").forEach((c) => (c.style.display = "none"));
+    btn.classList.add("active");
+    document.getElementById(`insp-tab-${btn.dataset.tab}`).style.display = "block";
+  });
+});
+
+function añadirMensajeChat(evento) {
+  const div = document.createElement("div");
+  let autor = "Jugador";
+  let colorBorde = "var(--amber)";
+  let claseExtra = "";
+
+  if (evento.tipo === "chat_master") {
+    autor = "🎙️ Master";
+    claseExtra = "chat-master";
+  } else if (evento.tipo === "narracion") {
+    autor = "📖 Narración";
+    claseExtra = "chat-narracion";
+  } else {
+    autor = evento.nombrePersonaje || evento.nombreJugador || "Jugador";
+    colorBorde = colorDesdeTexto(autor);
+  }
+
+  div.className = `chat-msg ${claseExtra}`;
+  if (!claseExtra) div.style.borderLeftColor = colorBorde;
+  div.innerHTML = `<div class="chat-autor" style="color:${claseExtra ? "var(--amber)" : colorBorde};">${autor}</div><div class="chat-texto">${evento.texto}</div>`;
+  els.chatFeed.appendChild(div);
+  els.chatFeed.scrollTop = els.chatFeed.scrollHeight;
+}
+
+// ---------- 5f. Imágenes de ambientación (Pexels, libres de derechos) ----------
+async function cargarImagenesAmbientacion(configuracion) {
+  if (!configuracion) return;
+  const query = [configuracion.lugar, configuracion.estilo, configuracion.epoca].filter(Boolean).join(" ");
+  if (!query) return;
+
+  try {
+    const resp = await fetch("/api/buscar-imagenes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    if (!resp.ok) return;
+    const { imagenes } = await resp.json();
+    els.imagenesGrid.innerHTML = (imagenes || [])
+      .map((img) => `<img src="${img.url}" alt="" loading="lazy" title="Foto de ${img.autor} en Pexels" />`)
+      .join("");
+  } catch (e) {
+    console.warn("No se pudieron cargar imágenes de ambientación:", e.message);
+  }
 }
 
 // ---------- 6. Escena AR (MindAR) construida dinámicamente ----------

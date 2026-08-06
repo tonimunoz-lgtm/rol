@@ -167,6 +167,23 @@ a "Voz IA" (ElevenLabs). Para activarla:
 Si no configuras esta variable, el botón simplemente no hace nada especial y todo sigue
 funcionando con la voz del dispositivo.
 
+## Motor de reglas automatizado (combate, habilidades, trampas)
+
+- **Atributos que modifican las tiradas**: cada habilidad puede llevar un atributo asociado
+  (fuerza, destreza, inteligencia, carisma, vigor). El modificador es el clásico de rol:
+  `(valor del atributo − 10) / 2`, redondeado hacia abajo. Así, un personaje con más destreza
+  falla menos las tiradas de habilidades ligadas a destreza (p. ej. un ladrón robando), sin nada
+  que el master tenga que arbitrar a mano.
+- **Habilidades marcadas como "ataque"**: al usarlas en combate, piden objetivo (otro jugador o
+  un enemigo), tiran 1d20 + modificador contra una dificultad fija (12), y si aciertan, tiran el
+  dado de daño de la habilidad + modificador y lo restan solas de la vida del objetivo. Todo con
+  narración automática en el chat de todos.
+- **Trampas** (marcador tipo "Trampa"): al escanearlas, tiran solas 1d20 + el atributo que elija
+  el master contra la dificultad configurada. Si falla, aplica el daño automáticamente. No se
+  repite si el mismo jugador vuelve a escanear el mismo marcador.
+- **Objetos usados**: siguen aplicando su efecto (curar/dañar) solos, y ahora también generan una
+  línea en el chat y pueden disparar el guion (ver siguiente sección).
+
 ## Guion automático (storyboard de escenas)
 
 Desde `/master.html` → **Guion automático**, creas una secuencia de escenas. Cada escena tiene:
@@ -174,7 +191,8 @@ Desde `/master.html` → **Guion automático**, creas una secuencia de escenas. 
 - Una narración que se lanza sola (texto + voz) en cuanto la escena se activa, en las pantallas
   de todos los jugadores.
 - Un disparador que hace avanzar a la siguiente escena automáticamente: escanear un marcador
-  concreto, recoger un objeto con un nombre concreto, que un enemigo con un nombre concreto llegue
+  concreto, recoger un objeto con un nombre concreto, **usar** un objeto con un nombre concreto,
+  **usar** una habilidad con un nombre concreto, que un enemigo con un nombre concreto llegue
   a 0 de vida, que termine el combate en curso, o "solo cuando tú lo fuerces" (manual).
 
 El propio juego, sin que el master tenga que estar pendiente, va detectando cuándo se cumple la

@@ -289,6 +289,67 @@ h1.display::after, h2.display::after {
 .habilidad-card .h-desc { font-size: .8rem; color: var(--parchment-dim); margin: .2em 0 0 0; }
 .habilidad-card .h-usos { font-family: var(--font-mono); font-size: .75rem; white-space: nowrap; }
 
+/* ---------- Panel "Inspeccionar": chat + imágenes ---------- */
+#inspeccionar-panel {
+  background: var(--ink);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+#inspeccionar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .8em 1em;
+  border-bottom: 1px solid #3a3226;
+  gap: .6em;
+  flex-wrap: wrap;
+}
+#inspeccionar-tabs { display: flex; gap: .4em; }
+.insp-tab-btn { font-size: .85rem; }
+.insp-tab-btn.active { background: var(--amber); color: var(--ink); }
+
+.insp-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1em;
+}
+
+#chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: .6em;
+}
+.chat-msg {
+  border-left: 3px solid var(--amber);
+  background: var(--ink-soft);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: .5em .8em;
+  max-width: 90%;
+}
+.chat-msg .chat-autor {
+  font-family: var(--font-display);
+  font-size: .8rem;
+  margin-bottom: .15em;
+}
+.chat-msg .chat-texto { font-size: .9rem; }
+.chat-msg.chat-master { border-left-color: var(--amber); background: rgba(201, 162, 39, 0.12); }
+.chat-msg.chat-narracion { border-left-color: var(--moss); font-style: italic; }
+
+#imagenes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: .6em;
+}
+#imagenes-grid img {
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid #3a3226;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+}
+
 /* ---------- Vista Master (panel admin) ---------- */
 #master-view {
   display: grid;

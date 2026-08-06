@@ -169,8 +169,5 @@ funcionando con la voz del dispositivo.
 
 ## Siguientes pasos sugeridos
 
-- Editor visual para posicionar/escalar el vídeo o imagen de cada marcador en el espacio AR
-  (ahora mismo usan un tamaño y posición fijos).
-- Resolución de daño en combate más allá del dado (ahora mismo el combate ordena turnos e
-  iniciativa; el daño se gestiona narrativamente por el master con las tiradas y objetos).
-- Sonido ambiente / música de fondo.
+- Sonido ambiente por escena (variarlo según la ubicación, no solo una pista fija).
+- Resolución de daño con más matices (tipos de daño, resistencias, curación en área).

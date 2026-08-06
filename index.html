@@ -20,6 +20,7 @@
   <div id="hud-top">
     <span class="player-name mono" id="player-name-label">Cargando...</span>
     <div style="display:flex; gap:.4em;">
+      <button id="btn-inspeccionar" style="font-size:.75rem;padding:.4em .8em;" title="Chat e imágenes">🔍</button>
       <button id="btn-toggle-voz" style="font-size:.75rem;padding:.4em .8em;" title="Cambiar voz">🔊</button>
       <button id="btn-logout" style="font-size:.75rem;padding:.4em .8em;">Salir</button>
     </div>
@@ -73,6 +74,27 @@
       <h3 style="font-size:1rem; margin-top:1em;">Inventario</h3>
       <div id="ficha-inventario"></div>
       <button id="btn-imprimir-ficha" style="margin-top:1em; width:100%;">🖨️ Imprimir ficha</button>
+    </div>
+  </div>
+
+  <div id="inspeccionar-modal" class="modal-overlay">
+    <div id="inspeccionar-panel">
+      <div id="inspeccionar-header">
+        <div id="inspeccionar-tabs">
+          <button class="insp-tab-btn active" data-tab="chat">💬 Chat</button>
+          <button class="insp-tab-btn" data-tab="imagenes">🖼️ Imágenes</button>
+        </div>
+        <button id="btn-cerrar-inspeccionar" class="danger" style="font-size:.8rem;">✕ Cerrar y silenciar</button>
+      </div>
+
+      <div id="insp-tab-chat" class="insp-tab-content active">
+        <div id="chat-feed"></div>
+      </div>
+
+      <div id="insp-tab-imagenes" class="insp-tab-content" style="display:none;">
+        <div id="imagenes-grid"></div>
+        <p style="color:var(--parchment-dim); font-size:.7rem; text-align:center; margin-top:.5em;">Fotos vía Pexels</p>
+      </div>
     </div>
   </div>
 

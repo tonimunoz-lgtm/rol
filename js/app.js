@@ -34,7 +34,12 @@ const els = {
   accionTexto: document.getElementById("accion-texto"),
   btnEnviarAccion: document.getElementById("btn-enviar-accion"),
   btnCerrarAccion: document.getElementById("btn-cerrar-accion"),
+  combateBar: document.getElementById("combate-bar"),
+  combateBarTexto: document.getElementById("combate-bar-texto"),
+  btnToggleVoz: document.getElementById("btn-toggle-voz"),
 };
+
+let jugadorDataActual = null;
 
 let jugadorRefActual = null;
 
@@ -194,13 +199,22 @@ async function bootGame() {
   onSnapshot(jugadorRef, (snap) => {
     if (!snap.exists()) return;
     const data = snap.data();
+    jugadorDataActual = data;
     els.playerName.textContent = data.nombre;
     els.hpPill.textContent = `❤ ${data.vida}/${data.vidaMax ?? data.vida}`;
     els.invPill.textContent = `🎒 ${(data.inventario || []).length}`;
     renderFicha(data);
   });
 
-  // Eventos en vivo lanzados por el master (narración, alertas, combate...)
+  // Estado general de la partida en tiempo real: narraciones puntuales ya se
+  // gestionan como eventos (abajo); el combate vive como campo del propio
+  // documento de la partida para que todos vean el mismo turno a la vez.
+  onSnapshot(doc(db, "partidas", currentPartidaId), (snap) => {
+    if (!snap.exists()) return;
+    renderCombateJugador(snap.data().combate);
+  });
+
+  // Eventos en vivo lanzados por el master o por otros jugadores
   const eventosRef = collection(db, "partidas", currentPartidaId, "eventos");
   onSnapshot(eventosRef, (snap) => {
     snap.docChanges().forEach((change) => {
@@ -214,12 +228,46 @@ async function bootGame() {
   });
 
   // Marcadores AR configurados por el master para esta partida
-  const marcadoresSnap = await getDoc(doc(db, "partidas", currentPartidaId));
-  const config = marcadoresSnap.data() || {};
-  await construirEscenaAR(config.marcadoresTargetUrl || null);
+  const partidaSnap = await getDoc(doc(db, "partidas", currentPartidaId));
+  const config = partidaSnap.data() || {};
+  const marcadoresSnap = await getDocs(collection(db, "partidas", currentPartidaId, "marcadores"));
+  const marcadores = marcadoresSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  await construirEscenaAR(config.marcadoresTargetUrl || null, marcadores);
 }
 
-// ---------- 4. Narración + lectura en voz alta (Web Speech API, gratis) ----------
+// ---------- 3b. Combate en pantalla ----------
+function renderCombateJugador(combate) {
+  if (!combate?.activo) {
+    els.combateBar.classList.remove("visible", "mi-turno");
+    return;
+  }
+  els.combateBar.classList.add("visible");
+  const actual = combate.orden[combate.turnoActual];
+  const esMiTurno = actual?.jugadorId === currentJugadorId;
+  els.combateBar.classList.toggle("mi-turno", esMiTurno);
+  els.combateBarTexto.textContent = esMiTurno
+    ? `⚔️ ¡Es tu turno! (Ronda ${combate.ronda})`
+    : `⚔️ Turno de ${actual?.nombre || "?"} (Ronda ${combate.ronda})`;
+}
+
+// ---------- 4. Narración + lectura en voz alta ----------
+// Dos modos: "dispositivo" (Web Speech API, gratis e ilimitado, es el
+// predeterminado) o "ia" (ElevenLabs, más expresiva pero con cuota gratuita
+// limitada — el jugador la activa manualmente si quiere probarla).
+let modoVoz = localStorage.getItem("runica_modo_voz") || "dispositivo";
+actualizarIconoVoz();
+
+els.btnToggleVoz.addEventListener("click", () => {
+  modoVoz = modoVoz === "dispositivo" ? "ia" : "dispositivo";
+  localStorage.setItem("runica_modo_voz", modoVoz);
+  actualizarIconoVoz();
+});
+
+function actualizarIconoVoz() {
+  els.btnToggleVoz.textContent = modoVoz === "ia" ? "🎙️" : "🔊";
+  els.btnToggleVoz.title = modoVoz === "ia" ? "Voz IA (ElevenLabs) — toca para volver a la del dispositivo" : "Voz del dispositivo — toca para probar la voz IA";
+}
+
 function mostrarNarracion(texto) {
   els.narrationText.textContent = texto;
   els.narrationBox.classList.add("visible");
@@ -242,7 +290,7 @@ function mejorVozEspanola() {
   );
 }
 
-function hablar(texto) {
+function hablarConDispositivo(texto) {
   if (!texto || !("speechSynthesis" in window)) return;
   const utter = new SpeechSynthesisUtterance(texto);
   const voz = mejorVozEspanola();
@@ -251,6 +299,35 @@ function hablar(texto) {
   utter.rate = 0.95;
   speechSynthesis.cancel();
   speechSynthesis.speak(utter);
+}
+
+let audioIAActual = null;
+async function hablarConIA(texto) {
+  try {
+    const resp = await fetch("/api/narrar-voz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    });
+    if (!resp.ok) throw new Error("Voz IA no disponible");
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    if (audioIAActual) audioIAActual.pause();
+    audioIAActual = new Audio(url);
+    audioIAActual.play();
+  } catch (e) {
+    console.warn("Voz IA falló, uso la del dispositivo:", e.message);
+    hablarConDispositivo(texto);
+  }
+}
+
+function hablar(texto) {
+  if (!texto) return;
+  if (modoVoz === "ia") {
+    hablarConIA(texto);
+  } else {
+    hablarConDispositivo(texto);
+  }
 }
 
 els.btnSpeak.addEventListener("click", () => hablar(els.narrationText.textContent));
@@ -482,39 +559,127 @@ function generarAvatarSVG(raza, clase) {
 // ---------- 6. Escena AR (MindAR) construida dinámicamente ----------
 // `targetsUrl` apunta al archivo .mind compilado por el master a partir de
 // las fotos reales de la sala (se genera con el compilador online de MindAR
-// y se sube a Firebase Storage; ver README > Fase 4).
-async function construirEscenaAR(targetsUrl) {
+// y se sube al repositorio; ver README > Fase 5). `marcadores` es la lista
+// de asociaciones índice → contenido creadas por el master.
+async function construirEscenaAR(targetsUrl, marcadores) {
   if (!targetsUrl) {
     els.scanningHint.textContent = "El Master aún no ha configurado los marcadores de esta sala.";
     return;
   }
 
-  // Traemos la definición de cada marcador (a qué target .mind corresponde,
-  // qué vídeo/imagen/pista dispara) para montar las entidades de A-Frame.
-  const marcadoresCol = collection(db, "partidas", currentPartidaId, "marcadores");
-  const marcadoresSnap = await getDoc(doc(db, "partidas", currentPartidaId)); // placeholder simple
-  // NOTA: en la versión completa esto se sustituye por un onSnapshot sobre
-  // marcadoresCol para poder añadir marcadores nuevos en caliente durante la partida.
+  const porIndice = {};
+  (marcadores || []).forEach((m) => (porIndice[m.targetIndex] = m));
+
+  const assetsHtml = (marcadores || [])
+    .map((m) => {
+      if (m.tipo === "video" && m.archivoUrl) {
+        return `<video id="asset-video-${m.targetIndex}" src="${m.archivoUrl}" preload="auto" loop="false" playsinline webkit-playsinline crossorigin="anonymous"></video>`;
+      }
+      if (m.tipo === "imagen" && m.archivoUrl) {
+        return `<img id="asset-imagen-${m.targetIndex}" src="${m.archivoUrl}" crossorigin="anonymous" />`;
+      }
+      return "";
+    })
+    .join("\n");
+
+  const entidadesHtml = (marcadores || [])
+    .map((m) => {
+      let contenido = "";
+      if (m.tipo === "video" && m.archivoUrl) {
+        contenido = `<a-video src="#asset-video-${m.targetIndex}" width="1" height="0.6" position="0 0 0"></a-video>`;
+      } else if (m.tipo === "imagen" && m.archivoUrl) {
+        contenido = `<a-image src="#asset-imagen-${m.targetIndex}" width="1" height="1" position="0 0 0"></a-image>`;
+      }
+      return `<a-entity mindar-image-target="targetIndex: ${m.targetIndex}" data-marcador-index="${m.targetIndex}">${contenido}</a-entity>`;
+    })
+    .join("\n");
 
   const sceneHtml = `
     <a-scene mindar-image="imageTargetSrc: ${targetsUrl}; autoStart: true; uiScanning: no; uiLoading: no;"
       color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: true">
-      <a-assets></a-assets>
+      <a-assets>${assetsHtml}</a-assets>
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-      <!-- Las entidades <a-entity mindar-image-target="targetIndex: N"> se
-           insertan aquí por JS cuando cargamos los marcadores reales. -->
+      ${entidadesHtml}
     </a-scene>
   `;
   els.arContainer.innerHTML = sceneHtml;
 
   const sceneEl = els.arContainer.querySelector("a-scene");
-  sceneEl.addEventListener("targetFound", (e) => {
-    els.runeRing.classList.add("active");
-    els.scanningHint.style.display = "none";
+  els.arContainer.querySelectorAll("[data-marcador-index]").forEach((entityEl) => {
+    const idx = Number(entityEl.dataset.marcadorIndex);
+    const marcador = porIndice[idx];
+    if (!marcador) return;
+
+    entityEl.addEventListener("targetFound", () => {
+      els.runeRing.classList.add("active");
+      els.scanningHint.style.display = "none";
+      manejarMarcadorEncontrado(marcador);
+    });
+    entityEl.addEventListener("targetLost", () => {
+      els.runeRing.classList.remove("active");
+      els.scanningHint.style.display = "block";
+      if (marcador.tipo === "video") {
+        const videoEl = document.getElementById(`asset-video-${idx}`);
+        if (videoEl) videoEl.pause();
+      }
+    });
   });
-  sceneEl.addEventListener("targetLost", () => {
-    els.runeRing.classList.remove("active");
-    els.scanningHint.style.display = "block";
+
+  // Marcadores sin ninguna entidad asociada (índices no configurados
+  // todavía) igualmente activan el anillo rúnico como feedback genérico.
+  sceneEl.addEventListener("targetFound", () => els.runeRing.classList.add("active"));
+  sceneEl.addEventListener("targetLost", () => els.runeRing.classList.remove("active"));
+}
+
+function manejarMarcadorEncontrado(marcador) {
+  if (marcador.tipo === "narracion" && marcador.texto) {
+    mostrarNarracion(marcador.texto);
+  } else if (marcador.tipo === "video") {
+    const videoEl = document.getElementById(`asset-video-${marcador.targetIndex}`);
+    if (videoEl) {
+      videoEl.currentTime = 0;
+      videoEl.play().catch(() => {});
+    }
+  } else if (marcador.tipo === "objeto" && marcador.objeto) {
+    recogerObjeto(marcador);
+  }
+}
+
+// ---------- 6b. Recoger un objeto de un marcador (una vez por jugador) ----------
+async function recogerObjeto(marcador) {
+  if (!jugadorDataActual || !jugadorRefActual) return;
+  const yaRecogidos = jugadorDataActual.marcadoresRecogidos || [];
+  if (yaRecogidos.includes(marcador.id)) return; // ya lo cogió antes, no se duplica
+
+  const inventario = [...(jugadorDataActual.inventario || [])];
+  const existente = inventario.findIndex((o) => o.nombre === marcador.objeto.nombre);
+  if (existente >= 0) {
+    inventario[existente] = {
+      ...inventario[existente],
+      cantidad: (inventario[existente].cantidad || 1) + (marcador.objeto.cantidad || 1),
+    };
+  } else {
+    inventario.push({
+      nombre: marcador.objeto.nombre,
+      cantidad: marcador.objeto.cantidad || 1,
+      descripcion: marcador.objeto.descripcion || "",
+      efecto: marcador.objeto.efecto || { tipo: "ninguno", valor: 0 },
+    });
+  }
+
+  await updateDoc(jugadorRefActual, {
+    inventario,
+    marcadoresRecogidos: [...yaRecogidos, marcador.id],
+  });
+
+  mostrarNarracion(`🎒 Has encontrado: ${marcador.objeto.nombre}`);
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "objeto_encontrado",
+    jugadorId: currentJugadorId,
+    nombreJugador: jugadorDataActual.nombre,
+    objeto: marcador.objeto.nombre,
+    timestamp: serverTimestamp(),
   });
 }

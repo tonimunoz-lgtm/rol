@@ -178,6 +178,9 @@ $("btn-generar").addEventListener("click", async () => {
     escucharJugadoresEnVivo(codigo);
     escucharPersonajes(codigo);
     escucharLogEventos(codigo);
+    escucharMarcadores(codigo);
+    escucharParticipantesCombate(codigo);
+    escucharCombate(codigo);
     document.querySelector('[data-section="historia"]').click();
   } catch (err) {
     console.error(err);
@@ -202,6 +205,9 @@ async function cargarPartidaExistente(codigo) {
   escucharJugadoresEnVivo(codigo);
   escucharPersonajes(codigo);
   escucharLogEventos(codigo);
+  escucharMarcadores(codigo);
+  escucharParticipantesCombate(codigo);
+  escucharCombate(codigo);
 }
 
 // ---------- Historia: sinopsis + listas de PNJs / pistas / trampas + giro ----------
@@ -290,6 +296,8 @@ function escucharLogEventos(codigo) {
         );
       } else if (e.tipo === "objeto") {
         lineas.push(`🎒 ${e.nombreJugador || "Jugador"} ha usado "${e.objeto}"`);
+      } else if (e.tipo === "objeto_encontrado") {
+        lineas.push(`🔎 ${e.nombreJugador || "Jugador"} ha encontrado "${e.objeto}"`);
       } else if (e.tipo === "narracion") {
         lineas.push(`📢 Narración: ${e.texto}`);
       } else if (e.tipo === "accion") {
@@ -308,6 +316,244 @@ $("btn-guardar-targets-path").addEventListener("click", async () => {
   if (!ruta) return;
   await updateDoc(doc(db, "partidas", currentPartidaId), { marcadoresTargetUrl: ruta });
   $("targets-status").textContent = "Ruta guardada correctamente.";
+});
+
+// ---------- Marcadores AR: asociación de índice → contenido ----------
+let unsubscribeMarcadores = null;
+
+const ETIQUETAS_TIPO_MARCADOR = {
+  narracion: "📖 Narración",
+  video: "🎬 Vídeo",
+  imagen: "🖼️ Imagen",
+  objeto: "🎒 Objeto",
+};
+
+function escucharMarcadores(codigo) {
+  if (unsubscribeMarcadores) unsubscribeMarcadores();
+  const col = collection(db, "partidas", codigo, "marcadores");
+  unsubscribeMarcadores = onSnapshot(col, (snap) => {
+    const cont = $("lista-marcadores");
+    cont.innerHTML = "";
+    if (snap.empty) {
+      cont.innerHTML = `<p style="color:var(--parchment-dim);">Todavía no has asociado ningún marcador.</p>`;
+      return;
+    }
+    const docs = snap.docs.sort((a, b) => (a.data().targetIndex ?? 0) - (b.data().targetIndex ?? 0));
+    docs.forEach((docSnap) => {
+      const m = docSnap.data();
+      const card = document.createElement("div");
+      card.className = "card";
+      card.style.marginBottom = ".6em";
+      card.innerHTML = `
+        <span class="mono" style="color:var(--amber);">#${m.targetIndex}</span>
+        <strong>${m.nombre || "(sin nombre)"}</strong>
+        <span class="mono" style="font-size:.75rem; color:var(--parchment-dim);"> — ${ETIQUETAS_TIPO_MARCADOR[m.tipo] || m.tipo}</span>
+        <div style="display:flex; gap:.5em; margin-top:.5em;">
+          <button class="btn-editar-marcador" data-id="${docSnap.id}" style="font-size:.75rem;">Editar</button>
+          <button class="btn-borrar-marcador danger" data-id="${docSnap.id}" style="font-size:.75rem;">Borrar</button>
+        </div>
+      `;
+      cont.appendChild(card);
+    });
+
+    cont.querySelectorAll(".btn-editar-marcador").forEach((btn) =>
+      btn.addEventListener("click", () => abrirEditorMarcador(btn.dataset.id))
+    );
+    cont.querySelectorAll(".btn-borrar-marcador").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        if (!confirm("¿Borrar este marcador?")) return;
+        await deleteDoc(doc(db, "partidas", currentPartidaId, "marcadores", btn.dataset.id));
+      })
+    );
+  });
+}
+
+$("m-tipo").addEventListener("change", () => actualizarCamposMarcador());
+
+function actualizarCamposMarcador() {
+  const tipo = $("m-tipo").value;
+  document.querySelectorAll(".m-campos").forEach((el) => (el.style.display = "none"));
+  const bloque = $(`m-campos-${tipo}`);
+  if (bloque) bloque.style.display = "block";
+}
+
+$("btn-nuevo-marcador").addEventListener("click", () => abrirEditorMarcador(null));
+$("btn-cancelar-marcador").addEventListener("click", () => {
+  $("editor-marcador").style.display = "none";
+});
+
+async function abrirEditorMarcador(marcadorId) {
+  $("editor-marcador").style.display = "block";
+  $("m-id").value = marcadorId || "";
+
+  if (!marcadorId) {
+    $("editor-marcador-titulo").textContent = "Nuevo marcador";
+    $("m-index").value = 0;
+    $("m-nombre").value = "";
+    $("m-tipo").value = "narracion";
+    $("m-texto").value = "";
+    $("m-archivo-video").value = "";
+    $("m-archivo-imagen").value = "";
+    $("m-obj-nombre").value = "";
+    $("m-obj-cantidad").value = 1;
+    $("m-obj-efecto-tipo").value = "ninguno";
+    $("m-obj-efecto-valor").value = 0;
+    $("m-obj-descripcion").value = "";
+    actualizarCamposMarcador();
+    return;
+  }
+
+  $("editor-marcador-titulo").textContent = "Editar marcador";
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId, "marcadores", marcadorId));
+  if (!snap.exists()) return;
+  const m = snap.data();
+  $("m-index").value = m.targetIndex ?? 0;
+  $("m-nombre").value = m.nombre || "";
+  $("m-tipo").value = m.tipo || "narracion";
+  $("m-texto").value = m.texto || "";
+  $("m-archivo-video").value = m.archivoUrl && m.tipo === "video" ? m.archivoUrl : "";
+  $("m-archivo-imagen").value = m.archivoUrl && m.tipo === "imagen" ? m.archivoUrl : "";
+  const o = m.objeto || {};
+  $("m-obj-nombre").value = o.nombre || "";
+  $("m-obj-cantidad").value = o.cantidad ?? 1;
+  $("m-obj-efecto-tipo").value = o.efecto?.tipo || "ninguno";
+  $("m-obj-efecto-valor").value = o.efecto?.valor ?? 0;
+  $("m-obj-descripcion").value = o.descripcion || "";
+  actualizarCamposMarcador();
+}
+
+$("btn-guardar-marcador").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const tipo = $("m-tipo").value;
+  const datos = {
+    targetIndex: Number($("m-index").value) || 0,
+    nombre: $("m-nombre").value.trim(),
+    tipo,
+    texto: tipo === "narracion" ? $("m-texto").value.trim() : "",
+    archivoUrl:
+      tipo === "video" ? $("m-archivo-video").value.trim() : tipo === "imagen" ? $("m-archivo-imagen").value.trim() : "",
+    objeto:
+      tipo === "objeto"
+        ? {
+            nombre: $("m-obj-nombre").value.trim(),
+            cantidad: Number($("m-obj-cantidad").value) || 1,
+            descripcion: $("m-obj-descripcion").value.trim(),
+            efecto: {
+              tipo: $("m-obj-efecto-tipo").value,
+              valor: Number($("m-obj-efecto-valor").value) || 0,
+            },
+          }
+        : null,
+  };
+
+  const marcadorId = $("m-id").value;
+  if (marcadorId) {
+    await updateDoc(doc(db, "partidas", currentPartidaId, "marcadores", marcadorId), datos);
+  } else {
+    await addDoc(collection(db, "partidas", currentPartidaId, "marcadores"), datos);
+  }
+  $("editor-marcador").style.display = "none";
+});
+
+// ---------- Combate por turnos ----------
+let unsubscribeCombateJugadores = null;
+let jugadoresParaCombate = [];
+
+function escucharParticipantesCombate(codigo) {
+  if (unsubscribeCombateJugadores) unsubscribeCombateJugadores();
+  const jugadoresCol = collection(db, "partidas", codigo, "jugadores");
+  unsubscribeCombateJugadores = onSnapshot(jugadoresCol, (snap) => {
+    jugadoresParaCombate = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const cont = $("lista-participantes-combate");
+    cont.innerHTML = jugadoresParaCombate
+      .map(
+        (j) => `
+      <label class="card" style="display:flex; align-items:center; gap:.6em; cursor:pointer;">
+        <input type="checkbox" class="chk-participante" value="${j.id}" checked />
+        <span>${j.nombre} <span class="mono" style="color:var(--parchment-dim); font-size:.75rem;">(${j.nombrePersonaje || "sin personaje"})</span></span>
+      </label>`
+      )
+      .join("");
+  });
+}
+
+$("btn-iniciar-combate").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const idsSeleccionados = Array.from(document.querySelectorAll(".chk-participante:checked")).map((c) => c.value);
+  if (idsSeleccionados.length === 0) return alert("Selecciona al menos un jugador.");
+
+  const orden = idsSeleccionados
+    .map((id) => {
+      const j = jugadoresParaCombate.find((x) => x.id === id);
+      const destreza = j?.atributos?.destreza ?? 10;
+      const tirada = 1 + Math.floor(Math.random() * 20);
+      return {
+        jugadorId: id,
+        nombre: j?.nombre || "Jugador",
+        nombrePersonaje: j?.nombrePersonaje || "",
+        iniciativa: tirada + destreza,
+      };
+    })
+    .sort((a, b) => b.iniciativa - a.iniciativa);
+
+  await updateDoc(doc(db, "partidas", currentPartidaId), {
+    combate: { activo: true, orden, turnoActual: 0, ronda: 1 },
+  });
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "narracion",
+    texto: `⚔️ ¡Comienza el combate! Orden de turnos: ${orden.map((o) => o.nombre).join(", ")}.`,
+    timestamp: serverTimestamp(),
+  });
+});
+
+let unsubscribeCombate = null;
+function escucharCombate(codigo) {
+  if (unsubscribeCombate) unsubscribeCombate();
+  unsubscribeCombate = onSnapshot(doc(db, "partidas", codigo), (snap) => {
+    if (!snap.exists()) return;
+    renderCombate(snap.data().combate);
+  });
+}
+
+function renderCombate(combate) {
+  const activo = combate?.activo;
+  $("combate-inactivo").style.display = activo ? "none" : "block";
+  $("combate-activo").style.display = activo ? "block" : "none";
+  if (!activo) return;
+
+  $("combate-ronda").textContent = `Ronda ${combate.ronda}`;
+  $("orden-combate").innerHTML = combate.orden
+    .map((o, idx) => {
+      const esActual = idx === combate.turnoActual;
+      return `
+      <div class="card" style="margin-bottom:.5em; ${esActual ? "border-color:var(--amber); background:var(--ink);" : ""}">
+        ${esActual ? "▶ " : ""}<strong>${o.nombre}</strong>
+        <span class="mono" style="color:var(--parchment-dim); font-size:.8rem;"> — iniciativa ${o.iniciativa}</span>
+      </div>`;
+    })
+    .join("");
+}
+
+$("btn-siguiente-turno").addEventListener("click", async () => {
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId));
+  const combate = snap.data()?.combate;
+  if (!combate?.activo) return;
+  let siguiente = combate.turnoActual + 1;
+  let ronda = combate.ronda;
+  if (siguiente >= combate.orden.length) {
+    siguiente = 0;
+    ronda += 1;
+  }
+  await updateDoc(doc(db, "partidas", currentPartidaId), {
+    "combate.turnoActual": siguiente,
+    "combate.ronda": ronda,
+  });
+});
+
+$("btn-terminar-combate").addEventListener("click", async () => {
+  if (!confirm("¿Terminar el combate?")) return;
+  await updateDoc(doc(db, "partidas", currentPartidaId), { combate: { activo: false, orden: [], turnoActual: 0, ronda: 0 } });
 });
 
 // ---------- Narración en vivo ----------

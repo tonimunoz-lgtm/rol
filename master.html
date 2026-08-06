@@ -333,6 +333,26 @@
           </div>
         </div>
 
+        <div id="m-campos-posicion" class="m-campos" style="display:none;">
+          <label>Posición y tamaño en el espacio AR</label>
+          <p style="color:var(--parchment-dim); font-size:.8rem; margin:.2em 0 .6em;">
+            Vista desde arriba del marcador. Arrastra el rectángulo para moverlo, y tira de la
+            esquina inferior derecha para escalarlo.
+          </p>
+          <div id="m-preview-box">
+            <div id="m-preview-item">
+              <div id="m-preview-resize"></div>
+            </div>
+          </div>
+          <div class="grid-3" style="margin-top:.8em;">
+            <div class="field"><label>Ancho</label><input id="m-ancho" type="number" step="0.1" min="0.1" value="1" /></div>
+            <div class="field"><label>Alto</label><input id="m-alto" type="number" step="0.1" min="0.1" value="0.6" /></div>
+            <div class="field"><label>Profundidad (Z)</label><input id="m-pos-z" type="number" step="0.05" value="0" /></div>
+            <div class="field"><label>Posición X</label><input id="m-pos-x" type="number" step="0.1" value="0" /></div>
+            <div class="field"><label>Posición Y</label><input id="m-pos-y" type="number" step="0.1" value="0" /></div>
+          </div>
+        </div>
+
         <div id="m-campos-objeto" class="m-campos" style="display:none;">
           <div class="grid-2">
             <div class="field"><label>Nombre del objeto</label><input id="m-obj-nombre" placeholder="Llave oxidada" /></div>
@@ -363,16 +383,29 @@
       <p style="color:var(--parchment-dim); max-width:640px;">
         Al iniciar combate se tira iniciativa (1d20 + destreza) para cada jugador seleccionado y
         se ordena de mayor a menor. Tú controlas el avance de turno; cada jugador ve en su móvil
-        de quién es el turno y puede lanzar su dado cuando le toque.
+        de quién es el turno, y en su propio turno puede aplicar daño (a un enemigo o a otro
+        jugador) directamente desde el móvil, usando el resultado de su dado.
       </p>
 
-      <div id="combate-inactivo">
+      <h3>Enemigos</h3>
+      <p style="color:var(--parchment-dim); font-size:.85rem;">
+        Prepáralos antes del combate (o añádelos sobre la marcha). Los jugadores los verán como
+        objetivo posible al aplicar daño en su turno.
+      </p>
+      <div id="lista-enemigos"></div>
+      <div class="grid-3" style="margin-top:.6em; align-items:end;">
+        <div class="field"><label>Nombre</label><input id="en-nombre" placeholder="Lobo del hielo" /></div>
+        <div class="field"><label>Vida</label><input id="en-vida" type="number" min="1" value="10" /></div>
+        <button id="btn-add-enemigo">+ Añadir enemigo</button>
+      </div>
+
+      <div id="combate-inactivo" style="margin-top:1.5em;">
         <h3>Selecciona quién participa</h3>
         <div id="lista-participantes-combate" class="grid-2"></div>
         <button id="btn-iniciar-combate" class="primary" style="margin-top:1em;">⚔️ Iniciar combate</button>
       </div>
 
-      <div id="combate-activo" style="display:none;">
+      <div id="combate-activo" style="display:none; margin-top:1.5em;">
         <p class="mono" id="combate-ronda" style="color:var(--amber);"></p>
         <div id="orden-combate"></div>
         <div style="display:flex; gap:.6em; margin-top:1em;">
@@ -394,6 +427,12 @@
         <label>Escribir en el chat como Master (aparece en "Inspeccionar" de los jugadores, sin voz)</label>
         <textarea id="chat-master-texto" rows="2" placeholder="Un PNJ responde, un comentario, una pista suelta..."></textarea>
         <button id="btn-enviar-chat-master">💬 Enviar al chat</button>
+      </div>
+      <div class="field">
+        <label>Música ambiente (ruta del archivo, dentro de /marcadores/ o donde prefieras en tu repo)</label>
+        <input id="musica-ambiente-path" placeholder="/marcadores/ambiente.mp3" />
+        <button id="btn-guardar-musica">Guardar música</button>
+        <p id="musica-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
       </div>
       <h3>Jugadores conectados</h3>
       <div id="lista-jugadores-vivo" class="grid-2"></div>

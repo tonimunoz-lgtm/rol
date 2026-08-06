@@ -615,7 +615,7 @@ async function construirEscenaAR(targetsUrl, marcadores) {
     .join("\n");
 
   const sceneHtml = `
-    <a-scene mindar-image="imageTargetSrc: ${targetsUrl}; autoStart: true; uiScanning: no; uiLoading: no;"
+    <a-scene embedded mindar-image="imageTargetSrc: ${targetsUrl}; autoStart: true; uiScanning: no; uiLoading: no;"
       color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: true">
       <a-assets>${assetsHtml}</a-assets>
@@ -624,6 +624,14 @@ async function construirEscenaAR(targetsUrl, marcadores) {
     </a-scene>
   `;
   els.arContainer.innerHTML = sceneHtml;
+
+  // Bug conocido de A-Frame/MindAR en móvil: la barra de direcciones del
+  // navegador cambia la altura real del viewport después de cargar, y la
+  // cámara puede quedar mal dimensionada (pantalla negra) hasta que se
+  // dispara un resize. Lo forzamos nosotros para no depender de que el
+  // usuario gire el móvil o haga scroll.
+  setTimeout(() => window.dispatchEvent(new Event("resize")), 400);
+  setTimeout(() => window.dispatchEvent(new Event("resize")), 1200);
 
   const sceneEl = els.arContainer.querySelector("a-scene");
   els.arContainer.querySelectorAll("[data-marcador-index]").forEach((entityEl) => {

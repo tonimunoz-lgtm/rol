@@ -3,7 +3,7 @@ import {
   auth, db,
   signInWithEmailAndPassword, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  collection, addDoc, serverTimestamp,
+  collection, addDoc, serverTimestamp, getDocs,
 } from "./firebase-config.js";
 
 // URL de la función serverless de Vercel que genera la partida con IA.
@@ -737,6 +737,57 @@ $("btn-guardar-personaje").addEventListener("click", async () => {
   $("editor-personaje").style.display = "none";
 });
 
+// ---------- Eliminar partida por completo ----------
+async function borrarColeccion(codigo, nombreColeccion) {
+  const snap = await getDocs(collection(db, "partidas", codigo, nombreColeccion));
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+}
+
+$("btn-eliminar-partida").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("No hay ninguna partida cargada.");
+  const confirmacion = prompt(
+    `Esto borrará TODO de la partida "${currentPartidaId}" (jugadores, personajes, marcadores, historia) y no se puede deshacer.\n\nEscribe el código de la partida para confirmar:`
+  );
+  if (confirmacion?.trim().toUpperCase() !== currentPartidaId) {
+    alert("Código no coincide, no se ha borrado nada.");
+    return;
+  }
+
+  const codigo = currentPartidaId;
+  await Promise.all([
+    borrarColeccion(codigo, "jugadores"),
+    borrarColeccion(codigo, "plantillasPersonaje"),
+    borrarColeccion(codigo, "marcadores"),
+    borrarColeccion(codigo, "eventos"),
+  ]);
+  await deleteDoc(doc(db, "partidas", codigo));
+
+  currentPartidaId = null;
+  localStorage.removeItem("runica_master_partidaId");
+  alert("Partida eliminada.");
+  location.reload();
+});
+
+// ---------- Reiniciar partida desde cero (mantiene marcadores, personajes e historia) ----------
+$("btn-reiniciar-partida").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("No hay ninguna partida cargada.");
+  if (
+    !confirm(
+      "¿Reiniciar la partida desde cero?\n\nSe borrará el registro de eventos y se desasignará a todos los jugadores actuales (tendrán que volver a entrar con el código y elegir personaje, como si empezara una partida nueva).\n\nSe mantienen: marcadores, personajes/plantillas e historia (sinopsis, PNJs, pistas, trampas)."
+    )
+  )
+    return;
+
+  const codigo = currentPartidaId;
+
+  await borrarColeccion(codigo, "eventos");
+  await borrarColeccion(codigo, "jugadores");
+  await updateDoc(doc(db, "partidas", codigo), {
+    combate: { activo: false, orden: [], turnoActual: 0, ronda: 0 },
+  });
+
+  alert("Partida reiniciada. Los jugadores deben volver a entrar con el código y elegir personaje.");
+});
 // ---------- Jugadores conectados en vivo ----------
 function escucharJugadoresEnVivo(codigo) {
   const jugadoresCol = collection(db, "partidas", codigo, "jugadores");

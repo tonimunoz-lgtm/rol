@@ -25,6 +25,7 @@
       <a href="#" data-section="historia">Historia generada</a>
       <a href="#" data-section="personajes">Personajes</a>
       <a href="#" data-section="marcadores">Marcadores AR</a>
+      <a href="#" data-section="guion">Guion automático</a>
       <a href="#" data-section="combate">Combate</a>
       <a href="#" data-section="en-vivo">Partida en vivo</a>
     </nav>
@@ -376,6 +377,56 @@
         </div>
       </div>
     </section>
+
+    <!-- ---------- Guion automático (storyboard de escenas) ---------- -->
+    <section id="section-guion" class="section-panel">
+      <h2 class="display">Guion automático</h2>
+      <p style="color:var(--parchment-dim); max-width:640px;">
+        Crea la secuencia de escenas de la partida. Cada escena lanza su narración sola en cuanto
+        se activa, y el juego avanza a la siguiente escena solo cuando pasa lo que tú decidas
+        (escanear un marcador, derrotar a un enemigo, recoger un objeto, terminar un combate...).
+        Tú puedes forzar el avance manualmente en cualquier momento si algo no dispara solo.
+      </p>
+
+      <div class="card" style="margin-bottom:1em;">
+        <strong>Escena activa ahora mismo:</strong>
+        <span class="mono" id="guion-escena-actual" style="color:var(--amber);">—</span>
+        <div style="display:flex; gap:.6em; margin-top:.6em;">
+          <button id="btn-forzar-siguiente-escena">Forzar siguiente escena →</button>
+          <button id="btn-reiniciar-guion" class="danger">Volver a la escena 1</button>
+        </div>
+      </div>
+
+      <div id="lista-escenas"></div>
+      <button id="btn-nueva-escena" class="primary">+ Añadir escena</button>
+    </section>
+
+    <template id="tpl-escena-row">
+      <div class="card escena-row" style="margin-bottom:.8em; padding:1em;">
+        <div class="grid-2">
+          <div class="field"><label>Nombre de la escena (para ti)</label><input class="es-nombre" placeholder="1. Llegada a la cripta" /></div>
+          <div class="field">
+            <label>Avanza a la siguiente escena cuando...</label>
+            <select class="es-trigger-tipo">
+              <option value="manual">Solo cuando tú lo fuerces</option>
+              <option value="marcador">Se escanee el marcador con índice...</option>
+              <option value="objeto">Se recoja el objeto llamado...</option>
+              <option value="enemigo_derrotado">Un enemigo llamado... llegue a 0 de vida</option>
+              <option value="combate_terminado">Termine el combate en curso</option>
+            </select>
+          </div>
+        </div>
+        <div class="field es-trigger-valor-campo" style="display:none;">
+          <label class="es-trigger-valor-label">Valor</label>
+          <input class="es-trigger-valor" placeholder="" />
+        </div>
+        <div class="field">
+          <label>Narración automática al entrar en esta escena (texto + voz)</label>
+          <textarea class="es-narracion" rows="3"></textarea>
+        </div>
+        <button class="btn-quitar-escena danger" style="font-size:.75rem;">Quitar escena</button>
+      </div>
+    </template>
 
     <!-- ---------- Combate por turnos ---------- -->
     <section id="section-combate" class="section-panel">

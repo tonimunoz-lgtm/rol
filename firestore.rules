@@ -13,6 +13,15 @@ service cloud.firestore {
         get(/databases/$(database)/documents/partidas/$(partidaId)).data.masterUid == request.auth.uid;
     }
 
+    // Los jugadores pueden actualizar SOLO estos dos campos del documento de
+    // la partida (nunca la historia, config, ni nada más): "enemigos" para
+    // aplicar daño en combate, y "escenaActual" para el avance automático
+    // del guion. Cualquier otro campo en la misma escritura la rechaza.
+    function esActualizacionDeJugadorPermitida() {
+      return request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enemigos', 'escenaActual']);
+    }
+
     // Solo lectura del propio doc; la creación de masters se hace desde
     // la consola de Firebase o con el Admin SDK, nunca desde el cliente.
     match /masters/{uid} {
@@ -23,7 +32,8 @@ service cloud.firestore {
     match /partidas/{partidaId} {
       allow read: if request.auth != null; // los jugadores necesitan leer para unirse por código
       allow create: if esMaster();
-      allow update, delete: if esElMasterDeEstaPartida(partidaId);
+      allow update: if esElMasterDeEstaPartida(partidaId) || esActualizacionDeJugadorPermitida();
+      allow delete: if esElMasterDeEstaPartida(partidaId);
 
       match /jugadores/{jugadorId} {
         allow read: if request.auth != null;

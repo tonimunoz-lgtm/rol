@@ -19,7 +19,14 @@
 
   <div id="hud-top">
     <span class="player-name mono" id="player-name-label">Cargando...</span>
-    <button id="btn-logout" style="font-size:.75rem;padding:.4em .8em;">Salir</button>
+    <div style="display:flex; gap:.4em;">
+      <button id="btn-toggle-voz" style="font-size:.75rem;padding:.4em .8em;" title="Cambiar voz">🔊</button>
+      <button id="btn-logout" style="font-size:.75rem;padding:.4em .8em;">Salir</button>
+    </div>
+  </div>
+
+  <div id="combate-bar" class="mono">
+    <span id="combate-bar-texto"></span>
   </div>
 
   <div class="rune-ring" id="rune-ring"></div>

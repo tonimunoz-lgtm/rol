@@ -75,6 +75,55 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid #3a3226;
   border-radius: var(--radius);
   padding: 1.2em;
+  position: relative;
+}
+
+/* Adornos rúnicos en las esquinas — la firma visual de "Rúnica" */
+.card::before, .card::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--amber);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.card::before { top: 6px; left: 6px; border-right: none; border-bottom: none; }
+.card::after { bottom: 6px; right: 6px; border-left: none; border-top: none; }
+
+h1.display::after, h2.display::after {
+  content: "";
+  display: block;
+  width: 64px;
+  height: 2px;
+  margin-top: .35em;
+  background: linear-gradient(to right, var(--amber), transparent);
+}
+
+/* Sub-pestañas dentro de "Historia y trama" */
+.historia-subtab-btn {
+  font-size: .85rem;
+}
+.historia-subtab-btn.active {
+  background: var(--amber);
+  color: var(--ink);
+}
+
+/* Impresión de la ficha de personaje: solo se imprime la tarjeta */
+@media print {
+  body * { visibility: hidden; }
+  #ficha-content, #ficha-content * { visibility: visible; }
+  #ficha-content {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+    border: none;
+  }
+  #btn-cerrar-ficha, #btn-imprimir-ficha,
+  .btn-usar-habilidad, .btn-usar-objeto { display: none !important; }
 }
 
 /* ---------- Vista Jugador ---------- */

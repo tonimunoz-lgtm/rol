@@ -441,6 +441,7 @@ h1.display::after, h2.display::after {
 
 .field { margin-bottom: 1em; display: flex; flex-direction: column; gap: .35em; }
 .field label { font-size: .85rem; color: var(--parchment-dim); }
+.escena-row .es-trigger-valor-campo { margin-top: -.3em; }
 
 @media (max-width: 720px) {
   #master-view { grid-template-columns: 1fr; }

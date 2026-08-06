@@ -315,6 +315,12 @@ function mostrarNarracion(texto) {
   hablar(texto);
 }
 
+document.getElementById("btn-cerrar-narracion").addEventListener("click", () => {
+  els.narrationBox.classList.remove("visible");
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  if (audioIAActual) audioIAActual.pause();
+});
+
 let vocesDisponibles = [];
 if ("speechSynthesis" in window) {
   const cargarVoces = () => (vocesDisponibles = speechSynthesis.getVoices());

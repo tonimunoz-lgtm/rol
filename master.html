@@ -310,6 +310,7 @@
             <option value="video">Vídeo</option>
             <option value="imagen">Imagen</option>
             <option value="objeto">Objeto para el inventario</option>
+            <option value="trampa">Trampa (tirada de dado automática)</option>
           </select>
         </div>
 
@@ -371,6 +372,28 @@
           <div class="field"><label>Descripción del objeto</label><input id="m-obj-descripcion" placeholder="Qué es y para qué sirve" /></div>
         </div>
 
+        <div id="m-campos-trampa" class="m-campos" style="display:none;">
+          <p style="color:var(--parchment-dim); font-size:.85rem;">
+            Al escanear este marcador, el jugador tira 1d20 + su atributo elegido. Si iguala o
+            supera la dificultad, la supera sin daño; si no, recibe el daño indicado.
+          </p>
+          <div class="grid-3">
+            <div class="field">
+              <label>Atributo del jugador que tira</label>
+              <select id="m-trampa-atributo">
+                <option value="destreza">Destreza</option>
+                <option value="fuerza">Fuerza</option>
+                <option value="inteligencia">Inteligencia</option>
+                <option value="vigor">Vigor</option>
+                <option value="carisma">Carisma</option>
+              </select>
+            </div>
+            <div class="field"><label>Dificultad (a superar)</label><input id="m-trampa-dificultad" type="number" min="1" value="12" /></div>
+            <div class="field"><label>Daño si falla</label><input id="m-trampa-danio" type="number" min="0" value="5" /></div>
+          </div>
+          <div class="field"><label>Descripción de la trampa</label><input id="m-trampa-descripcion" placeholder="Un suelo de losas inestables..." /></div>
+        </div>
+
         <div style="display:flex; gap:.6em; margin-top:1em;">
           <button id="btn-guardar-marcador" class="primary">Guardar marcador</button>
           <button id="btn-cancelar-marcador">Cancelar</button>
@@ -411,6 +434,8 @@
               <option value="manual">Solo cuando tú lo fuerces</option>
               <option value="marcador">Se escanee el marcador con índice...</option>
               <option value="objeto">Se recoja el objeto llamado...</option>
+              <option value="objeto_usado">Se use el objeto llamado...</option>
+              <option value="habilidad_usada">Se use la habilidad llamada...</option>
               <option value="enemigo_derrotado">Un enemigo llamado... llegue a 0 de vida</option>
               <option value="combate_terminado">Termine el combate en curso</option>
             </select>
@@ -523,6 +548,23 @@
         </select>
       </div>
       <div class="field"><label>Usos por partida (0 = ilimitado)</label><input class="h-usos" type="number" min="0" value="3" /></div>
+      <div class="field">
+        <label>Atributo que modifica la tirada</label>
+        <select class="h-atributo">
+          <option value="ninguno">Ninguno</option>
+          <option value="fuerza">Fuerza</option>
+          <option value="destreza">Destreza</option>
+          <option value="inteligencia">Inteligencia</option>
+          <option value="carisma">Carisma</option>
+          <option value="vigor">Vigor</option>
+        </select>
+      </div>
+      <div class="field" style="justify-content:center;">
+        <label style="display:flex; align-items:center; gap:.4em; cursor:pointer;">
+          <input type="checkbox" class="h-es-ataque" />
+          Es un ataque (pide objetivo y aplica daño solo en combate)
+        </label>
+      </div>
     </div>
     <div class="field"><label>Descripción / efecto</label><input class="h-descripcion" placeholder="Inflige 1d8 de daño extra en el siguiente ataque" /></div>
     <button class="btn-quitar-habilidad danger" style="font-size:.75rem;">Quitar habilidad</button>

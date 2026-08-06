@@ -135,16 +135,22 @@ Crea tantas plantillas como jugadores esperas tener (o más, para que puedan ele
   el código ni en el repositorio. Solo la lee `api/generar-partida.js`, que corre en el servidor
   — nunca llega al navegador. Si quieres rotarla, cambia el valor en Vercel y haz Redeploy.
 
-## Imágenes de ambientación (Pexels)
+## Imágenes de ambientación (Pexels) + chat en pantalla
 
-En el panel "Inspeccionar" del jugador (pestaña Imágenes) se muestran fotos libres de derechos
-relacionadas con el lugar/estilo/época de la partida, buscadas automáticamente vía Pexels.
+La pantalla del jugador, mientras no está escaneando, muestra un fondo con fotos libres de
+derechos relacionadas con el lugar/estilo/época de la partida (rotan solas cada pocos segundos),
+buscadas automáticamente vía Pexels. Encima, un chat transparente sin cajas (estilo overlay de
+stream) muestra lo que escriben los demás jugadores y el master, cada uno con su color, y las
+líneas van desapareciendo solas tras unos segundos.
+
+La cámara AR **no se abre sola**: el jugador pulsa "🔍 Inspeccionar" para activarla (y "✕ Cerrar
+cámara" para volver al fondo ambiental); el chat se queda superpuesto también mientras se escanea.
 
 1. Crea una cuenta gratuita en [pexels.com/api](https://www.pexels.com/api/) y copia tu API key.
 2. En Vercel → Settings → Environment Variables, añade `PEXELS_API_KEY` con esa clave → Redeploy.
 
-Si no la configuras, la pestaña de imágenes simplemente queda vacía; el resto de la app sigue
-funcionando igual.
+Si no la configuras, simplemente no habrá fondo (queda el color oscuro base); el resto de la app
+sigue funcionando igual.
 
 ## Voz IA opcional (ElevenLabs)
 

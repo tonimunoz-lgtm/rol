@@ -302,6 +302,8 @@ function escucharLogEventos(codigo) {
         lineas.push(`📢 Narración: ${e.texto}`);
       } else if (e.tipo === "accion") {
         lineas.push(`🗣️ ${e.nombreJugador || "Jugador"}: "${e.texto}"`);
+      } else if (e.tipo === "chat_master") {
+        lineas.push(`🎙️ Master: "${e.texto}"`);
       }
     });
     log.innerHTML = lineas.map((l) => `<div>${l}</div>`).join("") || "<em>Sin eventos todavía.</em>";
@@ -567,6 +569,18 @@ $("btn-lanzar-narracion").addEventListener("click", async () => {
     timestamp: serverTimestamp(),
   });
   $("narracion-en-vivo").value = "";
+});
+
+$("btn-enviar-chat-master").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const texto = $("chat-master-texto").value.trim();
+  if (!texto) return;
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "chat_master",
+    texto,
+    timestamp: serverTimestamp(),
+  });
+  $("chat-master-texto").value = "";
 });
 
 // ---------- Personajes: plantillas con atributos, habilidades e inventario ----------

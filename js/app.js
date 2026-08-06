@@ -217,7 +217,14 @@ async function bootGame() {
 
   // Ficha del jugador en tiempo real
   onSnapshot(jugadorRef, (snap) => {
-    if (!snap.exists()) return;
+    if (!snap.exists()) {
+      // El master ha reiniciado la partida (o borrado tu personaje): te
+      // devolvemos a la pantalla de unión para que vuelvas a entrar.
+      localStorage.removeItem("runica_partidaId");
+      localStorage.removeItem("runica_jugadorId");
+      location.reload();
+      return;
+    }
     const data = snap.data();
     jugadorDataActual = data;
     els.playerName.textContent = data.nombre;

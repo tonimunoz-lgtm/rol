@@ -47,7 +47,26 @@ const els = {
   btnAplicarDaño: document.getElementById("btn-aplicar-daño"),
   btnToggleMusica: document.getElementById("btn-toggle-musica"),
   musicaAmbiente: document.getElementById("musica-ambiente"),
+  habilidadAtaqueModal: document.getElementById("habilidad-ataque-modal"),
+  habilidadAtaqueTitulo: document.getElementById("habilidad-ataque-titulo"),
+  habilidadAtaqueTirada: document.getElementById("habilidad-ataque-tirada"),
+  habilidadAtaqueObjetivo: document.getElementById("habilidad-ataque-objetivo"),
+  btnConfirmarAtaque: document.getElementById("btn-confirmar-ataque"),
+  btnCancelarAtaque: document.getElementById("btn-cancelar-ataque"),
 };
+
+const DIFICULTAD_ATAQUE_DEFECTO = 12;
+
+// Modificador clásico: (valor del atributo - 10) / 2, redondeando hacia abajo.
+function modificadorDeAtributo(nombreAtributo, atributos) {
+  if (!nombreAtributo || nombreAtributo === "ninguno") return 0;
+  const valor = atributos?.[nombreAtributo] ?? 10;
+  return Math.floor((valor - 10) / 2);
+}
+
+function tirarDado(caras) {
+  return 1 + Math.floor(Math.random() * caras);
+}
 
 let ultimoDadoResultado = null;
 let enemigosCombateActual = [];
@@ -364,6 +383,18 @@ async function verificarAvanceGuion(contexto) {
   } else if (t.tipo === "objeto" && contexto.tipo === "objeto" && normaliza(t.valor) === normaliza(contexto.valor)) {
     cumple = true;
   } else if (
+    t.tipo === "objeto_usado" &&
+    contexto.tipo === "objeto_usado" &&
+    normaliza(t.valor) === normaliza(contexto.valor)
+  ) {
+    cumple = true;
+  } else if (
+    t.tipo === "habilidad_usada" &&
+    contexto.tipo === "habilidad_usada" &&
+    normaliza(t.valor) === normaliza(contexto.valor)
+  ) {
+    cumple = true;
+  } else if (
     t.tipo === "enemigo_derrotado" &&
     contexto.tipo === "enemigo_derrotado" &&
     normaliza(t.valor) === normaliza(contexto.valor)
@@ -641,33 +672,125 @@ async function usarObjeto(idx, data) {
     objeto: objeto.nombre,
     timestamp: serverTimestamp(),
   });
+
+  const nombrePersonaje = data.nombrePersonaje || data.nombre;
+  let efectoTexto = "";
+  if (objeto.efecto?.tipo === "curar") efectoTexto = ` (recupera ${objeto.efecto.valor} de vida)`;
+  else if (objeto.efecto?.tipo === "danio") efectoTexto = ` (pierde ${objeto.efecto.valor} de vida)`;
+  añadirMensajeChat({ tipo: "narracion", texto: `🎒 ${nombrePersonaje} usa "${objeto.nombre}"${efectoTexto}.` });
+
+  verificarAvanceGuion({ tipo: "objeto_usado", valor: objeto.nombre });
 }
+
+let ataquePendiente = null;
 
 async function usarHabilidad(idx, data) {
   const habilidad = (data.habilidades || [])[idx];
   if (!habilidad) return;
   const usosActuales = data.habilidadesUsos || {};
   const restantes = usosActuales[idx];
+  const modificador = modificadorDeAtributo(habilidad.atributo, data.atributos);
 
-  let tirada = null;
-  if (habilidad.dado && habilidad.dado !== "ninguno") {
-    const caras = Number(habilidad.dado.replace("d", ""));
-    tirada = 1 + Math.floor(Math.random() * caras);
+  const hayObjetivos = enemigosCombateActual.length > 0 || ordenCombateActual.length > 0;
+
+  if (habilidad.esAtaque && hayObjetivos) {
+    // Pedimos objetivo antes de consumir el uso: si cancela, no se gasta.
+    const opcionesEnemigos = enemigosCombateActual
+      .map((en, i) => `<option value="enemigo:${i}">${en.nombre} (❤${en.vida})</option>`)
+      .join("");
+    const opcionesJugadores = ordenCombateActual
+      .filter((o) => o.jugadorId !== currentJugadorId)
+      .map((o) => `<option value="jugador:${o.jugadorId}">${o.nombre}</option>`)
+      .join("");
+    els.habilidadAtaqueObjetivo.innerHTML = opcionesEnemigos + opcionesJugadores;
+    els.habilidadAtaqueTitulo.textContent = `Usar "${habilidad.nombre}"`;
+    els.habilidadAtaqueTirada.textContent = "";
+    ataquePendiente = { idx, habilidad, data, modificador, restantes };
+    els.habilidadAtaqueModal.classList.add("visible");
+    return;
   }
 
+  // Habilidad sin objetivo (o esAtaque pero sin combate activo): solo tirada.
+  await ejecutarUsoHabilidad(idx, habilidad, data, usosActuales, restantes, modificador, null);
+}
+
+els.btnCancelarAtaque.addEventListener("click", () => {
+  els.habilidadAtaqueModal.classList.remove("visible");
+  ataquePendiente = null;
+});
+
+els.btnConfirmarAtaque.addEventListener("click", async () => {
+  if (!ataquePendiente) return;
+  const { idx, habilidad, data, modificador } = ataquePendiente;
+  const usosActuales = data.habilidadesUsos || {};
+  const objetivoValor = els.habilidadAtaqueObjetivo.value;
+  els.habilidadAtaqueModal.classList.remove("visible");
+  await ejecutarUsoHabilidad(idx, habilidad, data, usosActuales, usosActuales[idx], modificador, objetivoValor);
+  ataquePendiente = null;
+});
+
+async function ejecutarUsoHabilidad(idx, habilidad, data, usosActuales, restantes, modificador, objetivoValor) {
   const nuevosUsos = { ...usosActuales };
   if (restantes !== -1) nuevosUsos[idx] = Math.max(0, restantes - 1);
-
   await updateDoc(jugadorRefActual, { habilidadesUsos: nuevosUsos });
+
+  const nombreAtacante = data.nombrePersonaje || data.nombre;
+  let tiradaImpacto = null;
+  let daño = 0;
+  let objetivoNombre = "";
+  let textoNarracion = "";
+
+  if (habilidad.esAtaque && objetivoValor) {
+    tiradaImpacto = tirarDado(20) + modificador;
+    const acierta = tiradaImpacto >= DIFICULTAD_ATAQUE_DEFECTO;
+    const [tipoObjetivo, valorObjetivo] = objetivoValor.split(":");
+
+    if (tipoObjetivo === "enemigo") {
+      const enIdx = Number(valorObjetivo);
+      const enemigo = enemigosCombateActual[enIdx];
+      objetivoNombre = enemigo?.nombre || "enemigo";
+      if (acierta && enemigo) {
+        const caras = Number((habilidad.dado || "d6").replace("d", "")) || 6;
+        daño = Math.max(1, tirarDado(caras) + modificador);
+        const nuevos = [...enemigosCombateActual];
+        nuevos[enIdx] = { ...enemigo, vida: Math.max(0, enemigo.vida - daño) };
+        await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
+      }
+    } else if (tipoObjetivo === "jugador") {
+      const objetivoRef = doc(db, "partidas", currentPartidaId, "jugadores", valorObjetivo);
+      const objetivoSnap = await getDoc(objetivoRef);
+      if (objetivoSnap.exists()) {
+        const objetivoData = objetivoSnap.data();
+        objetivoNombre = objetivoData.nombrePersonaje || objetivoData.nombre;
+        if (acierta) {
+          const caras = Number((habilidad.dado || "d6").replace("d", "")) || 6;
+          daño = Math.max(1, tirarDado(caras) + modificador);
+          await updateDoc(objetivoRef, { vida: Math.max(0, objetivoData.vida - daño) });
+        }
+      }
+    }
+
+    textoNarracion = acierta
+      ? `⚔️ ${nombreAtacante} usa "${habilidad.nombre}" contra ${objetivoNombre} (tirada ${tiradaImpacto}) y acierta: ${daño} de daño.`
+      : `⚔️ ${nombreAtacante} usa "${habilidad.nombre}" contra ${objetivoNombre} (tirada ${tiradaImpacto}) pero falla.`;
+    añadirMensajeChat({ tipo: "narracion", texto: textoNarracion });
+  } else if (habilidad.dado && habilidad.dado !== "ninguno") {
+    const caras = Number(habilidad.dado.replace("d", "")) || 20;
+    tiradaImpacto = tirarDado(caras) + modificador;
+  }
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "habilidad",
     jugadorId: currentJugadorId,
     nombreJugador: data.nombre,
     habilidad: habilidad.nombre,
-    tirada,
+    tirada: tiradaImpacto,
+    objetivoNombre: objetivoNombre || null,
+    daño: daño || null,
     timestamp: serverTimestamp(),
   });
+
+  verificarAvanceGuion({ tipo: "habilidad_usada", valor: habilidad.nombre });
 }
 
 // ---------- 5. Dados ----------
@@ -1002,8 +1125,50 @@ function manejarMarcadorEncontrado(marcador) {
     }
   } else if (marcador.tipo === "objeto" && marcador.objeto) {
     recogerObjeto(marcador);
+  } else if (marcador.tipo === "trampa" && marcador.trampa) {
+    resolverTrampa(marcador);
   }
   verificarAvanceGuion({ tipo: "marcador", valor: marcador.targetIndex });
+}
+
+// ---------- 6b2. Trampas: tirada automática de dado ----------
+async function resolverTrampa(marcador) {
+  if (!jugadorDataActual || !jugadorRefActual) return;
+  // Igual que con los objetos, no se repite la trampa si ya se activó para
+  // este jugador (para no farmear daño escaneando el mismo marcador).
+  const yaActivadas = jugadorDataActual.trampasActivadas || [];
+  if (yaActivadas.includes(marcador.id)) return;
+
+  const { atributo, dificultad, danio, descripcion } = marcador.trampa;
+  const modificador = modificadorDeAtributo(atributo, jugadorDataActual.atributos);
+  const tirada = tirarDado(20) + modificador;
+  const supera = tirada >= (dificultad || 12);
+  const nombrePersonaje = jugadorDataActual.nombrePersonaje || jugadorDataActual.nombre;
+
+  let nuevaVida = jugadorDataActual.vida;
+  if (!supera) {
+    nuevaVida = Math.max(0, jugadorDataActual.vida - (danio || 0));
+  }
+
+  await updateDoc(jugadorRefActual, {
+    trampasActivadas: [...yaActivadas, marcador.id],
+    vida: nuevaVida,
+  });
+
+  const texto = supera
+    ? `⚠️ ${nombrePersonaje} esquiva la trampa${descripcion ? ` (${descripcion})` : ""} — tirada ${tirada}.`
+    : `⚠️ ${nombrePersonaje} cae en la trampa${descripcion ? ` (${descripcion})` : ""} — tirada ${tirada}, pierde ${danio || 0} de vida.`;
+  mostrarNarracion(texto);
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "trampa",
+    jugadorId: currentJugadorId,
+    nombreJugador: jugadorDataActual.nombre,
+    superada: supera,
+    tirada,
+    danio: supera ? 0 : danio || 0,
+    timestamp: serverTimestamp(),
+  });
 }
 
 // ---------- 6b. Recoger un objeto de un marcador (una vez por jugador) ----------

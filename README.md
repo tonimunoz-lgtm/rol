@@ -167,7 +167,29 @@ a "Voz IA" (ElevenLabs). Para activarla:
 Si no configuras esta variable, el botón simplemente no hace nada especial y todo sigue
 funcionando con la voz del dispositivo.
 
+## Guion automático (storyboard de escenas)
+
+Desde `/master.html` → **Guion automático**, creas una secuencia de escenas. Cada escena tiene:
+
+- Una narración que se lanza sola (texto + voz) en cuanto la escena se activa, en las pantallas
+  de todos los jugadores.
+- Un disparador que hace avanzar a la siguiente escena automáticamente: escanear un marcador
+  concreto, recoger un objeto con un nombre concreto, que un enemigo con un nombre concreto llegue
+  a 0 de vida, que termine el combate en curso, o "solo cuando tú lo fuerces" (manual).
+
+El propio juego, sin que el master tenga que estar pendiente, va detectando cuándo se cumple la
+condición de la escena activa y pasa a la siguiente sola. El master siempre puede:
+- **Forzar siguiente escena →**: por si algo no se dispara solo o quiere saltar manualmente.
+- **Volver a la escena 1**: para reiniciar el guion sin tocar nada más.
+
+Importante: el disparador `enemigo_derrotado` y `objeto` comparan el nombre **exactamente como lo
+escribiste** en el enemigo/objeto (sin distinguir mayúsculas/minúsculas), así que usa el mismo
+nombre en ambos sitios.
+
 ## Siguientes pasos sugeridos
 
+- Ramificaciones (que una escena pueda llevar a distintas escenas siguientes según lo que pase,
+  no solo una secuencia lineal).
+- Que la IA proponga un primer borrador de guion junto con la historia.
 - Sonido ambiente por escena (variarlo según la ubicación, no solo una pista fija).
 - Resolución de daño con más matices (tipos de daño, resistencias, curación en área).

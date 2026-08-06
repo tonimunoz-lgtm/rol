@@ -85,22 +85,29 @@ async function handler(req, res) {
 
   try {
     const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
-    const groqResp = await fetch(groqUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
-      }),
-    });
+    let groqResp = await llamarGroq(groqUrl, prompt, true);
+
+    // Si Groq no logra validar su propio modo JSON estricto, reintentamos una
+    // vez sin exigirlo — usamos igualmente nuestro propio parseo tolerante.
+    if (!groqResp.ok) {
+      const errorBody = await groqResp.text();
+      let esFalloDeJson = false;
+      try {
+        esFalloDeJson = JSON.parse(errorBody)?.error?.code === "json_validate_failed";
+      } catch (_) {}
+
+      if (esFalloDeJson) {
+        groqResp = await llamarGroq(groqUrl, prompt, false);
+      } else {
+        console.error("Error de Groq:", groqResp.status, errorBody);
+        res.status(500).json({ error: `Groq respondió ${groqResp.status}: ${errorBody.slice(0, 200)}` });
+        return;
+      }
+    }
 
     if (!groqResp.ok) {
       const errorBody = await groqResp.text();
-      console.error("Error de Groq:", groqResp.status, errorBody);
+      console.error("Error de Groq (reintento):", groqResp.status, errorBody);
       res.status(500).json({ error: `Groq respondió ${groqResp.status}: ${errorBody.slice(0, 200)}` });
       return;
     }
@@ -123,6 +130,25 @@ async function handler(req, res) {
     console.error(err);
     res.status(500).json({ error: `Error generando contenido con IA: ${err.message}` });
   }
+}
+
+function llamarGroq(url, prompt, forzarJson) {
+  const body = {
+    model: GROQ_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 8000,
+    temperature: 0.7,
+  };
+  if (forzarJson) body.response_format = { type: "json_object" };
+
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 function construirPrompt(c) {

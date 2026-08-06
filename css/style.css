@@ -207,6 +207,25 @@ h1.display::after, h2.display::after {
   100% { box-shadow: 0 0 10px 2px rgba(240, 201, 59, 0.25); transform: translate(-50%, -50%) rotate(360deg) scale(1); }
 }
 
+#combate-bar {
+  position: fixed;
+  top: 52px;
+  left: 0; right: 0;
+  z-index: 19;
+  text-align: center;
+  padding: .5em;
+  font-size: .85rem;
+  background: rgba(140, 59, 46, 0.85);
+  color: var(--parchment);
+  display: none;
+}
+#combate-bar.visible { display: block; }
+#combate-bar.mi-turno {
+  background: var(--amber);
+  color: var(--ink);
+  font-weight: 700;
+}
+
 #scanning-hint {
   position: fixed;
   bottom: 25%;

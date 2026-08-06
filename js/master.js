@@ -120,6 +120,8 @@ $("btn-generar").addEventListener("click", async () => {
       pistas: partida.pistas || [],
       trampasEncuentros: partida.trampasEncuentros || [],
       giroFinal: partida.giroFinal || "",
+      guion: [],
+      escenaActual: 0,
       creadaEn: serverTimestamp(),
       masterUid: auth.currentUser.uid,
     });
@@ -218,6 +220,7 @@ function cargarHistoriaEnUI(data) {
   renderListaEditor("lista-pnjs", data.pnjs || []);
   renderListaEditor("lista-pistas", data.pistas || []);
   renderListaEditor("lista-trampas", data.trampasEncuentros || []);
+  renderListaEscenas(data.guion || []);
 }
 
 function crearFilaListaItem(contenedorId, item = null) {
@@ -547,6 +550,115 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
   $("editor-marcador").style.display = "none";
 });
 
+// ---------- Guion automático (storyboard de escenas) ----------
+const ETIQUETAS_TRIGGER = {
+  marcador: "Índice del marcador",
+  objeto: "Nombre exacto del objeto",
+  enemigo_derrotado: "Nombre exacto del enemigo",
+};
+
+function crearFilaEscena(escena = null) {
+  const tpl = document.getElementById("tpl-escena-row");
+  const row = tpl.content.firstElementChild.cloneNode(true);
+  if (escena) {
+    row.querySelector(".es-nombre").value = escena.nombre || "";
+    row.querySelector(".es-narracion").value = escena.narracion || "";
+    row.querySelector(".es-trigger-tipo").value = escena.trigger?.tipo || "manual";
+    row.querySelector(".es-trigger-valor").value = escena.trigger?.valor ?? "";
+  }
+  const tipoSelect = row.querySelector(".es-trigger-tipo");
+  const actualizarCampoValor = () => {
+    const tipo = tipoSelect.value;
+    const campo = row.querySelector(".es-trigger-valor-campo");
+    if (tipo === "manual" || tipo === "combate_terminado") {
+      campo.style.display = "none";
+    } else {
+      campo.style.display = "block";
+      row.querySelector(".es-trigger-valor-label").textContent = ETIQUETAS_TRIGGER[tipo] || "Valor";
+      row.querySelector(".es-trigger-valor").type = tipo === "marcador" ? "number" : "text";
+    }
+  };
+  tipoSelect.addEventListener("change", actualizarCampoValor);
+  actualizarCampoValor();
+
+  row.querySelector(".btn-quitar-escena").addEventListener("click", () => row.remove());
+  $("lista-escenas").appendChild(row);
+}
+
+function renderListaEscenas(escenas) {
+  $("lista-escenas").innerHTML = "";
+  (escenas || []).forEach((es) => crearFilaEscena(es));
+}
+
+function leerListaEscenas() {
+  return Array.from(document.querySelectorAll("#lista-escenas .escena-row")).map((row) => {
+    const tipo = row.querySelector(".es-trigger-tipo").value;
+    return {
+      nombre: row.querySelector(".es-nombre").value.trim() || "Escena sin nombre",
+      narracion: row.querySelector(".es-narracion").value.trim(),
+      trigger: {
+        tipo,
+        valor:
+          tipo === "marcador"
+            ? Number(row.querySelector(".es-trigger-valor").value) || 0
+            : row.querySelector(".es-trigger-valor").value.trim(),
+      },
+    };
+  });
+}
+
+$("btn-nueva-escena").addEventListener("click", () => crearFilaEscena());
+
+// Reutilizamos el botón "+ Añadir escena" como disparador; el guardado real
+// se hace con este botón que insertamos junto a él.
+const btnGuardarGuion = document.createElement("button");
+btnGuardarGuion.textContent = "💾 Guardar guion";
+btnGuardarGuion.className = "primary";
+btnGuardarGuion.style.marginLeft = ".6em";
+$("btn-nueva-escena").insertAdjacentElement("afterend", btnGuardarGuion);
+btnGuardarGuion.addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  await updateDoc(doc(db, "partidas", currentPartidaId), { guion: leerListaEscenas() });
+  alert("Guion guardado.");
+});
+
+let guionActual = [];
+
+function renderEscenaActual(guion, escenaActual) {
+  const idx = escenaActual ?? 0;
+  const escena = (guion || [])[idx];
+  $("guion-escena-actual").textContent = escena ? `#${idx + 1} — ${escena.nombre}` : "— (sin guion o sin empezar)";
+}
+
+async function dispararNarracionEscena(codigo, escena) {
+  if (!escena?.narracion) return;
+  await addDoc(collection(db, "partidas", codigo, "eventos"), {
+    tipo: "narracion",
+    texto: escena.narracion,
+    timestamp: serverTimestamp(),
+  });
+}
+
+$("btn-forzar-siguiente-escena").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId));
+  const data = snap.data() || {};
+  const guion = data.guion || [];
+  const actual = data.escenaActual ?? 0;
+  const siguiente = Math.min(actual + 1, Math.max(guion.length - 1, 0));
+  await updateDoc(doc(db, "partidas", currentPartidaId), { escenaActual: siguiente });
+  if (guion[siguiente]) await dispararNarracionEscena(currentPartidaId, guion[siguiente]);
+});
+
+$("btn-reiniciar-guion").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  if (!confirm("¿Volver a la escena 1?")) return;
+  await updateDoc(doc(db, "partidas", currentPartidaId), { escenaActual: 0 });
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId));
+  const guion = snap.data()?.guion || [];
+  if (guion[0]) await dispararNarracionEscena(currentPartidaId, guion[0]);
+});
+
 // ---------- Combate por turnos ----------
 let unsubscribeCombateJugadores = null;
 let jugadoresParaCombate = [];
@@ -609,6 +721,8 @@ function escucharCombate(codigo) {
     renderCombate(data.combate);
     enemigosActuales = data.enemigos || [];
     renderEnemigos();
+    guionActual = data.guion || [];
+    renderEscenaActual(guionActual, data.escenaActual);
   });
 }
 
@@ -949,6 +1063,7 @@ $("btn-reiniciar-partida").addEventListener("click", async () => {
   await borrarColeccion(codigo, "jugadores");
   await updateDoc(doc(db, "partidas", codigo), {
     combate: { activo: false, orden: [], turnoActual: 0, ronda: 0 },
+    escenaActual: 0,
   });
 
   alert("Partida reiniciada. Los jugadores deben volver a entrar con el código y elegir personaje.");

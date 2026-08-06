@@ -58,28 +58,32 @@ En la consola de Firebase del proyecto `femjoc`:
 No usamos Firebase Storage ni Cloud Functions en absoluto, así que no hace falta el plan Blaze
 para nada de este proyecto.
 
-## Paso 4 — La IA (Gemini) vía función serverless de Vercel
+## Paso 4 — La IA (Groq) vía función serverless de Vercel
 
-La llamada a Gemini vive en `api/generar-partida.js`, que Vercel detecta automáticamente como
-función serverless (gratis en el plan Hobby, sin CLI, sin cuentas de servicio).
+La llamada a la IA vive en `api/generar-partida.js`, que Vercel detecta automáticamente como
+función serverless (gratis en el plan Hobby, sin CLI, sin cuentas de servicio). Usamos **Groq**
+en vez de Gemini: tier gratuito generoso, sin tarjeta, y autenticación estándar sin los
+problemas de formato de clave que está teniendo Gemini ahora mismo.
 
-1. En tu proyecto de Vercel (`rol-gamma`) → **Settings → Environment Variables**.
-2. Añade una variable:
-   - Nombre: `GEMINI_API_KEY`
-   - Valor: tu clave de [Google AI Studio](https://aistudio.google.com/app/apikey)
+1. Crea una cuenta en [console.groq.com](https://console.groq.com).
+2. **API Keys** → "Create API Key" → cópiala (empieza por `gsk_...`).
+3. En tu proyecto de Vercel (`rol-gamma`) → **Settings → Environment Variables**.
+4. Añade una variable:
+   - Nombre: `GROQ_API_KEY`
+   - Valor: tu clave de Groq
    - Entorno: Production (y Preview si quieres probar en ramas)
-3. Guarda y haz un **Redeploy** (Deployments → los tres puntos del último deploy → "Redeploy"),
+5. Guarda y haz un **Redeploy** (Deployments → los tres puntos del último deploy → "Redeploy"),
    para que la función serverless recoja la variable nueva.
 
 `js/master.js` ya llama a `/api/generar-partida` (misma URL de tu web, sin problemas de CORS), y
 la función verifica que quien pregunta es tu usuario master consultando Firestore con su propio
 token de sesión — sin necesitar credenciales adicionales.
 
-> **Nota sobre el formato de la clave**: si tu clave de Gemini empieza por `AQ.` en vez de
-> `AIza...`, es el nuevo formato "auth key" que Google está implantando progresivamente. Estas
-> claves no funcionan con librerías que las envíen como parámetro `?key=` en la URL — por eso
-> `api/generar-partida.js` llama directamente a la API REST de Gemini con la cabecera
-> `x-goog-api-key`, que es compatible con ambos formatos.
+> **Nota histórica**: al principio usamos Gemini, pero Google está en medio de una migración de
+> formato de claves (de `AIza...` a `AQ...`) que ahora mismo está rompiendo la autenticación para
+> muchos desarrolladores nuevos — ver los reportes en el foro oficial de Google AI. Si en el
+> futuro Google lo arregla y prefieres volver a Gemini, el cambio en `api/generar-partida.js` es
+> mínimo (cambiar la URL y la cabecera de autenticación).
 
 ## Paso 5 — Marcadores AR (MindAR), sin Firebase Storage
 
@@ -127,10 +131,9 @@ Crea tantas plantillas como jugadores esperas tener (o más, para que puedan ele
 
 - `firebaseConfig` en `js/firebase-config.js` es pública por diseño — no pasa nada por que esté
   en el código del cliente. La seguridad real la da `firestore.rules`.
-- La API key de Gemini se guarda como **variable de entorno en Vercel** (`GEMINI_API_KEY`), no en
+- La API key de Groq se guarda como **variable de entorno en Vercel** (`GROQ_API_KEY`), no en
   el código ni en el repositorio. Solo la lee `api/generar-partida.js`, que corre en el servidor
-  — nunca llega al navegador. Cuando puedas, rótala en Google AI Studio y actualiza el valor en
-  Vercel (no hace falta tocar código, solo un "Redeploy").
+  — nunca llega al navegador. Si quieres rotarla, cambia el valor en Vercel y haz Redeploy.
 
 ## Siguientes pasos sugeridos
 

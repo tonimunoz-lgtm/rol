@@ -36,19 +36,36 @@
 
   <div id="hud-bottom">
     <span class="stat-pill" id="stat-hp">❤ --</span>
+    <button id="btn-accion">💬 Acción</button>
     <button id="btn-ficha">📜 Ficha</button>
     <button id="btn-dice" class="primary">🎲 Tirar dado</button>
     <span class="stat-pill" id="stat-inventory">🎒 --</span>
   </div>
 
+  <div id="accion-modal" class="modal-overlay">
+    <div class="card" style="max-width:420px; width:90%;">
+      <h3 class="display" style="font-size:1rem;">¿Qué haces?</h3>
+      <p style="color:var(--parchment-dim); font-size:.8rem;">Esto lo verá el master en directo en su registro de partida.</p>
+      <textarea id="accion-texto" rows="3" placeholder="Ej: registro el cofre con cuidado, atenta a trampas..."></textarea>
+      <div style="display:flex; gap:.6em; margin-top:.6em;">
+        <button id="btn-enviar-accion" class="primary">Enviar</button>
+        <button id="btn-cerrar-accion">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="ficha-modal" class="modal-overlay">
-    <div class="card" id="ficha-content" style="max-width:480px; width:90%; max-height:80vh; overflow-y:auto;">
+    <div class="card" id="ficha-content" style="max-width:480px; width:90%; max-height:85vh; overflow-y:auto;">
       <button id="btn-cerrar-ficha" style="float:right; font-size:.75rem;">✕ Cerrar</button>
+      <div id="ficha-retrato"></div>
       <h2 class="display" id="ficha-nombre" style="font-size:1.2rem;"></h2>
       <p class="mono" id="ficha-raza-clase" style="color:var(--parchment-dim); font-size:.8rem;"></p>
       <div id="ficha-atributos" class="grid-3" style="margin:.8em 0;"></div>
       <h3 style="font-size:1rem;">Habilidades</h3>
       <div id="ficha-habilidades"></div>
+      <h3 style="font-size:1rem; margin-top:1em;">Inventario</h3>
+      <div id="ficha-inventario"></div>
+      <button id="btn-imprimir-ficha" style="margin-top:1em; width:100%;">🖨️ Imprimir ficha</button>
     </div>
   </div>
 

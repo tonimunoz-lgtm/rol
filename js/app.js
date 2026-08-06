@@ -26,6 +26,14 @@ const els = {
   fichaRazaClase: document.getElementById("ficha-raza-clase"),
   fichaAtributos: document.getElementById("ficha-atributos"),
   fichaHabilidades: document.getElementById("ficha-habilidades"),
+  fichaRetrato: document.getElementById("ficha-retrato"),
+  fichaInventario: document.getElementById("ficha-inventario"),
+  btnImprimirFicha: document.getElementById("btn-imprimir-ficha"),
+  btnAccion: document.getElementById("btn-accion"),
+  accionModal: document.getElementById("accion-modal"),
+  accionTexto: document.getElementById("accion-texto"),
+  btnEnviarAccion: document.getElementById("btn-enviar-accion"),
+  btnCerrarAccion: document.getElementById("btn-cerrar-accion"),
 };
 
 let jugadorRefActual = null;
@@ -116,9 +124,14 @@ async function mostrarSeleccionPersonaje(overlay, code, nombreJugador) {
     card.className = "card";
     card.style.textAlign = "left";
     card.innerHTML = `
-      <strong class="display" style="font-size:1rem;">${p.nombre}</strong>
-      <p class="mono" style="font-size:.75rem; color:var(--parchment-dim); margin:.3em 0;">${p.raza || ""} · ${p.clase || ""}</p>
-      <p style="font-size:.85rem;">${p.descripcion || ""}</p>
+      <div style="display:flex; gap:.8em; align-items:flex-start;">
+        <div style="width:64px; height:64px; flex-shrink:0;">${generarAvatarSVG(p.raza, p.clase)}</div>
+        <div>
+          <strong class="display" style="font-size:1rem;">${p.nombre}</strong>
+          <p class="mono" style="font-size:.75rem; color:var(--parchment-dim); margin:.3em 0;">${p.raza || ""} · ${p.clase || ""}</p>
+        </div>
+      </div>
+      <p style="font-size:.85rem; margin-top:.5em;">${p.descripcion || ""}</p>
       <p style="font-size:.8rem;">❤ ${p.vidaBase} &nbsp; · &nbsp; ${(p.habilidades || []).length} habilidad(es)</p>
       <button class="btn-elegir-personaje ${ocupado ? "" : "primary"}" data-id="${docSnap.id}" ${ocupado ? "disabled" : ""} style="width:100%; margin-top:.6em;">
         ${ocupado ? "Ya elegido" : "Elegir este personaje"}
@@ -138,6 +151,13 @@ async function mostrarSeleccionPersonaje(overlay, code, nombreJugador) {
         habilidadesUsos[idx] = h.usosPorPartida > 0 ? h.usosPorPartida : -1; // -1 = ilimitado
       });
 
+      const inventario = (p.inventarioInicial || []).map((o) => ({
+        nombre: o.nombre,
+        cantidad: o.cantidad ?? 1,
+        descripcion: o.descripcion || "",
+        efecto: o.efecto || { tipo: "ninguno", valor: 0 },
+      }));
+
       const jugadorRef = await addDoc(collection(db, "partidas", code, "jugadores"), {
         nombre: nombreJugador,
         uid: currentUid,
@@ -150,7 +170,7 @@ async function mostrarSeleccionPersonaje(overlay, code, nombreJugador) {
         habilidadesUsos,
         vida: p.vidaBase,
         vidaMax: p.vidaBase,
-        inventario: [],
+        inventario,
         unidoEn: serverTimestamp(),
       });
 
@@ -203,17 +223,37 @@ async function bootGame() {
 function mostrarNarracion(texto) {
   els.narrationText.textContent = texto;
   els.narrationBox.classList.add("visible");
+  hablar(texto);
 }
 
-els.btnSpeak.addEventListener("click", () => {
-  const texto = els.narrationText.textContent;
+let vocesDisponibles = [];
+if ("speechSynthesis" in window) {
+  const cargarVoces = () => (vocesDisponibles = speechSynthesis.getVoices());
+  cargarVoces();
+  speechSynthesis.onvoiceschanged = cargarVoces;
+}
+
+function mejorVozEspanola() {
+  if (vocesDisponibles.length === 0) return null;
+  return (
+    vocesDisponibles.find((v) => v.lang === "es-ES") ||
+    vocesDisponibles.find((v) => v.lang?.startsWith("es")) ||
+    null
+  );
+}
+
+function hablar(texto) {
   if (!texto || !("speechSynthesis" in window)) return;
   const utter = new SpeechSynthesisUtterance(texto);
-  utter.lang = "es-ES";
+  const voz = mejorVozEspanola();
+  if (voz) utter.voice = voz;
+  utter.lang = voz?.lang || "es-ES";
   utter.rate = 0.95;
   speechSynthesis.cancel();
   speechSynthesis.speak(utter);
-});
+}
+
+els.btnSpeak.addEventListener("click", () => hablar(els.narrationText.textContent));
 
 // ---------- 4b. Ficha de personaje: atributos y habilidades ----------
 els.btnFicha.addEventListener("click", () => els.fichaModal.classList.add("visible"));
@@ -226,6 +266,7 @@ const NOMBRES_ATRIBUTOS = {
 function renderFicha(data) {
   els.fichaNombre.textContent = data.nombrePersonaje || data.nombre;
   els.fichaRazaClase.textContent = [data.raza, data.clase].filter(Boolean).join(" · ");
+  els.fichaRetrato.innerHTML = `<div style="width:120px; height:120px; margin:0 auto .8em;">${generarAvatarSVG(data.raza, data.clase)}</div>`;
 
   const atributos = data.atributos || {};
   els.fichaAtributos.innerHTML = Object.entries(NOMBRES_ATRIBUTOS)
@@ -270,6 +311,67 @@ function renderFicha(data) {
 
   els.fichaHabilidades.querySelectorAll(".btn-usar-habilidad").forEach((btn) => {
     btn.addEventListener("click", () => usarHabilidad(Number(btn.dataset.idx), data));
+  });
+
+  renderInventario(data);
+}
+
+function renderInventario(data) {
+  const inventario = data.inventario || [];
+  els.fichaInventario.innerHTML = "";
+
+  if (inventario.length === 0) {
+    els.fichaInventario.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Mochila vacía.</p>`;
+    return;
+  }
+
+  inventario.forEach((obj, idx) => {
+    const card = document.createElement("div");
+    card.className = "habilidad-card";
+    card.innerHTML = `
+      <div class="h-info">
+        <div class="h-nombre">${obj.nombre}</div>
+        <p class="h-desc">${obj.descripcion || ""}</p>
+      </div>
+      <div style="text-align:right;">
+        <div class="h-usos mono">x${obj.cantidad}</div>
+        <button class="btn-usar-objeto" data-idx="${idx}" style="margin-top:.4em; font-size:.75rem;">Usar</button>
+      </div>
+    `;
+    els.fichaInventario.appendChild(card);
+  });
+
+  els.fichaInventario.querySelectorAll(".btn-usar-objeto").forEach((btn) => {
+    btn.addEventListener("click", () => usarObjeto(Number(btn.dataset.idx), data));
+  });
+}
+
+async function usarObjeto(idx, data) {
+  const inventario = [...(data.inventario || [])];
+  const objeto = inventario[idx];
+  if (!objeto) return;
+
+  let nuevaVida = data.vida;
+  if (objeto.efecto?.tipo === "curar") {
+    nuevaVida = Math.min(data.vidaMax ?? data.vida, data.vida + Number(objeto.efecto.valor || 0));
+  } else if (objeto.efecto?.tipo === "danio") {
+    nuevaVida = Math.max(0, data.vida - Number(objeto.efecto.valor || 0));
+  }
+
+  if (objeto.cantidad > 1) {
+    inventario[idx] = { ...objeto, cantidad: objeto.cantidad - 1 };
+  } else {
+    inventario.splice(idx, 1);
+  }
+
+  await updateDoc(jugadorRefActual, { inventario, vida: nuevaVida });
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "objeto",
+    jugadorId: currentJugadorId,
+    nombreJugador: data.nombre,
+    objeto: objeto.nombre,
+    timestamp: serverTimestamp(),
   });
 }
 
@@ -318,6 +420,64 @@ els.btnLogout.addEventListener("click", () => {
   localStorage.removeItem("runica_jugadorId");
   location.reload();
 });
+
+// ---------- 5b. Enviar acción libre al master ----------
+els.btnAccion.addEventListener("click", () => els.accionModal.classList.add("visible"));
+els.btnCerrarAccion.addEventListener("click", () => els.accionModal.classList.remove("visible"));
+
+els.btnEnviarAccion.addEventListener("click", async () => {
+  const texto = els.accionTexto.value.trim();
+  if (!texto) return;
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "accion",
+    jugadorId: currentJugadorId,
+    nombreJugador: els.playerName.textContent,
+    texto,
+    timestamp: serverTimestamp(),
+  });
+  els.accionTexto.value = "";
+  els.accionModal.classList.remove("visible");
+});
+
+// ---------- 5c. Imprimir ficha ----------
+els.btnImprimirFicha.addEventListener("click", () => window.print());
+
+// ---------- 5d. Retrato ilustrado (SVG estilizado, sin coste de IA de imagen) ----------
+// No generamos una imagen fotorrealista (necesitaría una API de pago); en su
+// lugar componemos una silueta con un icono según la clase y una paleta de
+// color derivada del nombre, coherente con el estilo rúnico del juego.
+const ICONOS_CLASE = [
+  { match: /guerr|warrior|combat/i, icono: "⚔️" },
+  { match: /mag|hechic|brujo|arcano/i, icono: "🔮" },
+  { match: /arque|caza|explorador/i, icono: "🏹" },
+  { match: /ladr|pícaro|picaro|sigilo/i, icono: "🗡️" },
+  { match: /clérig|clerigo|sacerdot|sanador/i, icono: "✨" },
+  { match: /bard|trovador/i, icono: "🎵" },
+];
+
+function iconoParaClase(clase) {
+  const encontrado = ICONOS_CLASE.find((c) => c.match.test(clase || ""));
+  return encontrado ? encontrado.icono : "🛡️";
+}
+
+function colorDesdeTexto(texto) {
+  let hash = 0;
+  for (let i = 0; i < (texto || "").length; i++) hash = texto.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 45%, 32%)`;
+}
+
+function generarAvatarSVG(raza, clase) {
+  const color = colorDesdeTexto(`${raza}${clase}`);
+  const icono = iconoParaClase(clase);
+  return `
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:100%;">
+      <circle cx="50" cy="50" r="48" fill="${color}" stroke="#C9A227" stroke-width="2.5" />
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#C9A227" stroke-width="1" opacity="0.4" />
+      <text x="50" y="62" text-anchor="middle" font-size="38">${icono}</text>
+    </svg>
+  `;
+}
 
 // ---------- 6. Escena AR (MindAR) construida dinámicamente ----------
 // `targetsUrl` apunta al archivo .mind compilado por el master a partir de

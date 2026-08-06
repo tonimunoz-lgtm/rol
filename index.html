@@ -82,6 +82,18 @@
     </div>
   </div>
 
+  <div id="habilidad-ataque-modal" class="modal-overlay">
+    <div class="card" style="max-width:380px; width:90%;">
+      <h3 class="display" style="font-size:1rem;" id="habilidad-ataque-titulo">Elige objetivo</h3>
+      <p class="mono" id="habilidad-ataque-tirada" style="color:var(--amber);"></p>
+      <select id="habilidad-ataque-objetivo" style="width:100%; margin:.6em 0;"></select>
+      <div style="display:flex; gap:.6em;">
+        <button id="btn-confirmar-ataque" class="primary">Atacar</button>
+        <button id="btn-cancelar-ataque">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="ficha-modal" class="modal-overlay">
     <div class="card" id="ficha-content" style="max-width:480px; width:90%; max-height:85vh; overflow-y:auto;">
       <button id="btn-cerrar-ficha" style="float:right; font-size:.75rem;">✕ Cerrar</button>

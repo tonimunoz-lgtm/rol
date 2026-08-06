@@ -41,7 +41,17 @@ const els = {
   fondoImgA: document.getElementById("fondo-img-a"),
   fondoImgB: document.getElementById("fondo-img-b"),
   chatOverlay: document.getElementById("chat-overlay"),
+  combateDañoForm: document.getElementById("combate-daño-form"),
+  combateObjetivo: document.getElementById("combate-objetivo"),
+  combateDañoValor: document.getElementById("combate-daño-valor"),
+  btnAplicarDaño: document.getElementById("btn-aplicar-daño"),
+  btnToggleMusica: document.getElementById("btn-toggle-musica"),
+  musicaAmbiente: document.getElementById("musica-ambiente"),
 };
+
+let ultimoDadoResultado = null;
+let enemigosCombateActual = [];
+let ordenCombateActual = [];
 
 let jugadorDataActual = null;
 
@@ -242,7 +252,12 @@ async function bootGame() {
   // documento de la partida para que todos vean el mismo turno a la vez.
   onSnapshot(doc(db, "partidas", currentPartidaId), (snap) => {
     if (!snap.exists()) return;
-    renderCombateJugador(snap.data().combate);
+    const data = snap.data();
+    enemigosCombateActual = data.enemigos || [];
+    renderCombateJugador(data.combate);
+    if (data.musicaAmbienteUrl && els.musicaAmbiente.getAttribute("src") !== data.musicaAmbienteUrl) {
+      els.musicaAmbiente.src = data.musicaAmbienteUrl;
+    }
   });
 
   // Eventos en vivo lanzados por el master o por otros jugadores
@@ -280,16 +295,66 @@ async function bootGame() {
 function renderCombateJugador(combate) {
   if (!combate?.activo) {
     els.combateBar.classList.remove("visible", "mi-turno");
+    els.combateDañoForm.style.display = "none";
     return;
   }
   els.combateBar.classList.add("visible");
+  ordenCombateActual = combate.orden || [];
   const actual = combate.orden[combate.turnoActual];
   const esMiTurno = actual?.jugadorId === currentJugadorId;
   els.combateBar.classList.toggle("mi-turno", esMiTurno);
   els.combateBarTexto.textContent = esMiTurno
     ? `⚔️ ¡Es tu turno! (Ronda ${combate.ronda})`
     : `⚔️ Turno de ${actual?.nombre || "?"} (Ronda ${combate.ronda})`;
+
+  if (esMiTurno) {
+    const opcionesEnemigos = enemigosCombateActual
+      .map((en, idx) => `<option value="enemigo:${idx}">${en.nombre} (❤${en.vida})</option>`)
+      .join("");
+    const opcionesJugadores = ordenCombateActual
+      .filter((o) => o.jugadorId !== currentJugadorId)
+      .map((o) => `<option value="jugador:${o.jugadorId}">${o.nombre}</option>`)
+      .join("");
+    els.combateObjetivo.innerHTML = opcionesEnemigos + opcionesJugadores;
+    els.combateDañoValor.value = ultimoDadoResultado ?? 0;
+    els.combateDañoForm.style.display = ordenCombateActual.length > 0 || enemigosCombateActual.length > 0 ? "flex" : "none";
+  } else {
+    els.combateDañoForm.style.display = "none";
+  }
 }
+
+els.btnAplicarDaño.addEventListener("click", async () => {
+  const [tipo, valor] = els.combateObjetivo.value.split(":");
+  const daño = Number(els.combateDañoValor.value) || 0;
+  if (daño <= 0) return;
+
+  let objetivoNombre = "";
+
+  if (tipo === "enemigo") {
+    const idx = Number(valor);
+    const enemigo = enemigosCombateActual[idx];
+    if (!enemigo) return;
+    objetivoNombre = enemigo.nombre;
+    const nuevos = [...enemigosCombateActual];
+    nuevos[idx] = { ...enemigo, vida: Math.max(0, enemigo.vida - daño) };
+    await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
+  } else if (tipo === "jugador") {
+    const objetivoRef = doc(db, "partidas", currentPartidaId, "jugadores", valor);
+    const objetivoSnap = await getDoc(objetivoRef);
+    if (!objetivoSnap.exists()) return;
+    const objetivoData = objetivoSnap.data();
+    objetivoNombre = objetivoData.nombrePersonaje || objetivoData.nombre;
+    await updateDoc(objetivoRef, { vida: Math.max(0, objetivoData.vida - daño) });
+  }
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "daño",
+    atacante: jugadorDataActual?.nombrePersonaje || jugadorDataActual?.nombre || "Jugador",
+    objetivoNombre,
+    valor: daño,
+    timestamp: serverTimestamp(),
+  });
+});
 
 // ---------- 4. Narración + lectura en voz alta ----------
 // Dos modos: "dispositivo" (Web Speech API, gratis e ilimitado, es el
@@ -308,6 +373,21 @@ function actualizarIconoVoz() {
   els.btnToggleVoz.textContent = modoVoz === "ia" ? "🎙️" : "🔊";
   els.btnToggleVoz.title = modoVoz === "ia" ? "Voz IA (ElevenLabs) — toca para volver a la del dispositivo" : "Voz del dispositivo — toca para probar la voz IA";
 }
+
+// ---------- 4b. Música ambiente ----------
+let musicaSonando = false;
+els.btnToggleMusica.addEventListener("click", () => {
+  if (!els.musicaAmbiente.src) return;
+  if (musicaSonando) {
+    els.musicaAmbiente.pause();
+    els.btnToggleMusica.textContent = "🎵";
+  } else {
+    els.musicaAmbiente.volume = 0.35;
+    els.musicaAmbiente.play().catch(() => {});
+    els.btnToggleMusica.textContent = "🔇";
+  }
+  musicaSonando = !musicaSonando;
+});
 
 function mostrarNarracion(texto) {
   els.narrationText.textContent = texto;
@@ -529,6 +609,7 @@ async function usarHabilidad(idx, data) {
 // ---------- 5. Dados ----------
 els.btnDice.addEventListener("click", async () => {
   const resultado = 1 + Math.floor(Math.random() * 20); // d20 por defecto
+  ultimoDadoResultado = resultado;
   els.btnDice.textContent = `🎲 ${resultado}`;
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "tirada",
@@ -779,10 +860,13 @@ async function construirEscenaAR(targetsUrl, marcadores) {
   const entidadesHtml = (marcadores || [])
     .map((m) => {
       let contenido = "";
+      const ancho = m.ancho ?? 1;
+      const alto = m.alto ?? 0.6;
+      const pos = `${m.posX ?? 0} ${m.posY ?? 0} ${m.posZ ?? 0}`;
       if (m.tipo === "video" && m.archivoUrl) {
-        contenido = `<a-video src="#asset-video-${m.targetIndex}" width="1" height="0.6" position="0 0 0"></a-video>`;
+        contenido = `<a-video src="#asset-video-${m.targetIndex}" width="${ancho}" height="${alto}" position="${pos}"></a-video>`;
       } else if (m.tipo === "imagen" && m.archivoUrl) {
-        contenido = `<a-image src="#asset-imagen-${m.targetIndex}" width="1" height="1" position="0 0 0"></a-image>`;
+        contenido = `<a-image src="#asset-imagen-${m.targetIndex}" width="${ancho}" height="${alto}" position="${pos}"></a-image>`;
       }
       return `<a-entity mindar-image-target="targetIndex: ${m.targetIndex}" data-marcador-index="${m.targetIndex}">${contenido}</a-entity>`;
     })

@@ -27,13 +27,21 @@
   <div id="hud-top">
     <span class="player-name mono" id="player-name-label">Cargando...</span>
     <div style="display:flex; gap:.4em;">
+      <button id="btn-toggle-musica" style="font-size:.75rem;padding:.4em .8em;" title="Música ambiente">🎵</button>
       <button id="btn-toggle-voz" style="font-size:.75rem;padding:.4em .8em;" title="Cambiar voz">🔊</button>
       <button id="btn-logout" style="font-size:.75rem;padding:.4em .8em;">Salir</button>
     </div>
   </div>
 
+  <audio id="musica-ambiente" loop></audio>
+
   <div id="combate-bar" class="mono">
     <span id="combate-bar-texto"></span>
+    <div id="combate-daño-form" style="display:none;">
+      <select id="combate-objetivo"></select>
+      <input id="combate-daño-valor" type="number" min="0" value="0" />
+      <button id="btn-aplicar-daño">Aplicar daño</button>
+    </div>
   </div>
 
   <div class="rune-ring" id="rune-ring"></div>

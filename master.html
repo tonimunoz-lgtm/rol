@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Rúnica — Panel del Master</title>
 <link rel="stylesheet" href="/css/style.css" />
+<style>
+  /* A diferencia de la app del jugador (que necesita quedarse fija en
+     pantalla), el panel del master sí tiene que poder desplazarse por toda
+     la página en móvil — la barra lateral se apila encima del contenido y
+     puede sumar más de una pantalla de alto. */
+  html, body { overflow: auto !important; height: auto !important; min-height: 100%; }
+</style>
 </head>
 <body>
 
@@ -513,6 +520,7 @@
           <input id="targets-path" placeholder="https://...blob.vercel-storage.com/..." />
         </div>
         <button id="btn-guardar-targets-path">Guardar ruta</button>
+        <button id="btn-borrar-targets" class="danger" style="font-size:.8rem;">🗑️ Borrar archivo actual</button>
       </details>
 
       <h3 style="margin-top:1.5em;">Contenido de cada marcador</h3>
@@ -561,6 +569,7 @@
             <input id="m-archivo-video-file" type="file" accept="video/*" />
           </div>
           <button id="btn-subir-video" type="button" style="margin-bottom:.6em;">Subir vídeo</button>
+          <button id="btn-borrar-video" type="button" class="danger" style="margin-bottom:.6em; font-size:.8rem;">🗑️ Borrar</button>
           <div class="field">
             <label>URL del vídeo</label>
             <input id="m-archivo-video" placeholder="Se rellena sola al subir, o pega una URL https:// ya alojada" />
@@ -573,6 +582,7 @@
             <input id="m-archivo-imagen-file" type="file" accept="image/*" />
           </div>
           <button id="btn-subir-imagen" type="button" style="margin-bottom:.6em;">Subir imagen</button>
+          <button id="btn-borrar-imagen" type="button" class="danger" style="margin-bottom:.6em; font-size:.8rem;">🗑️ Borrar</button>
           <div class="field">
             <label>URL de la imagen</label>
             <input id="m-archivo-imagen" placeholder="Se rellena sola al subir, o pega una URL https:// ya alojada" />

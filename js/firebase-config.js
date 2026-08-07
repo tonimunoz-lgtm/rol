@@ -9,6 +9,7 @@ import {
   signInAnonymously,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore,
@@ -53,6 +54,7 @@ export {
   signInAnonymously,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   // firestore
   doc,
   getDoc,

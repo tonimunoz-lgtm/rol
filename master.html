@@ -599,54 +599,30 @@
           ✨ Enriquecer con IA (ambiente, clima, luz, sonido)
         </button>
 
-        <h4 style="margin:1em 0 .4em; color:var(--parchment-dim); font-size:.85rem;">Prueba de esta escena (opcional)</h4>
-        <label style="display:flex; align-items:center; gap:.4em; cursor:pointer; font-size:.85rem;">
-          <input type="checkbox" class="es-prueba-activa" />
-          Esta escena pide una tirada (p.ej. cruzar un puente, esquivar algo, resistir un peligro)
-        </label>
-        <div class="es-prueba-campos" style="display:none; margin-top:.6em;">
-          <p style="color:var(--parchment-dim); font-size:.8rem;">
-            En cuanto se active la escena, a cada jugador le aparecerá un botón para tirar. Si
-            falla, el daño se calcula y se resta de su vida solo (ajustado por sus resistencias).
+        <div class="field" style="margin-top:.8em;">
+          <label>Objetivo de esta escena (qué deben lograr los jugadores — no se toca al enriquecer)</label>
+          <textarea class="es-objetivo" rows="2" placeholder="Ej: cruzar el puente sin caer al agua helada"></textarea>
+          <p style="color:var(--parchment-dim); font-size:.75rem; margin:.2em 0 0;">
+            Aparece para los jugadores en su Bitácora → Pistas, sin necesidad de anuncio, en cuanto
+            se active esta escena.
           </p>
-          <div class="grid-3">
-            <div class="field">
-              <label>Atributo</label>
-              <select class="es-prueba-atributo">
-                <option value="destreza">Destreza</option>
-                <option value="fuerza">Fuerza</option>
-                <option value="inteligencia">Inteligencia</option>
-                <option value="vigor">Vigor</option>
-                <option value="carisma">Carisma</option>
-              </select>
-            </div>
-            <div class="field"><label>Dificultad</label><input class="es-prueba-dificultad" type="number" min="1" value="12" /></div>
-            <div class="field">
-              <label>Tipo de daño</label>
-              <select class="es-prueba-tipo-danio">
-                <option value="fisico">🗡️ Físico</option>
-                <option value="fuego">🔥 Fuego</option>
-                <option value="hielo">❄️ Hielo</option>
-                <option value="veneno">☠️ Veneno</option>
-                <option value="mental">🌀 Mental</option>
-              </select>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div class="field"><label>Dados de daño si falla — cantidad</label><input class="es-prueba-danio-dados" type="number" min="1" value="2" /></div>
-            <div class="field">
-              <label>Dados de daño si falla — caras</label>
-              <select class="es-prueba-danio-caras">
-                <option value="4">d4</option>
-                <option value="6" selected>d6</option>
-                <option value="8">d8</option>
-                <option value="10">d10</option>
-                <option value="12">d12</option>
-                <option value="20">d20</option>
-              </select>
-            </div>
-          </div>
         </div>
+
+        <div class="field">
+          <label>PNJ presente en esta escena (opcional)</label>
+          <select class="es-pnj"></select>
+        </div>
+
+        <h4 style="margin:1em 0 .4em; color:var(--parchment-dim); font-size:.85rem;">Acciones disponibles</h4>
+        <p style="color:var(--parchment-dim); font-size:.8rem;">
+          Cada acción aparece como un botón para los jugadores en cuanto se active la escena.
+          Pueden ser tiradas (con éxito/fallo) o interacciones con el PNJ de arriba.
+        </p>
+        <p class="es-sin-acciones" style="color:var(--parchment-dim); font-size:.8rem;">
+          Sin acciones: los jugadores solo verán la narración, sin nada que intentar aquí.
+        </p>
+        <div class="es-acciones"></div>
+        <button type="button" class="btn-nueva-accion" style="font-size:.75rem;">+ Añadir acción</button>
 
         <h4 style="margin:1em 0 .4em; color:var(--parchment-dim); font-size:.85rem;">Salidas de esta escena</h4>
         <p class="es-sin-salidas" style="color:var(--parchment-dim); font-size:.8rem;">
@@ -661,14 +637,93 @@
       </div>
     </template>
 
+    <template id="tpl-accion-row">
+      <div class="card accion-row" style="margin-bottom:.6em; padding:.8em; background:rgba(0,0,0,0.15);">
+        <input type="hidden" class="acc-id" />
+        <div class="grid-2">
+          <div class="field"><label>Etiqueta del botón</label><input class="acc-etiqueta" placeholder="Registrar la zona" /></div>
+          <div class="field">
+            <label>Tipo</label>
+            <select class="acc-tipo">
+              <option value="prueba">Tirada (éxito / fallo)</option>
+              <option value="pnj">Interacción con el PNJ</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="acc-campos-prueba">
+          <div class="grid-3">
+            <div class="field">
+              <label>Atributo</label>
+              <select class="acc-atributo">
+                <option value="destreza">Destreza</option>
+                <option value="fuerza">Fuerza</option>
+                <option value="inteligencia">Inteligencia</option>
+                <option value="vigor">Vigor</option>
+                <option value="carisma">Carisma</option>
+              </select>
+            </div>
+            <div class="field"><label>Dificultad</label><input class="acc-dificultad" type="number" min="1" value="12" /></div>
+            <div class="field">
+              <label>Tipo de daño si falla</label>
+              <select class="acc-tipo-danio">
+                <option value="fisico">🗡️ Físico</option>
+                <option value="fuego">🔥 Fuego</option>
+                <option value="hielo">❄️ Hielo</option>
+                <option value="veneno">☠️ Veneno</option>
+                <option value="mental">🌀 Mental</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label>Dados de daño si falla — cantidad</label><input class="acc-danio-dados" type="number" min="1" value="2" /></div>
+            <div class="field">
+              <label>Dados de daño si falla — caras</label>
+              <select class="acc-danio-caras">
+                <option value="4">d4</option>
+                <option value="6" selected>d6</option>
+                <option value="8">d8</option>
+                <option value="10">d10</option>
+                <option value="12">d12</option>
+                <option value="20">d20</option>
+              </select>
+            </div>
+          </div>
+          <div class="field"><label>Texto si supera la tirada</label><input class="acc-texto-exito" placeholder="Cruzas con paso firme, sin resbalar." /></div>
+          <div class="field"><label>Texto si falla la tirada</label><input class="acc-texto-fallo" placeholder="El hielo cruje bajo tus pies y caes." /></div>
+        </div>
+
+        <div class="acc-campos-pnj" style="display:none;">
+          <div class="field">
+            <label>Qué hace el PNJ</label>
+            <select class="acc-efecto-pnj">
+              <option value="dar_pista">Da una pista (desbloquea la siguiente, sin anuncio)</option>
+              <option value="avisar_trampa">Avisa de las trampas de la sala aún no encontradas</option>
+              <option value="dar_objeto">Entrega un objeto</option>
+              <option value="solo_narrar">Solo dice algo (sin efecto de juego)</option>
+            </select>
+          </div>
+          <div class="grid-3 acc-campos-objeto">
+            <div class="field"><label>Nombre del objeto</label><input class="acc-objeto-nombre" placeholder="Llave oxidada" /></div>
+            <div class="field"><label>Cantidad</label><input class="acc-objeto-cantidad" type="number" min="1" value="1" /></div>
+            <div class="field"><label>Descripción</label><input class="acc-objeto-descripcion" placeholder="Qué es" /></div>
+          </div>
+          <div class="field"><label>Qué dice/hace el PNJ (se muestra a todos)</label><textarea class="acc-texto-pnj" rows="2" placeholder="—Ten cuidado con el suelo más adelante— susurra el guardia."></textarea></div>
+        </div>
+
+        <button type="button" class="btn-quitar-accion danger" style="font-size:.7rem; margin-top:.4em;">Quitar acción</button>
+      </div>
+    </template>
+
     <template id="tpl-salida-row">
       <div class="card salida-row" style="margin-bottom:.6em; padding:.8em; background:rgba(0,0,0,0.15);">
         <div class="grid-2">
           <div class="field">
             <label>Salta a la siguiente escena cuando...</label>
             <select class="sal-trigger-tipo">
-              <option value="prueba_superada">Alguien SUPERE la prueba de esta escena</option>
-              <option value="prueba_fallada">Alguien FALLE la prueba de esta escena</option>
+              <option value="accion_superada">Alguien SUPERE la acción...</option>
+              <option value="accion_fallada">Alguien FALLE la acción...</option>
+              <option value="todos_accion_superada">TODOS los jugadores superen la acción...</option>
               <option value="marcador">Se escanee el marcador con índice...</option>
               <option value="objeto">Se recoja el objeto...</option>
               <option value="objeto_usado">Se use el objeto...</option>
@@ -686,11 +741,13 @@
           <label>Va a la escena...</label>
           <select class="sal-destino"></select>
         </div>
+        <div class="field">
+          <label>Texto de transición (opcional, se narra justo antes de entrar en la siguiente escena)</label>
+          <textarea class="sal-transicion" rows="2" placeholder="Cruzas el puente y, unos metros más allá, entre unas zarzas, distingues..."></textarea>
+        </div>
         <button type="button" class="btn-quitar-salida danger" style="font-size:.7rem;">Quitar salida</button>
       </div>
     </template>
-
-
 
 
     <!-- ---------- Combate por turnos ---------- -->

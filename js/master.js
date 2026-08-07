@@ -189,6 +189,7 @@ $("btn-generar").addEventListener("click", async () => {
             descripcion: h.descripcion || "",
             atributo: "ninguno",
             esAtaque: false,
+            detectaTrampas: false,
           })),
           inventarioInicial: (p.inventarioInicial || []).map((o) => ({
             nombre: o.nombre || "",
@@ -728,11 +729,82 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
 // ---------- Guion automático (storyboard de escenas) ----------
 const ETIQUETAS_TRIGGER = {
   marcador: "Índice del marcador",
-  objeto: "Nombre exacto del objeto",
-  objeto_usado: "Nombre exacto del objeto",
-  habilidad_usada: "Nombre exacto de la habilidad",
-  enemigo_derrotado: "Nombre exacto del enemigo",
+  objeto: "Objeto",
+  objeto_usado: "Objeto",
+  habilidad_usada: "Habilidad",
+  enemigo_derrotado: "Enemigo",
 };
+
+// Opciones reales de la partida para poblar los desplegables del guion, en
+// vez de que el master tenga que escribir el nombre exacto a mano (con el
+// riesgo de errata que eso tiene, ya que la comparación es literal).
+let opcionesObjetos = [];
+let opcionesHabilidades = [];
+
+function recalcularOpcionesDesdePersonajes(plantillas) {
+  const objetos = new Set();
+  const habilidades = new Set();
+  plantillas.forEach((p) => {
+    (p.inventarioInicial || []).forEach((o) => o.nombre && objetos.add(o.nombre));
+    (p.habilidades || []).forEach((h) => h.nombre && habilidades.add(h.nombre));
+  });
+  opcionesObjetos = Array.from(objetos).sort();
+  opcionesHabilidades = Array.from(habilidades).sort();
+  refrescarSelectsGuionAbiertos();
+}
+
+function opcionesParaTipo(tipo) {
+  if (tipo === "objeto" || tipo === "objeto_usado") return opcionesObjetos;
+  if (tipo === "habilidad_usada") return opcionesHabilidades;
+  if (tipo === "enemigo_derrotado") return enemigosActuales.map((e) => e.nombre);
+  return [];
+}
+
+function crearCampoValor(tipo, valorActual) {
+  if (tipo === "marcador") {
+    const input = document.createElement("input");
+    input.className = "es-trigger-valor";
+    input.type = "number";
+    input.min = "0";
+    input.value = valorActual ?? "";
+    return input;
+  }
+
+  const opciones = opcionesParaTipo(tipo);
+  // Si no hay ninguna opción todavía (p.ej. aún no has creado personajes o
+  // enemigos), dejamos un campo de texto libre para no bloquear al master.
+  if (opciones.length === 0 && !valorActual) {
+    const input = document.createElement("input");
+    input.className = "es-trigger-valor";
+    input.type = "text";
+    input.placeholder = "Créalo primero en la sección correspondiente";
+    input.value = valorActual ?? "";
+    return input;
+  }
+
+  const select = document.createElement("select");
+  select.className = "es-trigger-valor";
+  const listaOpciones = new Set(opciones);
+  if (valorActual) listaOpciones.add(valorActual); // conserva el valor guardado aunque ya no exista
+  select.innerHTML =
+    `<option value="">— Selecciona —</option>` +
+    Array.from(listaOpciones)
+      .map((op) => `<option value="${op}" ${op === valorActual ? "selected" : ""}>${op}</option>`)
+      .join("");
+  return select;
+}
+
+function refrescarSelectsGuionAbiertos() {
+  document.querySelectorAll("#lista-escenas .escena-row").forEach((row) => {
+    const tipoSelect = row.querySelector(".es-trigger-tipo");
+    const tipo = tipoSelect.value;
+    if (tipo === "objeto" || tipo === "objeto_usado" || tipo === "habilidad_usada" || tipo === "enemigo_derrotado") {
+      const valorActual = row.querySelector(".es-trigger-valor")?.value || "";
+      const nuevoCampo = crearCampoValor(tipo, valorActual);
+      row.querySelector(".es-trigger-valor").replaceWith(nuevoCampo);
+    }
+  });
+}
 
 function crearFilaEscena(escena = null) {
   const tpl = document.getElementById("tpl-escena-row");
@@ -741,7 +813,6 @@ function crearFilaEscena(escena = null) {
     row.querySelector(".es-nombre").value = escena.nombre || "";
     row.querySelector(".es-narracion").value = escena.narracion || "";
     row.querySelector(".es-trigger-tipo").value = escena.trigger?.tipo || "manual";
-    row.querySelector(".es-trigger-valor").value = escena.trigger?.valor ?? "";
   }
   const tipoSelect = row.querySelector(".es-trigger-tipo");
   const actualizarCampoValor = () => {
@@ -749,11 +820,13 @@ function crearFilaEscena(escena = null) {
     const campo = row.querySelector(".es-trigger-valor-campo");
     if (tipo === "manual" || tipo === "combate_terminado") {
       campo.style.display = "none";
-    } else {
-      campo.style.display = "block";
-      row.querySelector(".es-trigger-valor-label").textContent = ETIQUETAS_TRIGGER[tipo] || "Valor";
-      row.querySelector(".es-trigger-valor").type = tipo === "marcador" ? "number" : "text";
+      return;
     }
+    campo.style.display = "block";
+    row.querySelector(".es-trigger-valor-label").textContent = ETIQUETAS_TRIGGER[tipo] || "Valor";
+    const valorActual = escena && escena.trigger?.tipo === tipo ? escena.trigger.valor : "";
+    const nuevoCampo = crearCampoValor(tipo, valorActual);
+    row.querySelector(".es-trigger-valor").replaceWith(nuevoCampo);
   };
   tipoSelect.addEventListener("change", actualizarCampoValor);
   actualizarCampoValor();
@@ -898,6 +971,7 @@ function escucharCombate(codigo) {
     renderCombate(data.combate);
     enemigosActuales = data.enemigos || [];
     renderEnemigos();
+    refrescarSelectsGuionAbiertos();
     guionActual = data.guion || [];
     renderEscenaActual(guionActual, data.escenaActual);
   });
@@ -1032,6 +1106,9 @@ function escucharPersonajes(codigo) {
   if (unsubscribePersonajes) unsubscribePersonajes();
   const col = collection(db, "partidas", codigo, "plantillasPersonaje");
   unsubscribePersonajes = onSnapshot(col, (snap) => {
+    const plantillas = snap.docs.map((d) => d.data());
+    recalcularOpcionesDesdePersonajes(plantillas);
+
     const cont = $("lista-personajes");
     cont.innerHTML = "";
     if (snap.empty) {
@@ -1079,6 +1156,7 @@ function crearFilaHabilidad(habilidad = null) {
     row.querySelector(".h-descripcion").value = habilidad.descripcion || "";
     row.querySelector(".h-atributo").value = habilidad.atributo || "ninguno";
     row.querySelector(".h-es-ataque").checked = !!habilidad.esAtaque;
+    row.querySelector(".h-detecta-trampas").checked = !!habilidad.detectaTrampas;
   }
   row.querySelector(".btn-quitar-habilidad").addEventListener("click", () => row.remove());
   $("lista-habilidades-editor").appendChild(row);
@@ -1156,6 +1234,7 @@ $("btn-guardar-personaje").addEventListener("click", async () => {
       descripcion: row.querySelector(".h-descripcion").value.trim(),
       atributo: row.querySelector(".h-atributo").value,
       esAtaque: row.querySelector(".h-es-ataque").checked,
+      detectaTrampas: row.querySelector(".h-detecta-trampas").checked,
     })
   );
 

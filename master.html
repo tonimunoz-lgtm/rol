@@ -459,11 +459,17 @@
 
       <details style="margin-top:1em;">
         <summary style="cursor:pointer; color:var(--parchment-dim); font-size:.85rem;">
-          Opción avanzada: pegar una ruta manualmente
+          Opción avanzada: pegar una URL manualmente
         </summary>
+        <p style="color:var(--parchment-dim); font-size:.8rem; margin:.4em 0;">
+          Tiene que ser una URL real donde el archivo ya esté accesible (empieza por
+          <code>https://...</code>). No existe ninguna carpeta <code>/marcadores/</code> local —
+          eso era del sistema antiguo. Si acabas de compilar arriba, no necesitas esto: ya se
+          rellena solo.
+        </p>
         <div class="field" style="margin-top:.6em;">
-          <label>Ruta o URL del archivo targets.mind</label>
-          <input id="targets-path" placeholder="/marcadores/targets.mind o https://..." />
+          <label>URL del archivo targets.mind</label>
+          <input id="targets-path" placeholder="https://...blob.vercel-storage.com/..." />
         </div>
         <button id="btn-guardar-targets-path">Guardar ruta</button>
       </details>
@@ -510,25 +516,25 @@
 
         <div id="m-campos-video" class="m-campos" style="display:none;">
           <div class="field">
-            <label>Sube el vídeo (máx. 4MB desde aquí)</label>
+            <label>Sube el vídeo (máx. 3MB desde aquí — límite técnico de Vercel)</label>
             <input id="m-archivo-video-file" type="file" accept="video/*" />
           </div>
           <button id="btn-subir-video" type="button" style="margin-bottom:.6em;">Subir vídeo</button>
           <div class="field">
             <label>URL del vídeo</label>
-            <input id="m-archivo-video" placeholder="Se rellena sola al subir, o pégala tú" />
+            <input id="m-archivo-video" placeholder="Se rellena sola al subir, o pega una URL https:// ya alojada" />
           </div>
         </div>
 
         <div id="m-campos-imagen" class="m-campos" style="display:none;">
           <div class="field">
-            <label>Sube la imagen</label>
+            <label>Sube la imagen (máx. 3MB desde aquí)</label>
             <input id="m-archivo-imagen-file" type="file" accept="image/*" />
           </div>
           <button id="btn-subir-imagen" type="button" style="margin-bottom:.6em;">Subir imagen</button>
           <div class="field">
             <label>URL de la imagen</label>
-            <input id="m-archivo-imagen" placeholder="Se rellena sola al subir, o pégala tú" />
+            <input id="m-archivo-imagen" placeholder="Se rellena sola al subir, o pega una URL https:// ya alojada" />
           </div>
         </div>
 
@@ -943,11 +949,6 @@
   </div>
 </template>
 
-<!-- Motor de compilación de marcadores (misma versión que usa el jugador en index.html).
-     OJO: usar la ruta /gh/hiukim/mind-ar-js@..., NO /npm/mind-ar@... — esa
-     segunda ruta publica en esta versión un build de módulo ES que rompe
-     al cargarlo como <script> normal ("Cannot use import statement..."). -->
-<script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image.prod.js"></script>
 <script type="module" src="/js/master.js"></script>
 </body>
 </html>

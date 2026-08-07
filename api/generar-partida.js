@@ -235,14 +235,20 @@ con exactamente esta forma:
 Genera entre 2 y 4 "enemigosSugeridos" coherentes con la ambientación (tipo de amenaza acorde a
 la dificultad pedida), con vida proporcional a la dificultad general.
 
-Para "mapa": genera entre 4 y 7 "lugares" que reflejen la geografía de la historia (pueblos,
-puentes, ríos, bosques, ruinas, cuevas, montañas, castillos, pantanos, caminos...). El campo
-"tipo" debe ser uno de: pueblo, bosque, rio, puente, montana, ruinas, cueva, castillo, mar,
-pantano, camino, otro. Los campos "x" e "y" son coordenadas de 0 a 100 (como un porcentaje del
-mapa) que reflejen su posición relativa real según la trama (p.ej. si un puente conecta dos
-zonas, ponlo entre ambas). "conexiones" es una lista de pares de ÍNDICES (posición en el array
-"lugares", empezando en 0) que deben conectarse visualmente por un camino/río en el mapa —
-conecta los lugares en un orden que tenga sentido narrativo (el recorrido lógico de la partida).
+Para "mapa": genera entre 6 y 9 "lugares" que reflejen una geografía real y variada (no los
+pongas en línea recta ni repartidos de forma uniforme). Incluye idealmente: 1-2 asentamientos
+(pueblo/castillo/ruinas), al menos una cordillera (montana), al menos un bosque, y al menos una
+masa de agua (rio, lago o mar) — el resto según encaje con la trama (puente, cueva, pantano,
+camino). El campo "tipo" debe ser uno de: pueblo, bosque, rio, lago, puente, montana, ruinas,
+cueva, castillo, mar, pantano, camino, otro. Dale a cada lugar un NOMBRE PROPIO evocador (p.ej.
+"Cordillera de Fangbrok", "Río Helado", no solo "montaña" o "río"). Los campos "x" e "y" son
+coordenadas de 0 a 100 que reflejen su posición relativa real según la trama: si hay un "mar",
+ponlo pegado a uno de los bordes (x o y cerca de 0 o de 100); si un "rio" nace en una montaña y
+desemboca en el mar/lago, coloca sus puntos en una trayectoria lógica entre ambos; agrupa lo que
+narrativamente esté cerca y separa lo que esté lejos. "conexiones" es una lista de pares de
+ÍNDICES (posición en el array "lugares", empezando en 0): conecta asentamientos entre sí con
+caminos, y conecta el curso de los ríos/lagos entre montaña y mar siguiendo el orden narrativo
+del recorrido de la partida.
 
 Genera exactamente ${numPersonajes} personajes en "personajesSugeridos" (aunque se hayan pedido
 ${c.numeroJugadores} jugadores, limita los personajes generados a ${numPersonajes} para no

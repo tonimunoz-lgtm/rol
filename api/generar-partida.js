@@ -7,17 +7,19 @@
 // La API de Groq es compatible con el formato de OpenAI (chat completions).
 //
 // Seguridad sin plan de pago ni cuentas de servicio:
-// El master envía su ID Token de Firebase Auth. En vez de verificarlo con
-// firebase-admin (que exigiría credenciales de cuenta de servicio), le
-// pedimos directamente a Firestore (con ese mismo token, vía su API REST)
-// que nos confirme si existe /masters/{uid}. Firestore ya valida el token
-// por nosotros: si es falso o ha caducado, la petición fallará sola.
+// Cualquier usuario con cuenta registrada (no anónima) puede generar su
+// propia partida — no hay un master único. El cliente envía su ID Token de
+// Firebase Auth; en vez de verificarlo con firebase-admin (que exigiría
+// credenciales de cuenta de servicio), lo verificamos de verdad (firma
+// incluida) contra el propio servicio de Firebase Auth (accounts:lookup),
+// y comprobamos que la cuenta no sea anónima.
 
 // Guarda esto en Vercel → Project Settings → Environment Variables,
 // nunca hace falta escribirlo en el código ni en el repositorio.
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = "openai/gpt-oss-120b";
-const FIREBASE_PROJECT_ID = "femjoc";
+// Misma apiKey pública que en js/firebase-config.js.
+const FIREBASE_API_KEY = "AIzaSyB86EI00VpSCPUGaa5qSLboyszS4o7Iskc";
 
 module.exports = async (req, res) => {
   try {
@@ -43,35 +45,31 @@ async function handler(req, res) {
     return;
   }
 
-  // Extraemos el uid del token SOLO para construir la ruta a comprobar.
-  // No hace falta verificar la firma aquí: Firestore la verificará de
-  // verdad al recibir este mismo token como Bearer en la petición REST.
-  let uid;
+  // Verificación real del token (firma incluida) contra Firebase Auth, y
+  // comprobación de que la cuenta no sea anónima (los jugadores entran de
+  // forma anónima, así que quedan excluidos de poder generar partidas).
   try {
-    const payloadBase64 = idToken.split(".")[1];
-    const payloadJson = Buffer.from(payloadBase64, "base64url").toString("utf8");
-    uid = JSON.parse(payloadJson).sub;
-    if (!uid) throw new Error("Token sin uid");
-  } catch (e) {
-    res.status(401).json({ error: "Token inválido" });
-    return;
-  }
-
-  // Comprobación real de permisos: le pedimos a Firestore el documento
-  // /masters/{uid} usando el token del que dice ser el master. Si el token
-  // no es válido o no es ese uid, Firestore responderá con error y aquí
-  // cortamos. Si el documento no existe, también cortamos.
-  const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/masters/${uid}`;
-  try {
-    const checkResp = await fetch(firestoreUrl, {
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
-    if (!checkResp.ok) {
-      res.status(403).json({ error: "Solo el master puede generar partidas" });
+    const lookupResp = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      }
+    );
+    if (!lookupResp.ok) {
+      res.status(401).json({ error: "Token inválido o caducado" });
+      return;
+    }
+    const lookupData = await lookupResp.json();
+    const usuario = lookupData.users?.[0];
+    const esAnonimo = !usuario || (!usuario.email && !(usuario.providerUserInfo?.length));
+    if (esAnonimo) {
+      res.status(403).json({ error: "Solo un usuario registrado puede generar partidas" });
       return;
     }
   } catch (e) {
-    res.status(500).json({ error: "No se pudo verificar el rol de master" });
+    res.status(500).json({ error: "No se pudo verificar la cuenta" });
     return;
   }
 

@@ -115,7 +115,7 @@ async function handler(req, res) {
   }
 
   const nombreSeguro = String(filename).replace(/[^a-zA-Z0-9._-]/g, "_");
-  const carpeta = ["targets", "video", "imagen"].includes(tipo) ? tipo : "otros";
+  const carpeta = ["targets", "video", "imagen", "audio"].includes(tipo) ? tipo : "otros";
 
   try {
     const blob = await put(`marcadores/${partidaId}/${carpeta}/${Date.now()}-${nombreSeguro}`, buffer, {

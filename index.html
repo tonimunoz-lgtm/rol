@@ -83,12 +83,11 @@
     <span class="stat-pill" id="stat-inventory">🎒 --</span>
   </div>
 
-  <div id="accion-modal" class="modal-overlay">
-    <div class="card" style="max-width:420px; width:90%;">
-      <h3 class="display" style="font-size:1rem;">Escribe en el chat</h3>
-      <p style="color:var(--parchment-dim); font-size:.8rem;">Lo verán el resto de jugadores en pantalla y el master en su registro.</p>
-      <textarea id="accion-texto" rows="3" placeholder="Ej: registro el cofre con cuidado, atenta a trampas..."></textarea>
-      <div style="display:flex; gap:.6em; margin-top:.6em;">
+  <div id="accion-modal" class="floating-panel">
+    <div class="card" style="max-width:420px; width:100%; margin:0 auto;">
+      <h3 class="display" style="font-size:.95rem;">Escribe en el chat</h3>
+      <textarea id="accion-texto" rows="2" placeholder="Ej: registro el cofre con cuidado, atenta a trampas..."></textarea>
+      <div style="display:flex; gap:.6em; margin-top:.5em;">
         <button id="btn-enviar-accion" class="primary">Enviar</button>
         <button id="btn-cerrar-accion">Cancelar</button>
       </div>

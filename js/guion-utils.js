@@ -14,9 +14,13 @@ export function generarIdEscena() {
   return `esc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-// Da un id estable a cada escena (si no lo tenía) y convierte el trigger
-// único antiguo en una lista "salidas" de un solo elemento, para que el
-// resto del código solo tenga que pensar en un único formato (moderno).
+// Da un id estable a cada escena (si no lo tenía) y migra los formatos
+// antiguos al formato moderno:
+//   - "trigger" único → lista "salidas"
+//   - "prueba" única de la escena → lista "acciones" con una sola acción
+//   - triggers "prueba_superada"/"prueba_fallada" (sin valor) → "accion_superada"/
+//     "accion_fallada" con valor = id de esa acción migrada
+// Así el resto del código solo tiene que pensar en el formato moderno.
 export function normalizarGuion(guionCrudo) {
   const conId = (guionCrudo || []).map((escena, i) => ({
     ...escena,
@@ -24,15 +28,45 @@ export function normalizarGuion(guionCrudo) {
   }));
 
   return conId.map((escena, i) => {
-    if (Array.isArray(escena.salidas)) return escena;
-    // Formato antiguo: un único trigger que llevaba siempre a la escena
-    // siguiente del array (o a ninguna parte si era "manual" o la última).
-    const siguienteId = conId[i + 1]?.id ?? null;
-    const salidas =
-      escena.trigger && escena.trigger.tipo !== "manual" && siguienteId
-        ? [{ trigger: escena.trigger, siguienteId }]
+    let acciones = escena.acciones;
+    if (!Array.isArray(acciones)) {
+      acciones = escena.prueba?.activa
+        ? [
+            {
+              id: "accion-legacy",
+              etiqueta: "Intentar superar la prueba",
+              tipo: "prueba",
+              atributo: escena.prueba.atributo,
+              dificultad: escena.prueba.dificultad,
+              tipoDanio: escena.prueba.tipoDanio,
+              danioDados: escena.prueba.danioDados,
+              danioCaras: escena.prueba.danioCaras,
+              textoExito: "",
+              textoFallo: "",
+            },
+          ]
         : [];
-    return { ...escena, salidas };
+    }
+
+    let salidas = escena.salidas;
+    if (!Array.isArray(salidas)) {
+      const siguienteId = conId[i + 1]?.id ?? null;
+      salidas =
+        escena.trigger && escena.trigger.tipo !== "manual" && siguienteId
+          ? [{ trigger: escena.trigger, siguienteId }]
+          : [];
+    }
+    salidas = salidas.map((s) => {
+      if (s.trigger?.tipo === "prueba_superada") {
+        return { ...s, trigger: { tipo: "accion_superada", valor: "accion-legacy" } };
+      }
+      if (s.trigger?.tipo === "prueba_fallada") {
+        return { ...s, trigger: { tipo: "accion_fallada", valor: "accion-legacy" } };
+      }
+      return s;
+    });
+
+    return { ...escena, acciones, salidas };
   });
 }
 

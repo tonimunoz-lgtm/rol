@@ -107,16 +107,15 @@
     </div>
   </div>
 
-  <!-- Tirada de una escena (p.ej. "cruza el puente: tirada de destreza"):
+  <!-- Acciones de una escena (tiradas y/o interacción con el PNJ presente):
        aparece en medio de la pantalla de todos los jugadores en cuanto la
-       escena se activa, y se resuelve sola al pulsar "Tirar". -->
-  <div id="prueba-modal" class="modal-overlay">
-    <div class="card" style="max-width:420px; width:90%; text-align:center;">
-      <h3 class="display" id="prueba-titulo" style="font-size:1.1rem;">Prueba</h3>
-      <p id="prueba-condiciones" style="color:var(--parchment-dim); font-size:.9rem;"></p>
-      <button id="btn-tirar-prueba" class="primary" style="margin:.8em 0; font-size:1.1rem;">🎲 Tirar</button>
-      <p id="prueba-resultado" class="mono" style="color:var(--amber); min-height:1.4em;"></p>
-      <button id="btn-cerrar-prueba" style="margin-top:.6em;">Cerrar</button>
+       escena se activa, con un botón por cada acción disponible. -->
+  <div id="acciones-modal" class="modal-overlay">
+    <div class="card" id="acciones-content" style="max-width:460px; width:92%; max-height:85vh; overflow-y:auto; text-align:left;">
+      <button id="btn-cerrar-acciones" style="float:right; font-size:.75rem;">✕ Cerrar</button>
+      <h3 class="display" id="acciones-titulo" style="font-size:1.1rem;">Acciones</h3>
+      <p id="acciones-pnj" class="mono" style="color:var(--amber); font-size:.8rem; display:none;"></p>
+      <div id="acciones-lista"></div>
     </div>
   </div>
 
@@ -146,6 +145,7 @@
       <div id="bitacora-pnjs"></div>
 
       <h3 style="font-size:1rem; margin-top:1em;">Pistas</h3>
+      <div id="bitacora-objetivo"></div>
       <div id="bitacora-pistas"></div>
       <button id="btn-pedir-pista" class="primary" style="margin-top:.6em; width:100%;">
         🎥 Ver un anuncio para desbloquear una pista

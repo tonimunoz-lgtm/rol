@@ -79,14 +79,32 @@ async function handler(req, res) {
   try {
     const seed = Math.floor(Math.random() * 1_000_000_000);
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=${width}&height=${height}&nologo=true&seed=${seed}`;
-    const imgResp = await fetch(url);
+
+    // El nivel anónimo de Pollinations solo admite 1 petición en cola a la
+    // vez por IP — si dos generaciones se solapan (dos pestañas, o dos
+    // clics seguidos), la segunda puede recibir un 429 pasajero. Lo
+    // reintentamos solos un par de veces con espera, en vez de fallar a la
+    // primera.
+    let imgResp;
+    let intento = 0;
+    while (true) {
+      imgResp = await fetch(url);
+      if (imgResp.ok || imgResp.status !== 429 || intento >= 2) break;
+      intento++;
+      await new Promise((r) => setTimeout(r, 3000 * intento));
+    }
+
     if (!imgResp.ok) {
       let cuerpo = "";
       try {
         cuerpo = (await imgResp.text()).slice(0, 300);
       } catch (_) {}
       console.error(`Pollinations respondió ${imgResp.status}:`, cuerpo);
-      res.status(500).json({ error: `Pollinations respondió ${imgResp.status}${cuerpo ? `: ${cuerpo}` : ""}` });
+      const mensaje =
+        imgResp.status === 429
+          ? "Pollinations está saturado ahora mismo (límite de la cola gratuita). Espera unos segundos y vuelve a intentarlo."
+          : `Pollinations respondió ${imgResp.status}${cuerpo ? `: ${cuerpo}` : ""}`;
+      res.status(500).json({ error: mensaje });
       return;
     }
     const arrayBuffer = await imgResp.arrayBuffer();

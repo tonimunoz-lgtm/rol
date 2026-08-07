@@ -47,13 +47,15 @@ serverless.
 En la consola de Firebase del proyecto `femjoc`:
 
 1. **Authentication** → Sign-in method → habilita **Anónimo** y **Email/contraseña**.
-2. **Authentication** → Users → "Add user" → crea tu usuario master (email + contraseña).
-3. **Firestore Database** → créala en modo producción, región `europe-west1`. Firestore es
+2. **Firestore Database** → créala en modo producción, región `europe-west1`. Firestore es
    gratis en el plan Spark, con cuotas diarias amplias — no hace falta Blaze para esto.
-4. Copia el **UID** de tu usuario master (pestaña Users) y crea a mano un documento:
-   Firestore → "Start collection" → ID: `masters` → ID del documento: pega tu UID → guarda vacío.
-5. Despliega las reglas de Firestore sin CLI: Firestore Database → pestaña **"Reglas"** → borra
+3. Despliega las reglas de Firestore sin CLI: Firestore Database → pestaña **"Reglas"** → borra
    lo que haya → pega el contenido de `firestore.rules` (está en este repo) → **Publicar**.
+
+Ya **no hace falta crear un usuario master a mano**: cualquiera que abra `/master.html` puede
+pulsar "¿No tienes cuenta todavía? Crea una" y registrarse con su propio email/contraseña. Cada
+cuenta solo puede ver y editar sus propias partidas — lo controlan `firestore.rules`, comparando
+el `uid` de quien pregunta con el campo `masterUid` guardado en cada partida.
 
 No usamos Firebase Storage ni Cloud Functions en absoluto, así que no hace falta el plan Blaze
 para nada de este proyecto.
@@ -85,24 +87,36 @@ token de sesión — sin necesitar credenciales adicionales.
 > futuro Google lo arregla y prefieres volver a Gemini, el cambio en `api/generar-partida.js` es
 > mínimo (cambiar la URL y la cabecera de autenticación).
 
-## Paso 5 — Marcadores AR (MindAR), sin Firebase Storage
+## Paso 5 — Marcadores AR (MindAR), generados dentro de la propia app
 
-Los archivos de marcadores (`targets.mind` y, más adelante, vídeos/imágenes) se sirven como
-archivos estáticos directamente desde el repositorio — Vercel los sirve gratis, igual que
-`index.html`.
+Cada master genera y sube sus propios marcadores desde `/master.html` → "Marcadores AR", sin
+tocar GitHub ni el compilador externo:
 
 1. Haz una foto nítida y con buen contraste de cada zona/objeto de la sala (evita superficies
    lisas o repetitivas).
-2. Ve al [compilador oficial de MindAR](https://hiukim.github.io/mind-ar-js-doc/tools/compile),
-   sube todas las fotos juntas y descarga el `targets.mind` resultante (un único archivo sirve
-   para varios marcadores, cada uno con un índice 0, 1, 2...).
-3. Súbelo a tu repo de GitHub, dentro de una carpeta nueva `/marcadores/` en la raíz
-   (GitHub → "Add file" → "Upload files").
-4. Desde `/master.html` → "Marcadores AR", pega la ruta (`/marcadores/targets.mind`) y guarda.
+2. Súbelas en `/master.html` → "Marcadores AR", en el mismo orden en que quieres que salgan los
+   índices (la 1ª foto = índice 0, la 2ª = índice 1, etc.).
+3. Pulsa "Compilar y subir targets.mind": el motor de MindAR compila las fotos en tu propio
+   navegador/móvil (usa la misma librería que el
+   [compilador oficial](https://hiukim.github.io/mind-ar-js-doc/tools/compile), pero integrada en
+   la app) y el resultado se sube automáticamente a Vercel Blob mediante
+   `api/subir-marcador.js` — no hay paso manual.
+4. Igual para los vídeos/imágenes que uses como contenido de cada marcador: se suben con su
+   propio botón dentro del editor de cada marcador, en vez de pegar una ruta de GitHub.
 
-La asociación fina "marcador índice N → vídeo/pista concreta" es la siguiente pieza a construir
-(ahora mismo el escaneo ya detecta los marcadores del `targets.mind`, pero todos disparan el
-mismo comportamiento genérico).
+Necesitas activar **Vercel Blob** una vez en tu proyecto (gratis en el plan Hobby): Vercel →
+tu proyecto → pestaña **Storage** → "Create Database" → **Blob** → conéctalo al proyecto. Vercel
+añade solo la variable de entorno `BLOB_READ_WRITE_TOKEN` que usa `api/subir-marcador.js`; no
+hace falta copiarla a mano.
+
+Límite a tener en cuenta: las funciones serverless de Vercel (plan Hobby) aceptan peticiones de
+hasta ~4.5MB, así que desde esta pantalla se puede subir cualquier `targets.mind` o imagen sin
+problema, pero un vídeo pesado puede no caber — en ese caso, aloja el vídeo en otro sitio (por
+ejemplo YouTube sin listar, o tu propio Vercel Blob por otra vía) y pega la URL directamente en
+el campo correspondiente.
+
+La asociación fina "marcador índice N → vídeo/pista concreta" se hace igual que antes, desde la
+lista de marcadores debajo del compilador.
 
 ## Paso 6 — Sistema de fichas de personaje y habilidades
 
@@ -203,6 +217,24 @@ condición de la escena activa y pasa a la siguiente sola. El master siempre pue
 Importante: el disparador `enemigo_derrotado` y `objeto` comparan el nombre **exactamente como lo
 escribiste** en el enemigo/objeto (sin distinguir mayúsculas/minúsculas), así que usa el mismo
 nombre en ambos sitios.
+
+## Publicarlo en Google Play
+
+La app sigue siendo una PWA (HTML/JS puro), así que para Google Play se empaqueta como
+**Trusted Web Activity (TWA)**: un envoltorio Android muy fino que abre tu web ya desplegada en
+pantalla completa, sin barra de navegador. No hay que reescribir nada de la app.
+
+1. Instala [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) (`npm i -g @bubblewrap/cli`).
+2. `bubblewrap init --manifest=https://tu-dominio.vercel.app/manifest.json` — genera el proyecto
+   Android a partir de tu PWA ya publicada.
+3. `bubblewrap build` genera el `.aab` que subes a la Play Console.
+4. Google Play exige verificar que el dominio es tuyo (Digital Asset Links): Bubblewrap te genera
+   un archivo `assetlinks.json` que debes servir en
+   `https://tu-dominio.vercel.app/.well-known/assetlinks.json`.
+
+Cada actualización de tu web en Vercel se refleja sola en la app instalada (es la misma URL);
+solo hace falta volver a publicar en Play si cambias el propio envoltorio Android (icono, nombre,
+versión mínima, etc.), no por cambios normales de contenido o código.
 
 ## Siguientes pasos sugeridos
 

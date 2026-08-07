@@ -78,6 +78,7 @@
     <button id="btn-accion">✍️ Chat</button>
     <button id="btn-inspeccionar" class="primary">🔍 Inspeccionar</button>
     <button id="btn-dice">🎲 Dado</button>
+    <button id="btn-bitacora">📖</button>
     <button id="btn-ficha">📜</button>
     <span class="stat-pill" id="stat-inventory">🎒 --</span>
   </div>
@@ -131,6 +132,27 @@
       <h3 style="font-size:1rem; margin-top:1em;">Inventario</h3>
       <div id="ficha-inventario"></div>
       <button id="btn-imprimir-ficha" style="margin-top:1em; width:100%;">🖨️ Imprimir ficha</button>
+    </div>
+  </div>
+
+  <!-- Bitácora: PNJs conocidos y pistas descubiertas (o por descubrir viendo
+       un anuncio con recompensa). -->
+  <div id="bitacora-modal" class="modal-overlay">
+    <div class="card" id="bitacora-content" style="max-width:480px; width:90%; max-height:85vh; overflow-y:auto;">
+      <button id="btn-cerrar-bitacora" style="float:right; font-size:.75rem;">✕ Cerrar</button>
+      <h2 class="display" style="font-size:1.2rem;">📖 Bitácora</h2>
+
+      <h3 style="font-size:1rem; margin-top:1em;">Personajes conocidos</h3>
+      <div id="bitacora-pnjs"></div>
+
+      <h3 style="font-size:1rem; margin-top:1em;">Pistas</h3>
+      <div id="bitacora-pistas"></div>
+      <button id="btn-pedir-pista" class="primary" style="margin-top:.6em; width:100%;">
+        🎥 Ver un anuncio para desbloquear una pista
+      </button>
+      <p id="bitacora-pistas-agotadas" style="color:var(--parchment-dim); font-size:.85rem; display:none;">
+        Ya has desbloqueado todas las pistas disponibles.
+      </p>
     </div>
   </div>
 

@@ -106,6 +106,19 @@
     </div>
   </div>
 
+  <!-- Tirada de una escena (p.ej. "cruza el puente: tirada de destreza"):
+       aparece en medio de la pantalla de todos los jugadores en cuanto la
+       escena se activa, y se resuelve sola al pulsar "Tirar". -->
+  <div id="prueba-modal" class="modal-overlay">
+    <div class="card" style="max-width:420px; width:90%; text-align:center;">
+      <h3 class="display" id="prueba-titulo" style="font-size:1.1rem;">Prueba</h3>
+      <p id="prueba-condiciones" style="color:var(--parchment-dim); font-size:.9rem;"></p>
+      <button id="btn-tirar-prueba" class="primary" style="margin:.8em 0; font-size:1.1rem;">🎲 Tirar</button>
+      <p id="prueba-resultado" class="mono" style="color:var(--amber); min-height:1.4em;"></p>
+      <button id="btn-cerrar-prueba" style="margin-top:.6em;">Cerrar</button>
+    </div>
+  </div>
+
   <div id="ficha-modal" class="modal-overlay">
     <div class="card" id="ficha-content" style="max-width:480px; width:90%; max-height:85vh; overflow-y:auto;">
       <button id="btn-cerrar-ficha" style="float:right; font-size:.75rem;">✕ Cerrar</button>

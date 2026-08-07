@@ -7,6 +7,7 @@ import {
   query, where, getDocs, runTransaction,
 } from "./firebase-config.js";
 import { normalizarGuion, normalizarEscenaActual, encontrarEscena } from "./guion-utils.js";
+import { normalizarMapa, renderizarMapaSVG } from "./mapa-utils.js";
 
 const els = {
   playerName: document.getElementById("player-name-label"),
@@ -73,6 +74,16 @@ const els = {
   bitacoraPistas: document.getElementById("bitacora-pistas"),
   btnPedirPista: document.getElementById("btn-pedir-pista"),
   bitacoraPistasAgotadas: document.getElementById("bitacora-pistas-agotadas"),
+  btnMapa: document.getElementById("btn-mapa"),
+  mapaModal: document.getElementById("mapa-modal"),
+  btnCerrarMapa: document.getElementById("btn-cerrar-mapa"),
+  mapaDescripcionJugador: document.getElementById("mapa-descripcion-jugador"),
+  mapaViewport: document.getElementById("mapa-viewport"),
+  mapaLienzo: document.getElementById("mapa-lienzo"),
+  mapaTooltip: document.getElementById("mapa-tooltip"),
+  btnMapaZoomMas: document.getElementById("btn-mapa-zoom-mas"),
+  btnMapaZoomMenos: document.getElementById("btn-mapa-zoom-menos"),
+  btnMapaCentrar: document.getElementById("btn-mapa-centrar"),
 };
 
 const DIFICULTAD_ATAQUE_DEFECTO = 12;
@@ -107,6 +118,7 @@ let guionActual = [];
 let escenaActualLocalId = null;
 let pnjsActual = [];
 let pistasActual = [];
+let mapaCrudo = null;
 let ultimaEscenaMostrada = null;
 let combateActivoAnterior = false;
 
@@ -356,6 +368,7 @@ async function bootGame() {
     musicaAmbienteBase = data.musicaAmbienteUrl || null;
     pnjsActual = data.pnjs || [];
     pistasActual = data.pistas || [];
+    mapaCrudo = data.mapa || null;
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
     const combateActivoAhora = !!data.combate?.activo;
@@ -383,6 +396,7 @@ async function bootGame() {
     }
     actualizarMusicaAmbiente();
     if (els.bitacoraModal.classList.contains("visible")) renderBitacora();
+    if (els.mapaModal.classList.contains("visible")) renderMapaModal();
   });
 
   // Eventos en vivo lanzados por el master o por otros jugadores
@@ -641,6 +655,130 @@ function mostrarToast(texto, duracionMs = 4500) {
   clearTimeout(toastTimeoutId);
   toastTimeoutId = setTimeout(() => els.toastBox.classList.remove("visible"), duracionMs);
 }
+
+// ---------- Mapa interactivo (zoom + paneo con dedos/ratón) ----------
+let mapaActual = { descripcion: "", lugares: [], conexiones: [] };
+let mapaEscala = 1;
+let mapaTx = 0;
+let mapaTy = 0;
+const MAPA_ESCALA_MIN = 0.6;
+const MAPA_ESCALA_MAX = 3.5;
+
+function aplicarTransformMapa() {
+  els.mapaLienzo.style.transform = `translate(${mapaTx}px, ${mapaTy}px) scale(${mapaEscala})`;
+}
+
+function lugarActivoEnMapa() {
+  return mapaActual.lugares.find((l) => l.escenaId && l.escenaId === escenaActualLocalId) || null;
+}
+
+// Centra la vista sobre "estás aquí" si el master vinculó la escena activa
+// a algún lugar; si no, muestra el mapa completo.
+function centrarMapa() {
+  const vp = els.mapaViewport.getBoundingClientRect();
+  const lugar = lugarActivoEnMapa();
+  if (lugar && vp.width) {
+    mapaEscala = 1.7;
+    const px = (lugar.x / 100) * vp.width;
+    const py = (lugar.y / 100) * vp.height;
+    mapaTx = vp.width / 2 - px * mapaEscala;
+    mapaTy = vp.height / 2 - py * mapaEscala;
+  } else {
+    mapaEscala = 1;
+    mapaTx = 0;
+    mapaTy = 0;
+  }
+  aplicarTransformMapa();
+}
+
+function renderMapaModal() {
+  mapaActual = normalizarMapa(mapaCrudo);
+  els.mapaDescripcionJugador.textContent = mapaActual.descripcion || "";
+  const lugar = lugarActivoEnMapa();
+  els.mapaLienzo.innerHTML = renderizarMapaSVG(mapaActual, lugar?.id || null);
+  els.mapaTooltip.classList.remove("visible");
+}
+
+function abrirMapa() {
+  renderMapaModal();
+  els.mapaModal.classList.add("visible");
+  requestAnimationFrame(centrarMapa);
+}
+els.btnMapa.addEventListener("click", abrirMapa);
+els.btnCerrarMapa.addEventListener("click", () => els.mapaModal.classList.remove("visible"));
+els.btnMapaCentrar.addEventListener("click", centrarMapa);
+els.btnMapaZoomMas.addEventListener("click", () => {
+  mapaEscala = Math.min(MAPA_ESCALA_MAX, mapaEscala * 1.25);
+  aplicarTransformMapa();
+});
+els.btnMapaZoomMenos.addEventListener("click", () => {
+  mapaEscala = Math.max(MAPA_ESCALA_MIN, mapaEscala / 1.25);
+  aplicarTransformMapa();
+});
+
+// Tocar un lugar muestra su nombre/descripción; tocar fuera lo cierra.
+els.mapaLienzo.addEventListener("click", (e) => {
+  const grupo = e.target.closest(".mapa-lugar");
+  if (!grupo) {
+    els.mapaTooltip.classList.remove("visible");
+    return;
+  }
+  const lugar = mapaActual.lugares.find((l) => l.id === grupo.dataset.id);
+  if (!lugar) return;
+  els.mapaTooltip.innerHTML = `<strong>${lugar.nombre}</strong>${lugar.descripcion ? `<br>${lugar.descripcion}` : ""}`;
+  els.mapaTooltip.classList.add("visible");
+});
+
+// Paneo (arrastrar) y pellizco para zoom, con Pointer Events (funciona
+// igual con dedo o ratón, sin depender de una librería externa).
+const punterosMapa = new Map();
+let distanciaPinchInicial = null;
+let escalaPinchInicial = 1;
+
+els.mapaViewport.addEventListener("pointerdown", (e) => {
+  els.mapaViewport.setPointerCapture(e.pointerId);
+  punterosMapa.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (punterosMapa.size === 2) {
+    const [p1, p2] = Array.from(punterosMapa.values());
+    distanciaPinchInicial = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    escalaPinchInicial = mapaEscala;
+  }
+});
+
+els.mapaViewport.addEventListener("pointermove", (e) => {
+  if (!punterosMapa.has(e.pointerId)) return;
+  const anterior = punterosMapa.get(e.pointerId);
+  punterosMapa.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (punterosMapa.size === 2 && distanciaPinchInicial) {
+    const [p1, p2] = Array.from(punterosMapa.values());
+    const distancia = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    mapaEscala = Math.min(MAPA_ESCALA_MAX, Math.max(MAPA_ESCALA_MIN, escalaPinchInicial * (distancia / distanciaPinchInicial)));
+    aplicarTransformMapa();
+  } else if (punterosMapa.size === 1) {
+    mapaTx += e.clientX - anterior.x;
+    mapaTy += e.clientY - anterior.y;
+    aplicarTransformMapa();
+  }
+});
+
+function soltarPunteroMapa(e) {
+  punterosMapa.delete(e.pointerId);
+  if (punterosMapa.size < 2) distanciaPinchInicial = null;
+}
+els.mapaViewport.addEventListener("pointerup", soltarPunteroMapa);
+els.mapaViewport.addEventListener("pointercancel", soltarPunteroMapa);
+els.mapaViewport.addEventListener("pointerleave", soltarPunteroMapa);
+
+els.mapaViewport.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    mapaEscala = Math.min(MAPA_ESCALA_MAX, Math.max(MAPA_ESCALA_MIN, mapaEscala * (e.deltaY < 0 ? 1.1 : 0.9)));
+    aplicarTransformMapa();
+  },
+  { passive: false }
+);
 
 // ---------- Acciones de escena (tiradas y/o interacción con PNJ) ----------
 const ETIQUETAS_ATRIBUTO_PRUEBA = {

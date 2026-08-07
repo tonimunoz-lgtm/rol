@@ -134,7 +134,7 @@ function llamarGroq(url, prompt, forzarJson) {
   const body = {
     model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
-    max_tokens: 3500,
+    max_tokens: 4200,
     temperature: 0.7,
   };
   if (forzarJson) body.response_format = { type: "json_object" };
@@ -183,7 +183,16 @@ con exactamente esta forma:
     { "titulo": "Nombre corto de la pista", "texto": "Qué descubren los jugadores y cómo conecta con la trama" }
   ],
   "trampasEncuentros": [
-    { "titulo": "Nombre del encuentro/trampa/enigma", "texto": "Descripción, mecánica sugerida y consecuencia de fallar o superarlo" }
+    {
+      "titulo": "Nombre del encuentro/trampa/enigma",
+      "texto": "Descripción inmersiva: qué ven/sienten los jugadores, mecánica sugerida y consecuencia de fallar o superarlo",
+      "requierePrueba": true,
+      "atributoPrueba": "destreza",
+      "dificultadPrueba": 12,
+      "tipoDanioPrueba": "fisico",
+      "danioDados": 2,
+      "danioCaras": 6
+    }
   ],
   "giroFinal": "El giro o revelación final de la partida",
   "personajesSugeridos": [
@@ -211,8 +220,17 @@ complementarios en combate/exploración/social), cada uno con 2-3 habilidades y 
 inventario inicial coherentes con la ambientación. El campo "efecto.tipo" de los objetos debe ser
 uno de: "curar", "danio", "ninguno". Ajusta el número de PNJs (máximo 4), pistas (máximo 5) y
 trampasEncuentros (máximo 4) según la duración y dificultad indicadas, sin excederte de esos
-máximos. Los atributos deben ir de 1 a 20. Sé conciso en los textos (2-4 frases cada uno). Escribe
-todo en español.
+máximos. Los atributos deben ir de 1 a 20. Sé conciso en los textos (2-4 frases cada uno), pero
+en "trampasEncuentros" describe también brevemente el ambiente físico (clima, luz, sonido) para
+que la escena se sienta inmersiva, no solo la mecánica. Para cada trampasEncuentros, decide si
+tiene sentido que exija una tirada de dado a los jugadores (la mayoría de trampas y muchos
+encuentros la tienen): si es así, pon "requierePrueba": true y rellena "atributoPrueba" (uno de:
+destreza, fuerza, inteligencia, vigor, carisma — el que mejor encaje), "dificultadPrueba" (10-16
+según la dificultad general pedida), "tipoDanioPrueba" (uno de: fisico, fuego, hielo, veneno,
+mental — el que mejor encaje con la descripción) y "danioDados"/"danioCaras" (p.ej. 2 y 6 para
+2d6). Si el encuentro es puramente narrativo o social (hablar con un PNJ, encontrar una pista sin
+peligro), pon "requierePrueba": false y deja los demás campos de mecánica con valores por defecto
+razonables igualmente. Escribe todo en español.
 `.trim();
 }
 

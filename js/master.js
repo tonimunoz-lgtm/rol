@@ -5,6 +5,7 @@ import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
   collection, addDoc, serverTimestamp, getDocs,
 } from "./firebase-config.js";
+import { normalizarGuion, normalizarEscenaActual, generarIdEscena } from "./guion-utils.js";
 
 // URL de la función serverless que sube archivos (fotos compiladas, vídeos,
 // imágenes de marcadores) a Vercel Blob.
@@ -148,6 +149,8 @@ $("btn-generar").addEventListener("click", async () => {
     }
     const partida = await resp.json();
 
+    const guionBorrador = construirGuionDesdeEncuentros(partida.trampasEncuentros || []);
+
     await setDoc(doc(db, "partidas", codigo), {
       nombre: configuracion.nombre,
       configuracion,
@@ -156,8 +159,8 @@ $("btn-generar").addEventListener("click", async () => {
       pistas: partida.pistas || [],
       trampasEncuentros: partida.trampasEncuentros || [],
       giroFinal: partida.giroFinal || "",
-      guion: [],
-      escenaActual: 0,
+      guion: guionBorrador,
+      escenaActual: guionBorrador[0]?.id ?? null,
       creadaEn: serverTimestamp(),
       masterUid: auth.currentUser.uid,
     });
@@ -181,6 +184,7 @@ $("btn-generar").addEventListener("click", async () => {
             inteligencia: Number(p.atributos?.inteligencia) || 10,
             carisma: Number(p.atributos?.carisma) || 10,
           },
+          resistencias: { fisico: 1, fuego: 1, hielo: 1, veneno: 1, mental: 1 },
           habilidades: (p.habilidades || []).map((h) => ({
             nombre: h.nombre || "",
             tipo: h.tipo === "pasiva" ? "pasiva" : "activa",
@@ -188,6 +192,7 @@ $("btn-generar").addEventListener("click", async () => {
             usosPorPartida: Number(h.usosPorPartida) || 0,
             descripcion: h.descripcion || "",
             atributo: "ninguno",
+            tipoDanio: "fisico",
             esAtaque: false,
             detectaTrampas: false,
           })),
@@ -198,6 +203,8 @@ $("btn-generar").addEventListener("click", async () => {
             efecto: {
               tipo: ["curar", "danio"].includes(o.efecto?.tipo) ? o.efecto.tipo : "ninguno",
               valor: Number(o.efecto?.valor) || 0,
+              tipoDanio: "fisico",
+              alcance: "individual",
             },
           })),
         })
@@ -213,9 +220,10 @@ $("btn-generar").addEventListener("click", async () => {
       pistas: partida.pistas || [],
       trampasEncuentros: partida.trampasEncuentros || [],
       giroFinal: partida.giroFinal || "",
+      guion: guionBorrador,
     });
 
-    status.textContent = `Partida creada. Código para los jugadores: ${codigo}`;
+    status.textContent = `Partida creada (con un primer borrador de guion, en la pestaña "Guion automático"). Código para los jugadores: ${codigo}`;
     escucharJugadoresEnVivo(codigo);
     escucharPersonajes(codigo);
     escucharLogEventos(codigo);
@@ -645,6 +653,7 @@ async function abrirEditorMarcador(marcadorId) {
     $("m-trampa-atributo").value = "destreza";
     $("m-trampa-dificultad").value = 12;
     $("m-trampa-danio").value = 5;
+    $("m-trampa-tipo-danio").value = "fisico";
     $("m-trampa-descripcion").value = "";
     actualizarCamposMarcador();
     return;
@@ -675,6 +684,7 @@ async function abrirEditorMarcador(marcadorId) {
   $("m-trampa-atributo").value = tr.atributo || "destreza";
   $("m-trampa-dificultad").value = tr.dificultad ?? 12;
   $("m-trampa-danio").value = tr.danio ?? 5;
+  $("m-trampa-tipo-danio").value = tr.tipoDanio || "fisico";
   $("m-trampa-descripcion").value = tr.descripcion || "";
   actualizarCamposMarcador();
 }
@@ -712,6 +722,7 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
             atributo: $("m-trampa-atributo").value,
             dificultad: Number($("m-trampa-dificultad").value) || 12,
             danio: Number($("m-trampa-danio").value) || 0,
+            tipoDanio: $("m-trampa-tipo-danio").value,
             descripcion: $("m-trampa-descripcion").value.trim(),
           }
         : null,
@@ -726,7 +737,26 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
   $("editor-marcador").style.display = "none";
 });
 
-// ---------- Guion automático (storyboard de escenas) ----------
+// Convierte una lista de trampas/encuentros de la historia en una secuencia
+// lineal de escenas-borrador (una por encuentro), encadenadas por avance
+// manual: el master decide luego el disparador real de cada una y puede
+// añadir ramificaciones. Se usa tanto al crear la partida (borrador
+// automático "junto con la historia") como desde el botón manual.
+function construirGuionDesdeEncuentros(encuentros) {
+  const escenas = (encuentros || []).map((enc, i) => ({
+    id: generarIdEscena(),
+    nombre: `${i + 1}. ${enc.titulo || "Escena"}`,
+    narracion: enc.texto || "",
+    musicaUrl: "",
+    salidas: [],
+  }));
+  for (let i = 0; i < escenas.length - 1; i++) {
+    escenas[i].salidas = [{ trigger: { tipo: "combate_terminado" }, siguienteId: escenas[i + 1].id }];
+  }
+  return escenas;
+}
+
+// ---------- Guion automático (storyboard de escenas, con ramificaciones) ----------
 const ETIQUETAS_TRIGGER = {
   marcador: "Índice del marcador",
   objeto: "Objeto",
@@ -760,10 +790,10 @@ function opcionesParaTipo(tipo) {
   return [];
 }
 
-function crearCampoValor(tipo, valorActual) {
+function crearCampoValor(tipo, valorActual, claseCampo) {
   if (tipo === "marcador") {
     const input = document.createElement("input");
-    input.className = "es-trigger-valor";
+    input.className = claseCampo;
     input.type = "number";
     input.min = "0";
     input.value = valorActual ?? "";
@@ -775,7 +805,7 @@ function crearCampoValor(tipo, valorActual) {
   // enemigos), dejamos un campo de texto libre para no bloquear al master.
   if (opciones.length === 0 && !valorActual) {
     const input = document.createElement("input");
-    input.className = "es-trigger-valor";
+    input.className = claseCampo;
     input.type = "text";
     input.placeholder = "Créalo primero en la sección correspondiente";
     input.value = valorActual ?? "";
@@ -783,7 +813,7 @@ function crearCampoValor(tipo, valorActual) {
   }
 
   const select = document.createElement("select");
-  select.className = "es-trigger-valor";
+  select.className = claseCampo;
   const listaOpciones = new Set(opciones);
   if (valorActual) listaOpciones.add(valorActual); // conserva el valor guardado aunque ya no exista
   select.innerHTML =
@@ -795,64 +825,173 @@ function crearCampoValor(tipo, valorActual) {
 }
 
 function refrescarSelectsGuionAbiertos() {
-  document.querySelectorAll("#lista-escenas .escena-row").forEach((row) => {
-    const tipoSelect = row.querySelector(".es-trigger-tipo");
-    const tipo = tipoSelect.value;
+  document.querySelectorAll("#lista-escenas .salida-row").forEach((row) => {
+    const tipo = row.querySelector(".sal-trigger-tipo").value;
     if (tipo === "objeto" || tipo === "objeto_usado" || tipo === "habilidad_usada" || tipo === "enemigo_derrotado") {
-      const valorActual = row.querySelector(".es-trigger-valor")?.value || "";
-      const nuevoCampo = crearCampoValor(tipo, valorActual);
-      row.querySelector(".es-trigger-valor").replaceWith(nuevoCampo);
+      const valorActual = row.querySelector(".sal-trigger-valor")?.value || "";
+      const nuevoCampo = crearCampoValor(tipo, valorActual, "sal-trigger-valor");
+      row.querySelector(".sal-trigger-valor").replaceWith(nuevoCampo);
     }
   });
 }
 
-function crearFilaEscena(escena = null) {
-  const tpl = document.getElementById("tpl-escena-row");
+// ---------- Salidas (ramificaciones) dentro de cada escena ----------
+function crearFilaSalida(escenaRow, salida = null) {
+  const tpl = document.getElementById("tpl-salida-row");
   const row = tpl.content.firstElementChild.cloneNode(true);
-  if (escena) {
-    row.querySelector(".es-nombre").value = escena.nombre || "";
-    row.querySelector(".es-narracion").value = escena.narracion || "";
-    row.querySelector(".es-trigger-tipo").value = escena.trigger?.tipo || "manual";
-  }
-  const tipoSelect = row.querySelector(".es-trigger-tipo");
+  const tipoInicial = salida?.trigger?.tipo || "marcador";
+  row.querySelector(".sal-trigger-tipo").value = tipoInicial;
+
+  const tipoSelect = row.querySelector(".sal-trigger-tipo");
   const actualizarCampoValor = () => {
     const tipo = tipoSelect.value;
-    const campo = row.querySelector(".es-trigger-valor-campo");
-    if (tipo === "manual" || tipo === "combate_terminado") {
+    const campo = row.querySelector(".sal-trigger-valor-campo");
+    if (tipo === "combate_terminado") {
       campo.style.display = "none";
       return;
     }
     campo.style.display = "block";
-    row.querySelector(".es-trigger-valor-label").textContent = ETIQUETAS_TRIGGER[tipo] || "Valor";
-    const valorActual = escena && escena.trigger?.tipo === tipo ? escena.trigger.valor : "";
-    const nuevoCampo = crearCampoValor(tipo, valorActual);
-    row.querySelector(".es-trigger-valor").replaceWith(nuevoCampo);
+    row.querySelector(".sal-trigger-valor-label").textContent = ETIQUETAS_TRIGGER[tipo] || "Valor";
+    const valorActual = salida && salida.trigger?.tipo === tipo ? salida.trigger.valor : "";
+    const nuevoCampo = crearCampoValor(tipo, valorActual, "sal-trigger-valor");
+    row.querySelector(".sal-trigger-valor").replaceWith(nuevoCampo);
   };
   tipoSelect.addEventListener("change", actualizarCampoValor);
   actualizarCampoValor();
 
-  row.querySelector(".btn-quitar-escena").addEventListener("click", () => row.remove());
+  row.querySelector(".btn-quitar-salida").addEventListener("click", () => {
+    row.remove();
+    actualizarVisibilidadSinSalidas(escenaRow);
+  });
+
+  escenaRow.querySelector(".es-salidas").appendChild(row);
+  refrescarSelectsDestinoEscena();
+  // El destino puede apuntar a una escena que todavía no se ha creado en el
+  // DOM (si el guion guardado tiene una salida que "adelanta" hacia una
+  // escena posterior en la lista). Guardamos el id pendiente y lo
+  // resolvemos al final, cuando ya existen todas las escenas como opción.
+  if (salida?.siguienteId) {
+    row.dataset.destinoPendiente = salida.siguienteId;
+    const destinoSelect = row.querySelector(".sal-destino");
+    if (destinoSelect) destinoSelect.value = salida.siguienteId;
+  }
+  actualizarVisibilidadSinSalidas(escenaRow);
+}
+
+function resolverDestinosPendientes() {
+  document.querySelectorAll("#lista-escenas .salida-row").forEach((row) => {
+    const pendiente = row.dataset.destinoPendiente;
+    if (!pendiente) return;
+    const select = row.querySelector(".sal-destino");
+    if (select) select.value = pendiente;
+  });
+}
+
+function actualizarVisibilidadSinSalidas(escenaRow) {
+  const hay = escenaRow.querySelectorAll(".salida-row").length > 0;
+  const aviso = escenaRow.querySelector(".es-sin-salidas");
+  if (aviso) aviso.style.display = hay ? "none" : "block";
+}
+
+// Recalcula las opciones "Va a la escena..." de TODAS las salidas de TODAS
+// las escenas, a partir de los nombres/ids actuales de las escenas del
+// editor (cambia cada vez que se añade, quita o renombra una escena).
+function refrescarSelectsDestinoEscena() {
+  const escenas = Array.from(document.querySelectorAll("#lista-escenas .escena-row")).map((row) => ({
+    id: row.querySelector(".es-id").value,
+    nombre: row.querySelector(".es-nombre").value.trim() || "(sin nombre)",
+  }));
+  document.querySelectorAll("#lista-escenas .sal-destino").forEach((select) => {
+    const valorActual = select.value;
+    select.innerHTML =
+      `<option value="">— Selecciona —</option>` +
+      escenas.map((e) => `<option value="${e.id}">${e.nombre}</option>`).join("");
+    if (escenas.some((e) => e.id === valorActual)) select.value = valorActual;
+  });
+}
+
+// ---------- Escenas ----------
+function crearFilaEscena(escena = null) {
+  const tpl = document.getElementById("tpl-escena-row");
+  const row = tpl.content.firstElementChild.cloneNode(true);
+  row.querySelector(".es-id").value = escena?.id || generarIdEscena();
+  if (escena) {
+    row.querySelector(".es-nombre").value = escena.nombre || "";
+    row.querySelector(".es-narracion").value = escena.narracion || "";
+    row.querySelector(".es-musica-url").value = escena.musicaUrl || "";
+  }
+
+  row.querySelector(".es-nombre").addEventListener("input", refrescarSelectsDestinoEscena);
+  row.querySelector(".btn-quitar-escena").addEventListener("click", () => {
+    row.remove();
+    refrescarSelectsDestinoEscena();
+  });
+  row.querySelector(".btn-nueva-salida").addEventListener("click", () => crearFilaSalida(row));
+  row.querySelector(".btn-subir-musica-escena").addEventListener("click", async () => {
+    const fileInput = row.querySelector(".es-musica-file");
+    if (!fileInput.files?.[0]) {
+      fileInput.click();
+      fileInput.onchange = async () => {
+        if (!fileInput.files?.[0]) return;
+        await subirMusicaEscena(fileInput.files[0], row);
+      };
+      return;
+    }
+    await subirMusicaEscena(fileInput.files[0], row);
+  });
+
   $("lista-escenas").appendChild(row);
+  (escena?.salidas || (escena?.trigger && escena.trigger.tipo !== "manual" ? [{ trigger: escena.trigger }] : [])).forEach(
+    (salida) => crearFilaSalida(row, salida)
+  );
+  actualizarVisibilidadSinSalidas(row);
+  refrescarSelectsDestinoEscena();
+}
+
+async function subirMusicaEscena(file, escenaRow) {
+  const boton = escenaRow.querySelector(".btn-subir-musica-escena");
+  try {
+    boton.disabled = true;
+    boton.textContent = "Subiendo...";
+    const url = await subirArchivo(file, "audio");
+    escenaRow.querySelector(".es-musica-url").value = url;
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Subir";
+  }
 }
 
 function renderListaEscenas(escenas) {
   $("lista-escenas").innerHTML = "";
-  (escenas || []).forEach((es) => crearFilaEscena(es));
+  normalizarGuion(escenas || []).forEach((es) => crearFilaEscena(es));
+  resolverDestinosPendientes();
 }
 
 function leerListaEscenas() {
-  return Array.from(document.querySelectorAll("#lista-escenas .escena-row")).map((row) => {
-    const tipo = row.querySelector(".es-trigger-tipo").value;
+  return Array.from(document.querySelectorAll("#lista-escenas .escena-row")).map((escenaRow) => {
+    const salidas = Array.from(escenaRow.querySelectorAll(".salida-row"))
+      .map((salidaRow) => {
+        const tipo = salidaRow.querySelector(".sal-trigger-tipo").value;
+        const valorInput = salidaRow.querySelector(".sal-trigger-valor");
+        const siguienteId = salidaRow.querySelector(".sal-destino")?.value || "";
+        return {
+          trigger: {
+            tipo,
+            valor: tipo === "marcador" ? Number(valorInput?.value) || 0 : (valorInput?.value || "").trim(),
+          },
+          siguienteId,
+        };
+      })
+      .filter((s) => s.siguienteId); // una salida sin destino elegido no cuenta
+
     return {
-      nombre: row.querySelector(".es-nombre").value.trim() || "Escena sin nombre",
-      narracion: row.querySelector(".es-narracion").value.trim(),
-      trigger: {
-        tipo,
-        valor:
-          tipo === "marcador"
-            ? Number(row.querySelector(".es-trigger-valor").value) || 0
-            : row.querySelector(".es-trigger-valor").value.trim(),
-      },
+      id: escenaRow.querySelector(".es-id").value,
+      nombre: escenaRow.querySelector(".es-nombre").value.trim() || "Escena sin nombre",
+      narracion: escenaRow.querySelector(".es-narracion").value.trim(),
+      musicaUrl: escenaRow.querySelector(".es-musica-url").value.trim(),
+      salidas,
     };
   });
 }
@@ -874,10 +1013,17 @@ btnGuardarGuion.addEventListener("click", async () => {
 
 let guionActual = [];
 
-function renderEscenaActual(guion, escenaActual) {
-  const idx = escenaActual ?? 0;
-  const escena = (guion || [])[idx];
-  $("guion-escena-actual").textContent = escena ? `#${idx + 1} — ${escena.nombre}` : "— (sin guion o sin empezar)";
+function renderEscenaActual(guionCrudo, escenaActualCruda) {
+  const guion = normalizarGuion(guionCrudo || []);
+  const escenaId = normalizarEscenaActual(escenaActualCruda, guion);
+  const escena = guion.find((e) => e.id === escenaId);
+  $("guion-escena-actual").textContent = escena ? escena.nombre : "— (sin guion o sin empezar)";
+
+  // Repoblamos el desplegable de salto manual con todas las escenas.
+  const select = $("salto-escena-select");
+  const valorPrevio = select.value;
+  select.innerHTML = guion.map((e) => `<option value="${e.id}">${e.nombre}</option>`).join("");
+  if (guion.some((e) => e.id === valorPrevio)) select.value = valorPrevio;
 }
 
 async function dispararNarracionEscena(codigo, escena) {
@@ -889,24 +1035,54 @@ async function dispararNarracionEscena(codigo, escena) {
   });
 }
 
-$("btn-forzar-siguiente-escena").addEventListener("click", async () => {
+$("btn-saltar-escena").addEventListener("click", async () => {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
-  const snap = await getDoc(doc(db, "partidas", currentPartidaId));
-  const data = snap.data() || {};
-  const guion = data.guion || [];
-  const actual = data.escenaActual ?? 0;
-  const siguiente = Math.min(actual + 1, Math.max(guion.length - 1, 0));
-  await updateDoc(doc(db, "partidas", currentPartidaId), { escenaActual: siguiente });
-  if (guion[siguiente]) await dispararNarracionEscena(currentPartidaId, guion[siguiente]);
+  const destinoId = $("salto-escena-select").value;
+  if (!destinoId) return;
+  await updateDoc(doc(db, "partidas", currentPartidaId), { escenaActual: destinoId });
+  const escena = guionActual.find((e) => e.id === destinoId);
+  if (escena) await dispararNarracionEscena(currentPartidaId, escena);
 });
 
 $("btn-reiniciar-guion").addEventListener("click", async () => {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
-  if (!confirm("¿Volver a la escena 1?")) return;
-  await updateDoc(doc(db, "partidas", currentPartidaId), { escenaActual: 0 });
+  if (!confirm("¿Volver a la primera escena del guion?")) return;
   const snap = await getDoc(doc(db, "partidas", currentPartidaId));
-  const guion = snap.data()?.guion || [];
-  if (guion[0]) await dispararNarracionEscena(currentPartidaId, guion[0]);
+  const guion = normalizarGuion(snap.data()?.guion || []);
+  if (!guion[0]) return;
+  await updateDoc(doc(db, "partidas", currentPartidaId), { escenaActual: guion[0].id });
+  await dispararNarracionEscena(currentPartidaId, guion[0]);
+});
+
+// ---------- Que la IA proponga un primer borrador de guion ----------
+// Convierte la historia ya generada (o escrita a mano) en una secuencia
+// lineal de escenas, una por cada trampa/encuentro de la historia, que el
+// master puede editar, reordenar o ramificar después a su gusto.
+$("btn-sugerir-guion").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  if (
+    document.querySelectorAll("#lista-escenas .escena-row").length > 0 &&
+    !confirm("Esto añade escenas nuevas de borrador al final del guion actual. ¿Continuar?")
+  ) {
+    return;
+  }
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId));
+  const data = snap.data() || {};
+  const encuentros = data.trampasEncuentros || [];
+  if (encuentros.length === 0) {
+    alert("Todavía no hay trampas/encuentros en la Historia generada de los que partir.");
+    return;
+  }
+
+  const nuevasEscenas = construirGuionDesdeEncuentros(encuentros);
+
+  nuevasEscenas.forEach((es) => crearFilaEscena(es));
+  refrescarSelectsDestinoEscena();
+  resolverDestinosPendientes();
+  alert(
+    "Borrador añadido. Revisa el disparador de cada salida (ahora mismo todas están puestas como " +
+    "\"termine el combate\", cámbialas por lo que corresponda) y añade ramificaciones si quieres."
+  );
 });
 
 // ---------- Combate por turnos ----------
@@ -972,8 +1148,8 @@ function escucharCombate(codigo) {
     enemigosActuales = data.enemigos || [];
     renderEnemigos();
     refrescarSelectsGuionAbiertos();
-    guionActual = data.guion || [];
-    renderEscenaActual(guionActual, data.escenaActual);
+    guionActual = normalizarGuion(data.guion || []);
+    renderEscenaActual(data.guion || [], data.escenaActual);
   });
 }
 
@@ -1155,6 +1331,7 @@ function crearFilaHabilidad(habilidad = null) {
     row.querySelector(".h-usos").value = habilidad.usosPorPartida ?? 3;
     row.querySelector(".h-descripcion").value = habilidad.descripcion || "";
     row.querySelector(".h-atributo").value = habilidad.atributo || "ninguno";
+    row.querySelector(".h-tipo-danio").value = habilidad.tipoDanio || "fisico";
     row.querySelector(".h-es-ataque").checked = !!habilidad.esAtaque;
     row.querySelector(".h-detecta-trampas").checked = !!habilidad.detectaTrampas;
   }
@@ -1170,8 +1347,20 @@ function crearFilaObjeto(objeto = null) {
     row.querySelector(".o-cantidad").value = objeto.cantidad ?? 1;
     row.querySelector(".o-efecto-tipo").value = objeto.efecto?.tipo || "ninguno";
     row.querySelector(".o-efecto-valor").value = objeto.efecto?.valor ?? 0;
+    row.querySelector(".o-efecto-tipo-danio").value = objeto.efecto?.tipoDanio || "fisico";
+    row.querySelector(".o-efecto-alcance").value = objeto.efecto?.alcance || "individual";
     row.querySelector(".o-descripcion").value = objeto.descripcion || "";
   }
+
+  const efectoSelect = row.querySelector(".o-efecto-tipo");
+  const actualizarCamposEfecto = () => {
+    const tipo = efectoSelect.value;
+    row.querySelector(".o-campos-alcance").style.display = tipo === "ninguno" ? "none" : "block";
+    row.querySelector(".o-campos-danio").style.display = tipo === "danio" ? "block" : "none";
+  };
+  efectoSelect.addEventListener("change", actualizarCamposEfecto);
+  actualizarCamposEfecto();
+
   row.querySelector(".btn-quitar-objeto").addEventListener("click", () => row.remove());
   $("lista-inventario-editor").appendChild(row);
 }
@@ -1197,6 +1386,7 @@ async function abrirEditorPersonaje(personajeId) {
     ["p-vida", "p-fuerza", "p-destreza", "p-vigor", "p-inteligencia", "p-carisma"].forEach(
       (id) => ($(id).value = 10)
     );
+    document.querySelectorAll(".p-resistencia").forEach((sel) => (sel.value = "1"));
     crearFilaHabilidad();
     return;
   }
@@ -1216,6 +1406,10 @@ async function abrirEditorPersonaje(personajeId) {
   $("p-vigor").value = a.vigor ?? 10;
   $("p-inteligencia").value = a.inteligencia ?? 10;
   $("p-carisma").value = a.carisma ?? 10;
+  const r = p.resistencias || {};
+  document.querySelectorAll(".p-resistencia").forEach((sel) => {
+    sel.value = r[sel.dataset.tipo] ?? 1;
+  });
   (p.habilidades || []).forEach((h) => crearFilaHabilidad(h));
   (p.inventarioInicial || []).forEach((o) => crearFilaObjeto(o));
 }
@@ -1233,6 +1427,7 @@ $("btn-guardar-personaje").addEventListener("click", async () => {
       usosPorPartida: Number(row.querySelector(".h-usos").value) || 0,
       descripcion: row.querySelector(".h-descripcion").value.trim(),
       atributo: row.querySelector(".h-atributo").value,
+      tipoDanio: row.querySelector(".h-tipo-danio").value,
       esAtaque: row.querySelector(".h-es-ataque").checked,
       detectaTrampas: row.querySelector(".h-detecta-trampas").checked,
     })
@@ -1246,9 +1441,16 @@ $("btn-guardar-personaje").addEventListener("click", async () => {
       efecto: {
         tipo: row.querySelector(".o-efecto-tipo").value,
         valor: Number(row.querySelector(".o-efecto-valor").value) || 0,
+        tipoDanio: row.querySelector(".o-efecto-tipo-danio").value,
+        alcance: row.querySelector(".o-efecto-alcance").value,
       },
     })
   );
+
+  const resistencias = {};
+  document.querySelectorAll(".p-resistencia").forEach((sel) => {
+    resistencias[sel.dataset.tipo] = Number(sel.value);
+  });
 
   const datos = {
     nombre,
@@ -1263,6 +1465,7 @@ $("btn-guardar-personaje").addEventListener("click", async () => {
       inteligencia: Number($("p-inteligencia").value) || 10,
       carisma: Number($("p-carisma").value) || 10,
     },
+    resistencias,
     habilidades,
     inventarioInicial,
   };

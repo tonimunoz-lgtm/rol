@@ -56,5 +56,12 @@ service cloud.firestore {
         allow update, delete: if esElMasterDeEstaPartida(partidaId);
       }
     }
+
+    // Un doc por master, con cuántas "partidas extra" ha desbloqueado viendo
+    // anuncios (por encima de las 2 gratis). Solo el propio master puede
+    // leerlo/escribirlo — nunca otro usuario.
+    match /masters/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }

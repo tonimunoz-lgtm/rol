@@ -616,7 +616,7 @@ async function generarImagenIA(tipo, datos) {
   return data.url;
 }
 
-async function subirArchivo(file, tipo) {
+async function subirArchivo(file, tipo, urlAnterior) {
   if (!currentPartidaId) throw new Error("Primero crea o carga una partida.");
   if (file.size > LIMITE_ARCHIVO_BYTES) {
     throw new Error(
@@ -629,7 +629,7 @@ async function subirArchivo(file, tipo) {
   const resp = await fetch(SUBIR_MARCADOR_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-    body: JSON.stringify({ partidaId: currentPartidaId, tipo, filename: file.name, dataBase64 }),
+    body: JSON.stringify({ partidaId: currentPartidaId, tipo, filename: file.name, dataBase64, urlAnterior: urlAnterior || "" }),
   });
   if (!resp.ok) {
     let detalle = "";
@@ -643,6 +643,19 @@ async function subirArchivo(file, tipo) {
   }
   const data = await resp.json();
   return data.url;
+}
+
+// Borra un archivo ya subido (control manual desde el panel), sin
+// necesidad de reemplazarlo por otro.
+async function borrarArchivoSubido(url) {
+  if (!currentPartidaId || !url) return;
+  if (!url.includes("blob.vercel-storage.com")) return; // solo archivos nuestros
+  const idToken = await auth.currentUser.getIdToken();
+  await fetch(SUBIR_MARCADOR_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ partidaId: currentPartidaId, accion: "borrar", url }),
+  });
 }
 
 function archivoAImagen(file) {
@@ -709,7 +722,8 @@ $("btn-compilar-marcadores").addEventListener("click", async () => {
     status.textContent = "Subiendo targets.mind...";
     const buffer = await compiler.exportData();
     const archivoMind = new File([buffer], "targets.mind");
-    const url = await subirArchivo(archivoMind, "targets");
+    const urlAnterior = $("targets-path").value.trim();
+    const url = await subirArchivo(archivoMind, "targets", urlAnterior);
 
     await updateDoc(doc(db, "partidas", currentPartidaId), { marcadoresTargetUrl: url });
     $("targets-path").value = url;
@@ -733,13 +747,25 @@ $("btn-guardar-targets-path").addEventListener("click", async () => {
   $("targets-status").textContent = "Ruta guardada correctamente.";
 });
 
+$("btn-borrar-targets").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const url = $("targets-path").value.trim();
+  if (!url) return;
+  if (!confirm("¿Borrar el archivo targets.mind actual? Los jugadores no podrán escanear marcadores hasta que subas uno nuevo.")) return;
+  await borrarArchivoSubido(url);
+  await updateDoc(doc(db, "partidas", currentPartidaId), { marcadoresTargetUrl: "" });
+  $("targets-path").value = "";
+  $("targets-status").textContent = "Archivo borrado.";
+});
+
 // ---------- Subida de vídeo/imagen de un marcador concreto ----------
 $("btn-subir-video").addEventListener("click", async () => {
   const file = $("m-archivo-video-file").files?.[0];
   if (!file) return alert("Selecciona primero un archivo de vídeo.");
   try {
     $("btn-subir-video").disabled = true;
-    const url = await subirArchivo(file, "video");
+    const urlAnterior = $("m-archivo-video").value.trim();
+    const url = await subirArchivo(file, "video", urlAnterior);
     $("m-archivo-video").value = url;
   } catch (err) {
     alert(err.message);
@@ -753,13 +779,30 @@ $("btn-subir-imagen").addEventListener("click", async () => {
   if (!file) return alert("Selecciona primero un archivo de imagen.");
   try {
     $("btn-subir-imagen").disabled = true;
-    const url = await subirArchivo(file, "imagen");
+    const urlAnterior = $("m-archivo-imagen").value.trim();
+    const url = await subirArchivo(file, "imagen", urlAnterior);
     $("m-archivo-imagen").value = url;
   } catch (err) {
     alert(err.message);
   } finally {
     $("btn-subir-imagen").disabled = false;
   }
+});
+
+$("btn-borrar-video").addEventListener("click", async () => {
+  const url = $("m-archivo-video").value.trim();
+  if (!url) return;
+  if (!confirm("¿Borrar este vídeo?")) return;
+  await borrarArchivoSubido(url);
+  $("m-archivo-video").value = "";
+});
+
+$("btn-borrar-imagen").addEventListener("click", async () => {
+  const url = $("m-archivo-imagen").value.trim();
+  if (!url) return;
+  if (!confirm("¿Borrar esta imagen?")) return;
+  await borrarArchivoSubido(url);
+  $("m-archivo-imagen").value = "";
 });
 
 // ---------- Marcadores AR: asociación de índice → contenido ----------
@@ -807,7 +850,10 @@ function escucharMarcadores(codigo) {
     cont.querySelectorAll(".btn-borrar-marcador").forEach((btn) =>
       btn.addEventListener("click", async () => {
         if (!confirm("¿Borrar este marcador?")) return;
+        const marcador = docs.find((d) => d.id === btn.dataset.id)?.data();
+        const urlArchivo = marcador?.archivoUrl;
         await deleteDoc(doc(db, "partidas", currentPartidaId, "marcadores", btn.dataset.id));
+        if (urlArchivo) borrarArchivoSubido(urlArchivo);
       })
     );
   });

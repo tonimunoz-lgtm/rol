@@ -522,3 +522,94 @@ h1.display::after, h2.display::after {
   #btn-accion::before { content: "✍️"; font-size: 1rem; }
   #btn-inspeccionar::before { content: "🔍"; font-size: 1rem; }
 }
+
+/* ---------- Mapa del juego (SVG estilo pergamino de época) ---------- */
+.mapa-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.mapa-fondo {
+  fill: #d8c48f;
+}
+.mapa-camino {
+  fill: none;
+  stroke: #6b4f2a;
+  stroke-width: 0.6;
+  stroke-linecap: round;
+  stroke-dasharray: 1.4 1.6;
+  opacity: 0.75;
+}
+.mapa-lugar-fondo {
+  fill: #2a2013;
+  stroke: #6b4f2a;
+  stroke-width: 0.4;
+}
+.mapa-lugar-icono { pointer-events: none; }
+.mapa-lugar-etiqueta {
+  fill: #2a2013;
+  font-family: var(--font-body);
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #d8c48f;
+  stroke-width: 0.6;
+}
+.mapa-lugar { cursor: pointer; }
+.mapa-aqui-anillo {
+  fill: none;
+  stroke: var(--rust);
+  stroke-width: 0.8;
+  animation: mapa-pulso 1.8s ease-in-out infinite;
+}
+@keyframes mapa-pulso {
+  0%, 100% { r: 6; opacity: 0.9; }
+  50% { r: 8.5; opacity: 0.3; }
+}
+
+/* Contenedor con zoom/paneo (móvil: un dedo arrastra, dos dedos o rueda hacen zoom) */
+.mapa-viewport {
+  position: relative;
+  width: 100%;
+  height: 60vh;
+  overflow: hidden;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  touch-action: none;
+  background: #d8c48f;
+}
+.mapa-lienzo {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+  cursor: grab;
+}
+.mapa-lienzo:active { cursor: grabbing; }
+
+.mapa-tooltip {
+  position: absolute;
+  bottom: .6em; left: .6em; right: .6em;
+  background: rgba(20,17,13,0.92);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  padding: .6em .8em;
+  font-size: .82rem;
+  display: none;
+  z-index: 5;
+}
+.mapa-tooltip.visible { display: block; }
+
+.mapa-zoom-controles {
+  position: absolute;
+  top: .6em; right: .6em;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+  z-index: 5;
+}
+.mapa-zoom-controles button {
+  padding: .3em .6em;
+  font-size: .9rem;
+  line-height: 1;
+}

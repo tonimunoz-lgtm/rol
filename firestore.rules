@@ -3,9 +3,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function esMaster() {
+    // Cualquier usuario autenticado con cuenta registrada (email/contraseña o
+    // Google, es decir NO anónimo) puede crear y ser master de su propia
+    // partida. Los jugadores entran con sesión anónima, así que quedan
+    // excluidos de poder crear partidas.
+    function esUsuarioRegistrado() {
       return request.auth != null &&
-        exists(/databases/$(database)/documents/masters/$(request.auth.uid));
+        request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
     function esElMasterDeEstaPartida(partidaId) {
@@ -22,16 +26,9 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enemigos', 'escenaActual']);
     }
 
-    // Solo lectura del propio doc; la creación de masters se hace desde
-    // la consola de Firebase o con el Admin SDK, nunca desde el cliente.
-    match /masters/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false;
-    }
-
     match /partidas/{partidaId} {
       allow read: if request.auth != null; // los jugadores necesitan leer para unirse por código
-      allow create: if esMaster();
+      allow create: if esUsuarioRegistrado();
       allow update: if esElMasterDeEstaPartida(partidaId) || esActualizacionDeJugadorPermitida();
       allow delete: if esElMasterDeEstaPartida(partidaId);
 

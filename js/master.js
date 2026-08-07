@@ -3,7 +3,7 @@ import {
   auth, db,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  collection, addDoc, serverTimestamp, getDocs,
+  collection, addDoc, serverTimestamp, getDocs, query, where,
 } from "./firebase-config.js";
 import { normalizarGuion, normalizarEscenaActual, generarIdEscena } from "./guion-utils.js";
 import { normalizarMapa, renderizarMapaSVG, generarIdLugar, ICONOS_LUGAR } from "./mapa-utils.js";
@@ -76,13 +76,138 @@ onAuthStateChanged(auth, async (user) => {
   $("login-view").style.display = "none";
   $("master-view").style.display = "grid";
 
+  cargarListaMisPartidas();
+
   if (currentPartidaId) {
     $("codigo-partida-actual").textContent = currentPartidaId;
     cargarPartidaExistente(currentPartidaId);
   }
 });
 
-// ---------- Navegación entre secciones ----------
+// ---------- Mis partidas (varias por master, con límite gratuito) ----------
+const LIMITE_PARTIDAS_GRATIS = 2;
+
+async function obtenerSlotsExtraMaster() {
+  try {
+    const snap = await getDoc(doc(db, "masters", auth.currentUser.uid));
+    return snap.exists() ? Number(snap.data()?.slotsExtra) || 0 : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+async function listarPartidasDelMaster() {
+  const q = query(collection(db, "partidas"), where("masterUid", "==", auth.currentUser.uid));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ codigo: d.id, nombre: d.data().nombre || "Sin nombre" }));
+}
+
+async function cargarListaMisPartidas() {
+  const partidas = await listarPartidasDelMaster();
+  renderListaMisPartidas(partidas);
+  return partidas;
+}
+
+function renderListaMisPartidas(partidas) {
+  const cont = $("lista-mis-partidas");
+  if (partidas.length === 0) {
+    cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.78rem;">Aún no tienes ninguna.</p>`;
+    return;
+  }
+  cont.innerHTML = partidas
+    .map(
+      (p) => `
+      <div class="partida-chip ${p.codigo === currentPartidaId ? "activa" : ""}" data-codigo="${p.codigo}">
+        <span class="mono">${p.codigo}</span>
+        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:right;">${p.nombre}</span>
+      </div>`
+    )
+    .join("");
+  cont.querySelectorAll(".partida-chip").forEach((chip) => {
+    chip.addEventListener("click", () => seleccionarPartida(chip.dataset.codigo));
+  });
+}
+
+function seleccionarPartida(codigo) {
+  if (codigo === currentPartidaId) return;
+  currentPartidaId = codigo;
+  localStorage.setItem("runica_master_partidaId", codigo);
+  $("codigo-partida-actual").textContent = codigo;
+  cargarPartidaExistente(codigo);
+  document.querySelectorAll("#lista-mis-partidas .partida-chip").forEach((chip) => {
+    chip.classList.toggle("activa", chip.dataset.codigo === codigo);
+  });
+}
+
+// Antes de generar una partida nueva, comprobamos que no se pase del
+// límite gratis (+ los slots extra ya desbloqueados con anuncios).
+// Devuelve true si puede continuar, false si hay que frenar (el aviso ya
+// queda visible en pantalla).
+async function comprobarLimitePartidas() {
+  const [partidas, slotsExtra] = await Promise.all([listarPartidasDelMaster(), obtenerSlotsExtraMaster()]);
+  const limite = LIMITE_PARTIDAS_GRATIS + slotsExtra;
+  if (partidas.length < limite) {
+    $("limite-partidas-aviso").style.display = "none";
+    $("wizard-partida-contenido").style.display = "block";
+    return true;
+  }
+  $("limite-partidas-texto").textContent =
+    `Ya tienes ${partidas.length} partidas (límite actual: ${limite}). Mira un anuncio para desbloquear ` +
+    `una más, o elimina alguna existente desde "⚙️ Opciones de esta partida" tras seleccionarla en "Mis partidas".`;
+  $("limite-partidas-aviso").style.display = "block";
+  $("wizard-partida-contenido").style.display = "none";
+  return false;
+}
+
+// Mismo patrón que en la app del jugador (ver app.js): sin puente nativo de
+// verdad, solo puede simular el anuncio para probar el flujo.
+function solicitarAnuncioRecompensadoMaster() {
+  return new Promise((resolve, reject) => {
+    if (window.AdMobBridge?.mostrarRecompensado) {
+      const onResultado = (e) => {
+        window.removeEventListener("admob-recompensa", onResultado);
+        resolve(!!e.detail?.ganada);
+      };
+      window.addEventListener("admob-recompensa", onResultado);
+      try {
+        window.AdMobBridge.mostrarRecompensado();
+      } catch (err) {
+        window.removeEventListener("admob-recompensa", onResultado);
+        reject(err);
+      }
+      return;
+    }
+    const simular = confirm(
+      "Los anuncios reales solo funcionan en la app de Google Play.\n\n¿Simular un anuncio de prueba de 4 segundos?"
+    );
+    if (!simular) {
+      resolve(false);
+      return;
+    }
+    setTimeout(() => resolve(true), 4000);
+  });
+}
+
+$("btn-desbloquear-partida").addEventListener("click", async () => {
+  const boton = $("btn-desbloquear-partida");
+  boton.disabled = true;
+  const textoOriginal = boton.textContent;
+  boton.textContent = "Cargando anuncio...";
+  try {
+    const recompensado = await solicitarAnuncioRecompensadoMaster();
+    if (!recompensado) return;
+    const actuales = await obtenerSlotsExtraMaster();
+    await setDoc(doc(db, "masters", auth.currentUser.uid), { slotsExtra: actuales + 1 }, { merge: true });
+    await comprobarLimitePartidas();
+  } catch (e) {
+    alert("No se ha podido cargar el anuncio. Inténtalo de nuevo en unos segundos.");
+  } finally {
+    boton.disabled = false;
+    boton.textContent = textoOriginal;
+  }
+});
+
+
 document.querySelectorAll("#master-sidebar nav a").forEach((link) => {
   link.addEventListener("click", (e) => {
     e.preventDefault();
@@ -90,6 +215,7 @@ document.querySelectorAll("#master-sidebar nav a").forEach((link) => {
     document.querySelectorAll(".section-panel").forEach((s) => s.classList.remove("active"));
     link.classList.add("active");
     $(`section-${link.dataset.section}`).classList.add("active");
+    if (link.dataset.section === "nueva-partida") comprobarLimitePartidas();
   });
 });
 
@@ -123,6 +249,9 @@ $("btn-generar").addEventListener("click", async () => {
     status.textContent = "Rellena al menos el estilo narrativo y la ubicación física.";
     return;
   }
+
+  const puedeCrear = await comprobarLimitePartidas();
+  if (!puedeCrear) return;
 
   status.textContent = "Generando trama con IA... (puede tardar unos segundos)";
   $("btn-generar").disabled = true;
@@ -236,6 +365,7 @@ $("btn-generar").addEventListener("click", async () => {
     });
 
     status.textContent = `Partida creada (con un primer borrador de guion, en la pestaña "Guion automático"). Código para los jugadores: ${codigo}`;
+    cargarListaMisPartidas();
     escucharJugadoresEnVivo(codigo);
     escucharPersonajes(codigo);
     escucharLogEventos(codigo);

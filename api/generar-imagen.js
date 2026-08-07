@@ -1,8 +1,17 @@
 // api/generar-imagen.js
 // Función serverless de Vercel (gratis en el plan Hobby) que genera
-// imágenes con IA usando Flux vía Pollinations (gratis e ilimitado con
-// clave de servidor: https://pollinations.ai) y las sube a Vercel Blob,
+// imágenes con IA usando Flux vía Pollinations y las sube a Vercel Blob,
 // mismo almacén que ya usamos para vídeos/imágenes/música de marcadores.
+//
+// OJO — lección aprendida a base de probarlo: el endpoint NUEVO con clave
+// (gen.pollinations.ai) descuenta contra un saldo "Pollen" de la cuenta,
+// que en una cuenta nueva está a 0 → 402 Payment Required, aunque el
+// modelo en sí (Flux) sea gratis. El camino que SÍ es gratis de verdad,
+// sin cuenta ni clave, es el endpoint clásico "anónimo":
+// https://image.pollinations.ai/prompt/{prompt} — así es como Pollinations
+// ofrece Flux gratis e ilimitado de verdad (documentado así, con límite de
+// uso razonable por IP, no por saldo). Por eso NO enviamos ninguna clave
+// aquí — enviarla activaría el descuento de Pollen otra vez.
 //
 // Solo la puede usar un master con cuenta registrada (mismo patrón que
 // api/generar-partida.js). No hace falta comprobar pertenencia a una
@@ -12,7 +21,6 @@
 
 const { put } = require("@vercel/blob");
 
-const POLLINATIONS_API_KEY = process.env.POLLINATIONS_API_KEY;
 const FIREBASE_API_KEY = "AIzaSyB86EI00VpSCPUGaa5qSLboyszS4o7Iskc";
 
 module.exports = async (req, res) => {
@@ -27,10 +35,6 @@ module.exports = async (req, res) => {
 async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Método no permitido" });
-    return;
-  }
-  if (!POLLINATIONS_API_KEY) {
-    res.status(501).json({ error: "Generación de imágenes no configurada (falta POLLINATIONS_API_KEY en Vercel)" });
     return;
   }
 
@@ -58,7 +62,8 @@ async function handler(req, res) {
       return;
     }
   } catch (e) {
-    res.status(500).json({ error: "No se pudo verificar la cuenta" });
+    console.error("Error verificando el token:", e);
+    res.status(500).json({ error: `No se pudo verificar la cuenta: ${e.message}` });
     return;
   }
 
@@ -72,14 +77,28 @@ async function handler(req, res) {
   const { width, height } = DIMENSIONES[tipo] || { width: 1024, height: 1024 };
 
   try {
-    const url = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?model=flux&width=${width}&height=${height}&nologo=true&key=${POLLINATIONS_API_KEY}`;
+    const seed = Math.floor(Math.random() * 1_000_000_000);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=${width}&height=${height}&nologo=true&seed=${seed}`;
     const imgResp = await fetch(url);
     if (!imgResp.ok) {
-      res.status(500).json({ error: `Pollinations respondió ${imgResp.status}` });
+      let cuerpo = "";
+      try {
+        cuerpo = (await imgResp.text()).slice(0, 300);
+      } catch (_) {}
+      console.error(`Pollinations respondió ${imgResp.status}:`, cuerpo);
+      res.status(500).json({ error: `Pollinations respondió ${imgResp.status}${cuerpo ? `: ${cuerpo}` : ""}` });
       return;
     }
     const arrayBuffer = await imgResp.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    const tipoContenido = imgResp.headers.get("content-type") || "";
+    if (!tipoContenido.startsWith("image/")) {
+      const texto = buffer.toString("utf8").slice(0, 300);
+      console.error("Pollinations no devolvió una imagen:", tipoContenido, texto);
+      res.status(500).json({ error: `Pollinations no devolvió una imagen (${tipoContenido}): ${texto}` });
+      return;
+    }
 
     const carpeta = ["mapa", "personaje", "escena"].includes(tipo) ? tipo : "otros";
     const blob = await put(`generadas/${carpeta}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`, buffer, {

@@ -884,8 +884,11 @@
   </div>
 </template>
 
-<!-- Motor de compilación de marcadores (misma versión que usa el jugador en index.html) -->
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+<!-- Motor de compilación de marcadores (misma versión que usa el jugador en index.html).
+     OJO: usar la ruta /gh/hiukim/mind-ar-js@..., NO /npm/mind-ar@... — esa
+     segunda ruta publica en esta versión un build de módulo ES que rompe
+     al cargarlo como <script> normal ("Cannot use import statement..."). -->
+<script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image.prod.js"></script>
 <script type="module" src="/js/master.js"></script>
 </body>
 </html>

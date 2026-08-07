@@ -79,6 +79,7 @@
     <button id="btn-inspeccionar" class="primary">🔍 Inspeccionar</button>
     <button id="btn-dice">🎲 Dado</button>
     <button id="btn-bitacora">📖</button>
+    <button id="btn-mapa">🗺️</button>
     <button id="btn-ficha">📜</button>
     <span class="stat-pill" id="stat-inventory">🎒 --</span>
   </div>
@@ -161,6 +162,25 @@
       <p id="bitacora-pistas-agotadas" style="color:var(--parchment-dim); font-size:.85rem; display:none;">
         Ya has desbloqueado todas las pistas disponibles.
       </p>
+    </div>
+  </div>
+
+  <!-- Mapa interactivo: se puede arrastrar y hacer zoom, marca la escena
+       activa como "estás aquí" si el master la vinculó a un lugar. -->
+  <div id="mapa-modal" class="modal-overlay">
+    <div class="card" id="mapa-content" style="max-width:560px; width:94%; max-height:90vh;">
+      <button id="btn-cerrar-mapa" style="float:right; font-size:.75rem;">✕ Cerrar</button>
+      <h2 class="display" style="font-size:1.2rem;">🗺️ Mapa</h2>
+      <p id="mapa-descripcion-jugador" style="color:var(--parchment-dim); font-size:.82rem;"></p>
+      <div id="mapa-viewport" class="mapa-viewport">
+        <div id="mapa-lienzo" class="mapa-lienzo"></div>
+        <div class="mapa-zoom-controles">
+          <button id="btn-mapa-zoom-mas" type="button">➕</button>
+          <button id="btn-mapa-zoom-menos" type="button">➖</button>
+          <button id="btn-mapa-centrar" type="button">🎯</button>
+        </div>
+        <div id="mapa-tooltip" class="mapa-tooltip"></div>
+      </div>
     </div>
   </div>
 

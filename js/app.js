@@ -1210,7 +1210,13 @@ async function hablarConIA(texto) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ texto }),
     });
-    if (!resp.ok) throw new Error("Voz IA no disponible");
+    if (!resp.ok) {
+      let detalle = "";
+      try {
+        detalle = (await resp.json()).error || "";
+      } catch (_) {}
+      throw new Error(detalle || `Voz IA no disponible (${resp.status})`);
+    }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     if (audioIAActual) audioIAActual.pause();

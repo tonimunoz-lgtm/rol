@@ -27,22 +27,35 @@
 
   <aside id="master-sidebar">
     <h2 class="display" style="font-size:1.1rem;">Rúnica · Master</h2>
+
+    <div id="mis-partidas-bloque" style="margin-bottom:1.2em;">
+      <div style="font-size:.7rem; color:var(--parchment-dim); text-transform:uppercase; letter-spacing:.05em; margin-bottom:.4em;">
+        Mis partidas
+      </div>
+      <div id="lista-mis-partidas"></div>
+    </div>
+
     <nav>
-      <a href="#" data-section="nueva-partida" class="active">Nueva partida</a>
-      <a href="#" data-section="historia">Historia generada</a>
-      <a href="#" data-section="personajes">Personajes</a>
-      <a href="#" data-section="marcadores">Marcadores AR</a>
-      <a href="#" data-section="guion">Guion automático</a>
-      <a href="#" data-section="combate">Combate</a>
-      <a href="#" data-section="en-vivo">Partida en vivo</a>
+      <a href="#" data-section="nueva-partida" class="active"><span class="nav-full">Nueva partida</span><span class="nav-short">Nueva</span></a>
+      <a href="#" data-section="historia"><span class="nav-full">Historia generada</span><span class="nav-short">Historia</span></a>
+      <a href="#" data-section="personajes"><span class="nav-full">Personajes</span><span class="nav-short">Elenco</span></a>
+      <a href="#" data-section="marcadores"><span class="nav-full">Marcadores AR</span><span class="nav-short">Marcadores</span></a>
+      <a href="#" data-section="guion"><span class="nav-full">Guion automático</span><span class="nav-short">Guion</span></a>
+      <a href="#" data-section="combate"><span class="nav-full">Combate</span><span class="nav-short">Combate</span></a>
+      <a href="#" data-section="en-vivo"><span class="nav-full">Partida en vivo</span><span class="nav-short">En vivo</span></a>
     </nav>
-    <div style="margin-top:2em; font-size:.75rem; color:var(--parchment-dim);">
+
+    <div style="margin-top:1.5em; font-size:.75rem; color:var(--parchment-dim);">
       Código actual:
       <div class="mono" id="codigo-partida-actual" style="color:var(--amber); font-size:1rem;">—</div>
     </div>
-    <button id="btn-reiniciar-partida" style="width:100%; margin-top:1em; font-size:.75rem;">🔄 Reiniciar partida</button>
-    <button id="btn-eliminar-partida" class="danger" style="width:100%; margin-top:.5em; font-size:.75rem;">🗑️ Eliminar partida</button>
-    <button id="logout-btn" class="danger" style="width:100%; margin-top:1.5em; font-size:.8rem;">Cerrar sesión</button>
+
+    <details id="opciones-partida-avanzado" style="margin-top:1.2em;">
+      <summary style="cursor:pointer; font-size:.72rem; color:var(--parchment-dim);">⚙️ Opciones de esta partida</summary>
+      <button id="btn-reiniciar-partida" style="width:100%; margin-top:.6em; font-size:.72rem;">🔄 Reiniciar partida</button>
+      <button id="btn-eliminar-partida" class="danger" style="width:100%; margin-top:.4em; font-size:.72rem;">🗑️ Eliminar partida</button>
+      <button id="logout-btn" style="width:100%; margin-top:.9em; font-size:.7rem; opacity:.65;">Cerrar sesión</button>
+    </details>
   </aside>
 
   <main id="master-content">
@@ -55,6 +68,13 @@
         podrás editar antes de jugar.
       </p>
 
+      <div id="limite-partidas-aviso" class="card" style="display:none; border-color:var(--rust); margin-bottom:1.5em;">
+        <h3 style="font-size:1rem;">Límite de partidas gratis alcanzado</h3>
+        <p id="limite-partidas-texto" style="color:var(--parchment-dim); font-size:.9rem;"></p>
+        <button id="btn-desbloquear-partida" class="primary">🎥 Ver un anuncio para desbloquear una partida más</button>
+      </div>
+
+      <div id="wizard-partida-contenido">
       <div class="grid-2">
         <div class="field">
           <label>Nombre de la partida</label>
@@ -120,6 +140,7 @@
 
       <button id="btn-generar" class="primary" style="margin-top:1em;">✨ Generar partida con IA</button>
       <p id="generar-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
+      </div>
     </section>
 
     <!-- ---------- Historia generada (editable, separada por partes) ---------- -->
@@ -642,7 +663,8 @@
     </section>
 
     <template id="tpl-escena-row">
-      <div class="card escena-row" style="margin-bottom:.8em; padding:1em;">
+      <div class="card escena-row">
+        <div class="escena-numero">Escena</div>
         <input type="hidden" class="es-id" />
         <div class="grid-2">
           <div class="field"><label>Nombre de la escena (para ti)</label><input class="es-nombre" placeholder="1. Llegada a la cripta" /></div>

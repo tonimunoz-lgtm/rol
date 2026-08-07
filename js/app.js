@@ -63,6 +63,13 @@ const els = {
   btnTirarPrueba: document.getElementById("btn-tirar-prueba"),
   pruebaResultado: document.getElementById("prueba-resultado"),
   btnCerrarPrueba: document.getElementById("btn-cerrar-prueba"),
+  btnBitacora: document.getElementById("btn-bitacora"),
+  bitacoraModal: document.getElementById("bitacora-modal"),
+  btnCerrarBitacora: document.getElementById("btn-cerrar-bitacora"),
+  bitacoraPnjs: document.getElementById("bitacora-pnjs"),
+  bitacoraPistas: document.getElementById("bitacora-pistas"),
+  btnPedirPista: document.getElementById("btn-pedir-pista"),
+  bitacoraPistasAgotadas: document.getElementById("bitacora-pistas-agotadas"),
 };
 
 const DIFICULTAD_ATAQUE_DEFECTO = 12;
@@ -95,6 +102,8 @@ let jugadorDataActual = null;
 let jugadorRefActual = null;
 let guionActual = [];
 let escenaActualLocalId = null;
+let pnjsActual = [];
+let pistasActual = [];
 let ultimaEscenaMostrada = null;
 let combateActivoAnterior = false;
 
@@ -340,6 +349,9 @@ async function bootGame() {
     enemigosCombateActual = data.enemigos || [];
     renderCombateJugador(data.combate);
     musicaAmbienteBase = data.musicaAmbienteUrl || null;
+    pnjsActual = data.pnjs || [];
+    pistasActual = data.pistas || [];
+    if (els.bitacoraModal.classList.contains("visible")) renderBitacora();
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
     const combateActivoAhora = !!data.combate?.activo;
@@ -693,6 +705,124 @@ els.btnTirarPrueba.addEventListener("click", async () => {
 els.btnCerrarPrueba.addEventListener("click", () => {
   els.pruebaModal.classList.remove("visible");
 });
+
+// ---------- Bitácora: PNJs conocidos + pistas desbloqueables ----------
+els.btnBitacora.addEventListener("click", () => {
+  renderBitacora();
+  els.bitacoraModal.classList.add("visible");
+});
+els.btnCerrarBitacora.addEventListener("click", () => els.bitacoraModal.classList.remove("visible"));
+
+function renderBitacora() {
+  // PNJs: visibles siempre que el master los haya escrito, como referencia
+  // de la historia (no dependen de anuncios ni de desbloqueo).
+  if (pnjsActual.length === 0) {
+    els.bitacoraPnjs.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no habéis conocido a nadie reseñable.</p>`;
+  } else {
+    els.bitacoraPnjs.innerHTML = pnjsActual
+      .map(
+        (p) => `
+      <div class="habilidad-card">
+        <div class="h-info">
+          <div class="h-nombre">${p.titulo}</div>
+          <p class="h-desc">${p.texto || ""}</p>
+        </div>
+      </div>`
+      )
+      .join("");
+  }
+
+  // Pistas: solo se ven las que este jugador ya ha desbloqueado (viendo un
+  // anuncio con recompensa por cada una), en el mismo orden en que el
+  // master las escribió.
+  const desbloqueadas = Math.min(jugadorDataActual?.pistasDesbloqueadas || 0, pistasActual.length);
+  if (desbloqueadas === 0) {
+    els.bitacoraPistas.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no has desbloqueado ninguna pista.</p>`;
+  } else {
+    els.bitacoraPistas.innerHTML = pistasActual
+      .slice(0, desbloqueadas)
+      .map(
+        (p) => `
+      <div class="habilidad-card">
+        <div class="h-info">
+          <div class="h-nombre">🔎 ${p.titulo}</div>
+          <p class="h-desc">${p.texto || ""}</p>
+        </div>
+      </div>`
+      )
+      .join("");
+  }
+
+  const quedanPistas = desbloqueadas < pistasActual.length;
+  els.btnPedirPista.style.display = quedanPistas ? "block" : "none";
+  els.bitacoraPistasAgotadas.style.display = quedanPistas || pistasActual.length === 0 ? "none" : "block";
+}
+
+els.btnPedirPista.addEventListener("click", async () => {
+  if (!jugadorDataActual || !jugadorRefActual) return;
+  els.btnPedirPista.disabled = true;
+  const textoOriginal = els.btnPedirPista.textContent;
+  els.btnPedirPista.textContent = "Cargando anuncio...";
+  try {
+    const recompensado = await solicitarAnuncioRecompensado();
+    if (!recompensado) return; // el jugador cerró el anuncio antes de tiempo, o no había disponible
+    const actuales = jugadorDataActual.pistasDesbloqueadas || 0;
+    const nuevas = Math.min(actuales + 1, pistasActual.length);
+    await updateDoc(jugadorRefActual, { pistasDesbloqueadas: nuevas });
+    renderBitacora();
+  } catch (e) {
+    console.warn("No se pudo mostrar el anuncio:", e.message);
+    alert("No se ha podido cargar el anuncio. Inténtalo de nuevo en unos segundos.");
+  } finally {
+    els.btnPedirPista.disabled = false;
+    els.btnPedirPista.textContent = textoOriginal;
+  }
+});
+
+// Muestra un anuncio con recompensa (AdMob) y devuelve una promesa que se
+// resuelve en `true` solo si el jugador lo ha visto entero y ha ganado la
+// recompensa, o `false` si lo ha cerrado antes o no hay anuncio disponible.
+//
+// Esta función es solo el lado web: un TWA (Trusted Web Activity) normal NO
+// tiene acceso al SDK nativo de AdMob, así que aquí solo llamamos a un
+// puente que la app nativa debe exponer en `window.AdMobBridge`. Sin ese
+// puente (p. ej. probando en el navegador), usamos un anuncio simulado de
+// pega para poder probar el flujo completo sin necesidad de la app nativa.
+function solicitarAnuncioRecompensado() {
+  return new Promise((resolve, reject) => {
+    if (window.AdMobBridge?.mostrarRecompensado) {
+      // Contrato esperado con la capa nativa: llama a
+      // window.AdMobBridge.mostrarRecompensado() y, cuando el anuncio
+      // termina, la app nativa ejecuta en el WebView:
+      //   window.dispatchEvent(new CustomEvent('admob-recompensa', { detail: { ganada: true|false } }))
+      const onResultado = (e) => {
+        window.removeEventListener("admob-recompensa", onResultado);
+        resolve(!!e.detail?.ganada);
+      };
+      window.addEventListener("admob-recompensa", onResultado);
+      try {
+        window.AdMobBridge.mostrarRecompensado();
+      } catch (err) {
+        window.removeEventListener("admob-recompensa", onResultado);
+        reject(err);
+      }
+      return;
+    }
+
+    // Sin puente nativo (navegador normal): simulamos un anuncio de 4
+    // segundos para poder probar el resto del flujo. Esto NO es un anuncio
+    // real y no genera ningún ingreso — solo sirve para desarrollo.
+    const simular = confirm(
+      "Los anuncios reales solo funcionan en la app de Google Play.\n\n¿Simular un anuncio de prueba de 4 segundos?"
+    );
+    if (!simular) {
+      resolve(false);
+      return;
+    }
+    mostrarToast("🎥 (Simulado) Reproduciendo anuncio...", 4000);
+    setTimeout(() => resolve(true), 4000);
+  });
+}
 
 // ---------- Frase de ambientación generada por IA (decorativa) ----------
 // La pide solo quien hace la acción (para no multiplicar llamadas por cada

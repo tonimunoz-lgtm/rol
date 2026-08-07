@@ -127,9 +127,18 @@
       <div id="ficha-atributos" class="grid-3" style="margin:.8em 0;"></div>
       <h3 style="font-size:1rem;">Habilidades</h3>
       <div id="ficha-habilidades"></div>
-      <h3 style="font-size:1rem; margin-top:1em;">Inventario</h3>
-      <div id="ficha-inventario"></div>
       <button id="btn-imprimir-ficha" style="margin-top:1em; width:100%;">🖨️ Imprimir ficha</button>
+    </div>
+  </div>
+
+  <!-- Inventario: vive solo aquí (ya no se repite en la ficha), con un
+       icono orientativo por objeto según su tipo/nombre. -->
+  <div id="inventario-modal" class="modal-overlay">
+    <div class="card" id="inventario-content" style="max-width:480px; width:90%; max-height:85vh; overflow-y:auto;">
+      <button id="btn-cerrar-inventario" style="float:right; font-size:.75rem;">✕ Cerrar</button>
+      <h2 class="display" style="font-size:1.2rem;">🎒 Inventario</h2>
+      <p id="inventario-capacidad" class="mono" style="color:var(--parchment-dim); font-size:.85rem;"></p>
+      <div id="inventario-lista" style="display:grid; grid-template-columns:1fr 1fr; gap:.7em; margin-top:.6em;"></div>
     </div>
   </div>
 

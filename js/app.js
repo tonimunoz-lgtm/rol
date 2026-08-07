@@ -13,6 +13,8 @@ const els = {
   invPill: document.getElementById("stat-inventory"),
   narrationBox: document.getElementById("narration-box"),
   narrationText: document.getElementById("narration-text"),
+  toastBox: document.getElementById("toast-box"),
+  toastText: document.getElementById("toast-text"),
   btnSpeak: document.getElementById("btn-speak"),
   btnDice: document.getElementById("btn-dice"),
   btnLogout: document.getElementById("btn-logout"),
@@ -85,19 +87,61 @@ let currentJugadorId = localStorage.getItem("runica_jugadorId") || null;
 let currentUid = null;
 
 // ---------- 1. Autenticación anónima ----------
-onAuthStateChanged(auth, async (user) => {
-  if (!user) {
-    await signInAnonymously(auth);
-    return;
-  }
-  currentUid = user.uid;
+let flujoJugadorIniciado = false;
 
-  if (!currentPartidaId || !currentJugadorId) {
-    showJoinScreen();
-  } else {
-    await bootGame();
-  }
-});
+function iniciarFlujoJugador() {
+  if (flujoJugadorIniciado) return;
+  flujoJugadorIniciado = true;
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      await signInAnonymously(auth);
+      return;
+    }
+    currentUid = user.uid;
+
+    if (!currentPartidaId || !currentJugadorId) {
+      showJoinScreen();
+    } else {
+      await bootGame();
+    }
+  });
+}
+
+// Si ya había una sesión de jugador guardada (volver a abrir la app tras
+// unirte a una partida), vamos directos al juego sin preguntar de nuevo.
+// Si no, primero preguntamos si es jugador o master, porque un usuario que
+// se descarga la app por primera vez no tiene forma de saber que existe
+// /master.html si no se lo decimos aquí.
+if (currentPartidaId && currentJugadorId) {
+  iniciarFlujoJugador();
+} else {
+  showLandingScreen();
+}
+
+function showLandingScreen() {
+  const overlay = document.createElement("div");
+  overlay.id = "landing-overlay";
+  overlay.style.cssText = `
+    position:fixed; inset:0; z-index:60; background:var(--ink);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:2em; gap:1.2em; text-align:center;
+  `;
+  overlay.innerHTML = `
+    <h1 class="display">Rúnica</h1>
+    <p style="color:var(--parchment-dim); max-width:320px;">¿Cómo quieres entrar?</p>
+    <button id="landing-jugador-btn" class="primary" style="width:100%; max-width:280px;">🎮 Soy jugador — tengo un código de partida</button>
+    <button id="landing-master-btn" style="width:100%; max-width:280px;">🛡️ Soy master — quiero crear/dirigir una partida</button>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById("landing-jugador-btn").addEventListener("click", () => {
+    overlay.remove();
+    iniciarFlujoJugador();
+  });
+  document.getElementById("landing-master-btn").addEventListener("click", () => {
+    window.location.href = "/master.html";
+  });
+}
 
 // ---------- 2. Pantalla de "unirse a partida" ----------
 function showJoinScreen() {
@@ -316,6 +360,27 @@ async function bootGame() {
         if (["narracion", "chat_master", "accion"].includes(evento.tipo)) {
           añadirMensajeChat(evento);
         }
+        // Habilidades sin objetivo de ataque (las de ataque ya se muestran
+        // localmente en el momento de usarse): se difunden a todos como
+        // aviso central, igual que ve el master en su registro de eventos.
+        if (evento.tipo === "habilidad" && !evento.esAtaque) {
+          const texto = `✨ ${evento.nombreJugador || "Alguien"} ha usado "${evento.habilidad}"${
+            evento.tirada != null ? ` → tirada: ${evento.tirada}` : ""
+          }`;
+          mostrarToast(texto);
+          añadirMensajeChat({ tipo: "narracion", texto });
+        }
+        if (evento.tipo === "deteccion") {
+          mostrarToast(evento.texto);
+          añadirMensajeChat({ tipo: "narracion", texto: evento.texto });
+        }
+        // Frase de ambientación generada por IA (opcional, decorativa): la
+        // pide una sola vez quien hizo la acción y se difunde como
+        // narración normal, así todos ven el mismo texto en vez de que
+        // cada móvil conectado le pida su propia frase a la IA.
+        if (evento.tipo === "flourish") {
+          añadirMensajeChat({ tipo: "narracion", texto: `📖 ${evento.texto}` });
+        }
       }
     });
   });
@@ -488,6 +553,40 @@ function mostrarNarracion(texto) {
   els.narrationText.textContent = texto;
   els.narrationBox.classList.add("visible");
   hablar(texto);
+}
+
+let toastTimeoutId = null;
+function mostrarToast(texto, duracionMs = 4500) {
+  els.toastText.textContent = texto;
+  els.toastBox.classList.add("visible");
+  clearTimeout(toastTimeoutId);
+  toastTimeoutId = setTimeout(() => els.toastBox.classList.remove("visible"), duracionMs);
+}
+
+// ---------- Frase de ambientación generada por IA (decorativa) ----------
+// La pide solo quien hace la acción (para no multiplicar llamadas por cada
+// jugador conectado) y publica el resultado como un evento más, que todos
+// reciben igual que cualquier otro mensaje del chat. Si falla, no pasa
+// nada: el aviso plano (toast + tirada) ya se mostró igualmente.
+async function enriquecerConNarracionIA(contexto) {
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const resp = await fetch("/api/narrar-accion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ contexto }),
+    });
+    if (!resp.ok) return;
+    const { texto } = await resp.json();
+    if (!texto) return;
+    await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+      tipo: "flourish",
+      texto,
+      timestamp: serverTimestamp(),
+    });
+  } catch (_) {
+    // Decorativo: un fallo aquí nunca debe interrumpir la partida.
+  }
 }
 
 document.getElementById("btn-cerrar-narracion").addEventListener("click", () => {
@@ -778,7 +877,6 @@ async function ejecutarUsoHabilidad(idx, habilidad, data, usosActuales, restante
     const caras = Number(habilidad.dado.replace("d", "")) || 20;
     tiradaImpacto = tirarDado(caras) + modificador;
   }
-
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "habilidad",
     jugadorId: currentJugadorId,
@@ -787,10 +885,55 @@ async function ejecutarUsoHabilidad(idx, habilidad, data, usosActuales, restante
     tirada: tiradaImpacto,
     objetivoNombre: objetivoNombre || null,
     daño: daño || null,
+    esAtaque: !!(habilidad.esAtaque && objetivoValor),
     timestamp: serverTimestamp(),
   });
 
+  if (habilidad.detectaTrampas) {
+    await resolverDeteccionTrampas(nombreAtacante, tiradaImpacto);
+  } else if (!(habilidad.esAtaque && objetivoValor)) {
+    // Solo para habilidades "normales" sin objetivo de ataque, para no
+    // saturar el chat de texto extra en mitad de un combate por turnos.
+    enriquecerConNarracionIA({
+      tipo: "habilidad",
+      personaje: nombreAtacante,
+      habilidad: habilidad.nombre,
+      tirada: tiradaImpacto,
+    });
+  }
+
   verificarAvanceGuion({ tipo: "habilidad_usada", valor: habilidad.nombre });
+}
+
+// ---------- 4c. Detección de trampas mediante habilidad ----------
+// No hay geolocalización dentro de la sala, así que "detectar" aquí
+// significa revelar las trampas de esta partida que este jugador aún no ha
+// activado (no importa si están cerca o lejos del marcador que escaneó).
+const DIFICULTAD_DETECCION_DEFECTO = 12;
+async function resolverDeteccionTrampas(nombrePersonaje, tiradaDeteccion) {
+  const yaActivadas = jugadorDataActual?.trampasActivadas || [];
+  const trampasPendientes = marcadoresGuardados.filter(
+    (m) => m.tipo === "trampa" && !yaActivadas.includes(m.id)
+  );
+
+  let texto;
+  if (trampasPendientes.length === 0) {
+    texto = `🔍 ${nombrePersonaje} no detecta ninguna trampa oculta en esta sala.`;
+  } else if ((tiradaDeteccion ?? 0) >= DIFICULTAD_DETECCION_DEFECTO) {
+    const nombres = trampasPendientes.map((m) => `"${m.nombre || "trampa sin nombre"}"`).join(", ");
+    texto = `🔍 ${nombrePersonaje} detecta ${trampasPendientes.length} trampa(s) oculta(s): ${nombres}.`;
+  } else {
+    texto = `🔍 ${nombrePersonaje} lo intenta, pero no logra detectar ninguna trampa esta vez (tirada ${tiradaDeteccion}).`;
+  }
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "deteccion",
+    jugadorId: currentJugadorId,
+    texto,
+    timestamp: serverTimestamp(),
+  });
+
+  enriquecerConNarracionIA({ tipo: "deteccion", personaje: nombrePersonaje, resultado: texto });
 }
 
 // ---------- 5. Dados ----------

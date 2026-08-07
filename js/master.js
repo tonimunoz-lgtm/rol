@@ -264,6 +264,7 @@ function cargarHistoriaEnUI(data) {
   $("h-sinopsis").value = data.sinopsis || "";
   $("h-giro").value = data.giroFinal || "";
   $("musica-ambiente-path").value = data.musicaAmbienteUrl || "";
+  recalcularOpcionesPnjs(data.pnjs || []);
   renderListaEditor("lista-pnjs", data.pnjs || []);
   renderListaEditor("lista-pistas", data.pistas || []);
   renderListaEditor("lista-trampas", data.trampasEncuentros || []);
@@ -347,7 +348,9 @@ $("btn-guardar-giro").addEventListener("click", async () => {
 
 $("btn-guardar-pnjs").addEventListener("click", async () => {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
-  await updateDoc(doc(db, "partidas", currentPartidaId), { pnjs: leerListaEditor("lista-pnjs") });
+  const pnjs = leerListaEditor("lista-pnjs");
+  await updateDoc(doc(db, "partidas", currentPartidaId), { pnjs });
+  recalcularOpcionesPnjs(pnjs);
 });
 
 $("btn-guardar-pistas").addEventListener("click", async () => {
@@ -778,23 +781,34 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
 // Se usa tanto al crear la partida (borrador automático "junto con la
 // historia") como desde el botón manual.
 function construirGuionDesdeEncuentros(encuentros, giroFinal) {
-  const escenas = (encuentros || []).map((enc, i) => ({
-    id: generarIdEscena(),
-    nombre: `${i + 1}. ${enc.titulo || "Escena"}`,
-    narracion: enc.texto || "",
-    musicaUrl: "",
-    prueba: enc.requierePrueba
-      ? {
-          activa: true,
-          atributo: enc.atributoPrueba || "destreza",
-          dificultad: enc.dificultadPrueba || 12,
-          tipoDanio: enc.tipoDanioPrueba || "fisico",
-          danioDados: enc.danioDados || 2,
-          danioCaras: enc.danioCaras || 6,
-        }
-      : null,
-    salidas: [],
-  }));
+  const escenas = (encuentros || []).map((enc, i) => {
+    const accionId = generarIdEscena();
+    return {
+      id: generarIdEscena(),
+      nombre: `${i + 1}. ${enc.titulo || "Escena"}`,
+      narracion: enc.texto || "",
+      objetivo: "",
+      musicaUrl: "",
+      pnj: "",
+      acciones: enc.requierePrueba
+        ? [
+            {
+              id: accionId,
+              etiqueta: "Intentar superarlo",
+              tipo: "prueba",
+              atributo: enc.atributoPrueba || "destreza",
+              dificultad: enc.dificultadPrueba || 12,
+              tipoDanio: enc.tipoDanioPrueba || "fisico",
+              danioDados: enc.danioDados || 2,
+              danioCaras: enc.danioCaras || 6,
+              textoExito: "",
+              textoFallo: "",
+            },
+          ]
+        : [],
+      salidas: [],
+    };
+  });
 
   // Escena final con el giro/revelación, si lo hay: es el destino de la
   // última escena de encuentros.
@@ -804,8 +818,10 @@ function construirGuionDesdeEncuentros(encuentros, giroFinal) {
       id: generarIdEscena(),
       nombre: `${escenas.length + 1}. Desenlace`,
       narracion: giroFinal.trim(),
+      objetivo: "",
       musicaUrl: "",
-      prueba: null,
+      pnj: "",
+      acciones: [],
       salidas: [],
     };
   }
@@ -814,16 +830,18 @@ function construirGuionDesdeEncuentros(encuentros, giroFinal) {
   for (let i = 0; i < todas.length - 1; i++) {
     const actual = todas[i];
     const siguienteId = todas[i + 1].id;
-    if (actual.prueba?.activa) {
-      // Con prueba: dos salidas ya vinculadas a superar/fallar, ambas
-      // llevan a la siguiente escena por defecto (el master puede cambiar
-      // el destino de "fallar" a una escena distinta si quiere una rama).
+    if (actual.acciones[0]?.tipo === "prueba") {
+      // Con acción de tirada: dos salidas ya vinculadas a superar/fallar,
+      // ambas llevan a la siguiente escena por defecto (el master puede
+      // cambiar el destino de "fallar" a una escena distinta si quiere una
+      // rama, o el trigger a "TODOS superen" si quiere exigírselo a todos).
+      const accionId = actual.acciones[0].id;
       actual.salidas = [
-        { trigger: { tipo: "prueba_superada" }, siguienteId },
-        { trigger: { tipo: "prueba_fallada" }, siguienteId },
+        { trigger: { tipo: "accion_superada", valor: accionId }, transicion: "", siguienteId },
+        { trigger: { tipo: "accion_fallada", valor: accionId }, transicion: "", siguienteId },
       ];
     } else {
-      actual.salidas = [{ trigger: { tipo: "combate_terminado" }, siguienteId }];
+      actual.salidas = [{ trigger: { tipo: "combate_terminado" }, transicion: "", siguienteId }];
     }
   }
   return todas;
@@ -906,24 +924,130 @@ function refrescarSelectsGuionAbiertos() {
       row.querySelector(".sal-trigger-valor").replaceWith(nuevoCampo);
     }
   });
+  refrescarSelectsPnj();
+}
+
+// ---------- PNJs de la partida, para el desplegable "PNJ presente" ----------
+let opcionesPnjs = [];
+function recalcularOpcionesPnjs(pnjs) {
+  opcionesPnjs = (pnjs || []).map((p) => p.titulo).filter(Boolean);
+  refrescarSelectsPnj();
+}
+function refrescarSelectsPnj() {
+  document.querySelectorAll("#lista-escenas .es-pnj").forEach((select) => {
+    const valorActual = select.value;
+    select.innerHTML =
+      `<option value="">— Ninguno —</option>` + opcionesPnjs.map((p) => `<option value="${p}">${p}</option>`).join("");
+    if (opcionesPnjs.includes(valorActual)) select.value = valorActual;
+  });
+}
+
+// ---------- Acciones dentro de cada escena (tiradas o interacción con PNJ) ----------
+function crearFilaAccion(escenaRow, accion = null) {
+  const tpl = document.getElementById("tpl-accion-row");
+  const row = tpl.content.firstElementChild.cloneNode(true);
+  row.querySelector(".acc-id").value = accion?.id || generarIdEscena();
+  row.querySelector(".acc-etiqueta").value = accion?.etiqueta || "";
+  row.querySelector(".acc-tipo").value = accion?.tipo || "prueba";
+  row.querySelector(".acc-atributo").value = accion?.atributo || "destreza";
+  row.querySelector(".acc-dificultad").value = accion?.dificultad ?? 12;
+  row.querySelector(".acc-tipo-danio").value = accion?.tipoDanio || "fisico";
+  row.querySelector(".acc-danio-dados").value = accion?.danioDados ?? 2;
+  row.querySelector(".acc-danio-caras").value = accion?.danioCaras ?? 6;
+  row.querySelector(".acc-texto-exito").value = accion?.textoExito || "";
+  row.querySelector(".acc-texto-fallo").value = accion?.textoFallo || "";
+  row.querySelector(".acc-efecto-pnj").value = accion?.efectoPnj || "dar_pista";
+  row.querySelector(".acc-objeto-nombre").value = accion?.objetoNombre || "";
+  row.querySelector(".acc-objeto-cantidad").value = accion?.objetoCantidad ?? 1;
+  row.querySelector(".acc-objeto-descripcion").value = accion?.objetoDescripcion || "";
+  row.querySelector(".acc-texto-pnj").value = accion?.textoPnj || "";
+
+  const tipoSelect = row.querySelector(".acc-tipo");
+  const efectoPnjSelect = row.querySelector(".acc-efecto-pnj");
+  const actualizarVisibilidad = () => {
+    const esPrueba = tipoSelect.value === "prueba";
+    row.querySelector(".acc-campos-prueba").style.display = esPrueba ? "block" : "none";
+    row.querySelector(".acc-campos-pnj").style.display = esPrueba ? "none" : "block";
+    if (!esPrueba) {
+      row.querySelector(".acc-campos-objeto").style.display = efectoPnjSelect.value === "dar_objeto" ? "grid" : "none";
+    }
+  };
+  tipoSelect.addEventListener("change", actualizarVisibilidad);
+  efectoPnjSelect.addEventListener("change", actualizarVisibilidad);
+  actualizarVisibilidad();
+
+  const etiquetaInput = row.querySelector(".acc-etiqueta");
+  etiquetaInput.addEventListener("input", () => refrescarSelectsAccionesDeEscena(escenaRow));
+
+  row.querySelector(".btn-quitar-accion").addEventListener("click", () => {
+    row.remove();
+    actualizarVisibilidadSinAcciones(escenaRow);
+    refrescarSelectsAccionesDeEscena(escenaRow);
+  });
+
+  escenaRow.querySelector(".es-acciones").appendChild(row);
+  actualizarVisibilidadSinAcciones(escenaRow);
+}
+
+function actualizarVisibilidadSinAcciones(escenaRow) {
+  const hay = escenaRow.querySelectorAll(".accion-row").length > 0;
+  const aviso = escenaRow.querySelector(".es-sin-acciones");
+  if (aviso) aviso.style.display = hay ? "none" : "block";
+}
+
+// El desplegable "qué acción" de cada salida se rellena con las acciones
+// de ESA MISMA escena (no tiene sentido referenciar una de otra escena).
+function crearSelectAccionesEscena(escenaRow, valorActual) {
+  const select = document.createElement("select");
+  const acciones = Array.from(escenaRow.querySelectorAll(".accion-row")).map((r) => ({
+    id: r.querySelector(".acc-id").value,
+    etiqueta: r.querySelector(".acc-etiqueta").value.trim() || "(sin nombre)",
+  }));
+  select.innerHTML =
+    `<option value="">— Selecciona —</option>` +
+    acciones.map((a) => `<option value="${a.id}" ${a.id === valorActual ? "selected" : ""}>${a.etiqueta}</option>`).join("");
+  return select;
+}
+
+const TIPOS_TRIGGER_ACCION = ["accion_superada", "accion_fallada", "todos_accion_superada"];
+
+function refrescarSelectsAccionesDeEscena(escenaRow) {
+  escenaRow.querySelectorAll(".salida-row").forEach((row) => {
+    const tipo = row.querySelector(".sal-trigger-tipo").value;
+    if (TIPOS_TRIGGER_ACCION.includes(tipo)) {
+      const valorActual = row.querySelector(".sal-trigger-valor")?.value || "";
+      const nuevoCampo = crearSelectAccionesEscena(escenaRow, valorActual);
+      nuevoCampo.classList.add("sal-trigger-valor");
+      row.querySelector(".sal-trigger-valor").replaceWith(nuevoCampo);
+    }
+  });
 }
 
 // ---------- Salidas (ramificaciones) dentro de cada escena ----------
 function crearFilaSalida(escenaRow, salida = null) {
   const tpl = document.getElementById("tpl-salida-row");
   const row = tpl.content.firstElementChild.cloneNode(true);
-  const tipoInicial = salida?.trigger?.tipo || "marcador";
+  const tipoInicial = salida?.trigger?.tipo || "accion_superada";
   row.querySelector(".sal-trigger-tipo").value = tipoInicial;
+  row.querySelector(".sal-transicion").value = salida?.transicion || "";
 
   const tipoSelect = row.querySelector(".sal-trigger-tipo");
   const actualizarCampoValor = () => {
     const tipo = tipoSelect.value;
     const campo = row.querySelector(".sal-trigger-valor-campo");
-    if (tipo === "combate_terminado" || tipo === "prueba_superada" || tipo === "prueba_fallada") {
+    if (tipo === "combate_terminado") {
       campo.style.display = "none";
       return;
     }
     campo.style.display = "block";
+    if (TIPOS_TRIGGER_ACCION.includes(tipo)) {
+      row.querySelector(".sal-trigger-valor-label").textContent = "Acción";
+      const valorActual = salida && TIPOS_TRIGGER_ACCION.includes(salida.trigger?.tipo) ? salida.trigger.valor : "";
+      const nuevoCampo = crearSelectAccionesEscena(escenaRow, valorActual);
+      nuevoCampo.classList.add("sal-trigger-valor");
+      row.querySelector(".sal-trigger-valor").replaceWith(nuevoCampo);
+      return;
+    }
     row.querySelector(".sal-trigger-valor-label").textContent = ETIQUETAS_TRIGGER[tipo] || "Valor";
     const valorActual = salida && salida.trigger?.tipo === tipo ? salida.trigger.valor : "";
     const nuevoCampo = crearCampoValor(tipo, valorActual, "sal-trigger-valor");
@@ -992,20 +1116,8 @@ function crearFilaEscena(escena = null) {
     row.querySelector(".es-nombre").value = escena.nombre || "";
     row.querySelector(".es-narracion").value = escena.narracion || "";
     row.querySelector(".es-musica-url").value = escena.musicaUrl || "";
+    row.querySelector(".es-objetivo").value = escena.objetivo || "";
   }
-
-  const prueba = escena?.prueba;
-  row.querySelector(".es-prueba-activa").checked = !!prueba?.activa;
-  row.querySelector(".es-prueba-atributo").value = prueba?.atributo || "destreza";
-  row.querySelector(".es-prueba-dificultad").value = prueba?.dificultad ?? 12;
-  row.querySelector(".es-prueba-tipo-danio").value = prueba?.tipoDanio || "fisico";
-  row.querySelector(".es-prueba-danio-dados").value = prueba?.danioDados ?? 2;
-  row.querySelector(".es-prueba-danio-caras").value = prueba?.danioCaras ?? 6;
-  const camposPrueba = row.querySelector(".es-prueba-campos");
-  camposPrueba.style.display = prueba?.activa ? "block" : "none";
-  row.querySelector(".es-prueba-activa").addEventListener("change", (e) => {
-    camposPrueba.style.display = e.target.checked ? "block" : "none";
-  });
 
   row.querySelector(".es-nombre").addEventListener("input", refrescarSelectsDestinoEscena);
   row.querySelector(".btn-quitar-escena").addEventListener("click", () => {
@@ -1013,6 +1125,10 @@ function crearFilaEscena(escena = null) {
     refrescarSelectsDestinoEscena();
   });
   row.querySelector(".btn-nueva-salida").addEventListener("click", () => crearFilaSalida(row));
+  row.querySelector(".btn-nueva-accion").addEventListener("click", () => {
+    crearFilaAccion(row);
+    refrescarSelectsAccionesDeEscena(row);
+  });
   row.querySelector(".btn-subir-musica-escena").addEventListener("click", async () => {
     const fileInput = row.querySelector(".es-musica-file");
     if (!fileInput.files?.[0]) {
@@ -1028,15 +1144,21 @@ function crearFilaEscena(escena = null) {
   row.querySelector(".btn-enriquecer-narracion").addEventListener("click", () => enriquecerNarracionEscena(row));
 
   $("lista-escenas").appendChild(row);
-  (escena?.salidas || (escena?.trigger && escena.trigger.tipo !== "manual" ? [{ trigger: escena.trigger }] : [])).forEach(
-    (salida) => crearFilaSalida(row, salida)
-  );
+  refrescarSelectsPnj();
+  if (escena) row.querySelector(".es-pnj").value = escena.pnj || "";
+
+  (escena?.acciones || []).forEach((accion) => crearFilaAccion(row, accion));
+  actualizarVisibilidadSinAcciones(row);
+
+  (escena?.salidas || []).forEach((salida) => crearFilaSalida(row, salida));
   actualizarVisibilidadSinSalidas(row);
   refrescarSelectsDestinoEscena();
 }
 
 // Pide a la IA que reescriba la narración de la escena con más detalle
 // sensorial (clima, luz, sonidos), sin cambiar la mecánica ni el sentido.
+// Solo toca el campo de narración: el objetivo, las acciones y las salidas
+// son campos aparte y no se ven afectados.
 async function enriquecerNarracionEscena(escenaRow) {
   const boton = escenaRow.querySelector(".btn-enriquecer-narracion");
   const textarea = escenaRow.querySelector(".es-narracion");
@@ -1087,10 +1209,40 @@ function renderListaEscenas(escenas) {
   $("lista-escenas").innerHTML = "";
   normalizarGuion(escenas || []).forEach((es) => crearFilaEscena(es));
   resolverDestinosPendientes();
+  document.querySelectorAll("#lista-escenas .escena-row").forEach((row) => refrescarSelectsAccionesDeEscena(row));
 }
 
 function leerListaEscenas() {
   return Array.from(document.querySelectorAll("#lista-escenas .escena-row")).map((escenaRow) => {
+    const acciones = Array.from(escenaRow.querySelectorAll(".accion-row")).map((accRow) => {
+      const tipo = accRow.querySelector(".acc-tipo").value;
+      const base = {
+        id: accRow.querySelector(".acc-id").value,
+        etiqueta: accRow.querySelector(".acc-etiqueta").value.trim() || "Acción sin nombre",
+        tipo,
+      };
+      if (tipo === "prueba") {
+        return {
+          ...base,
+          atributo: accRow.querySelector(".acc-atributo").value,
+          dificultad: Number(accRow.querySelector(".acc-dificultad").value) || 12,
+          tipoDanio: accRow.querySelector(".acc-tipo-danio").value,
+          danioDados: Number(accRow.querySelector(".acc-danio-dados").value) || 1,
+          danioCaras: Number(accRow.querySelector(".acc-danio-caras").value) || 6,
+          textoExito: accRow.querySelector(".acc-texto-exito").value.trim(),
+          textoFallo: accRow.querySelector(".acc-texto-fallo").value.trim(),
+        };
+      }
+      return {
+        ...base,
+        efectoPnj: accRow.querySelector(".acc-efecto-pnj").value,
+        objetoNombre: accRow.querySelector(".acc-objeto-nombre").value.trim(),
+        objetoCantidad: Number(accRow.querySelector(".acc-objeto-cantidad").value) || 1,
+        objetoDescripcion: accRow.querySelector(".acc-objeto-descripcion").value.trim(),
+        textoPnj: accRow.querySelector(".acc-texto-pnj").value.trim(),
+      };
+    });
+
     const salidas = Array.from(escenaRow.querySelectorAll(".salida-row"))
       .map((salidaRow) => {
         const tipo = salidaRow.querySelector(".sal-trigger-tipo").value;
@@ -1101,6 +1253,7 @@ function leerListaEscenas() {
             tipo,
             valor: tipo === "marcador" ? Number(valorInput?.value) || 0 : (valorInput?.value || "").trim(),
           },
+          transicion: salidaRow.querySelector(".sal-transicion").value.trim(),
           siguienteId,
         };
       })
@@ -1110,17 +1263,10 @@ function leerListaEscenas() {
       id: escenaRow.querySelector(".es-id").value,
       nombre: escenaRow.querySelector(".es-nombre").value.trim() || "Escena sin nombre",
       narracion: escenaRow.querySelector(".es-narracion").value.trim(),
+      objetivo: escenaRow.querySelector(".es-objetivo").value.trim(),
       musicaUrl: escenaRow.querySelector(".es-musica-url").value.trim(),
-      prueba: escenaRow.querySelector(".es-prueba-activa").checked
-        ? {
-            activa: true,
-            atributo: escenaRow.querySelector(".es-prueba-atributo").value,
-            dificultad: Number(escenaRow.querySelector(".es-prueba-dificultad").value) || 12,
-            tipoDanio: escenaRow.querySelector(".es-prueba-tipo-danio").value,
-            danioDados: Number(escenaRow.querySelector(".es-prueba-danio-dados").value) || 1,
-            danioCaras: Number(escenaRow.querySelector(".es-prueba-danio-caras").value) || 6,
-          }
-        : null,
+      pnj: escenaRow.querySelector(".es-pnj").value || "",
+      acciones,
       salidas,
     };
   });
@@ -1209,6 +1355,7 @@ $("btn-sugerir-guion").addEventListener("click", async () => {
   nuevasEscenas.forEach((es) => crearFilaEscena(es));
   refrescarSelectsDestinoEscena();
   resolverDestinosPendientes();
+  document.querySelectorAll("#lista-escenas .escena-row").forEach((row) => refrescarSelectsAccionesDeEscena(row));
   alert(
     "Borrador añadido: una escena por cada trampa/encuentro (con su tirada ya configurada si la " +
     "marcaste como \"Pide una tirada\") y una escena final con el giro, si lo tenías escrito. " +

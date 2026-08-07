@@ -64,6 +64,8 @@ input, select, textarea {
   color: var(--parchment);
   border-radius: var(--radius);
   padding: 0.6em 0.8em;
+  width: 100%;
+  max-width: 100%;
 }
 input:focus, select:focus, textarea:focus {
   outline: 2px solid var(--amber);
@@ -467,11 +469,13 @@ h1.display::after, h2.display::after {
   display: grid;
   grid-template-columns: 240px 1fr;
   min-height: 100vh;
+  min-width: 0;
 }
 #master-sidebar {
   background: var(--ink-soft);
   border-right: 1px solid #3a3226;
   padding: 1.5em 1em;
+  min-width: 0;
 }
 #master-sidebar nav a {
   display: block;
@@ -490,15 +494,18 @@ h1.display::after, h2.display::after {
 #master-content {
   padding: 2em;
   overflow-y: auto;
+  overflow-x: hidden;
   max-height: 100vh;
+  min-width: 0;
 }
 .section-panel { display: none; }
 .section-panel.active { display: block; }
 
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
-.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1em; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; min-width: 0; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1em; min-width: 0; }
+.grid-2 > *, .grid-3 > * { min-width: 0; }
 
-.field { margin-bottom: 1em; display: flex; flex-direction: column; gap: .35em; }
+.field { margin-bottom: 1em; display: flex; flex-direction: column; gap: .35em; min-width: 0; }
 .field label { font-size: .85rem; color: var(--parchment-dim); }
 .escena-row .es-trigger-valor-campo { margin-top: -.3em; }
 

@@ -166,7 +166,7 @@ h1.display::after, h2.display::after {
 
 #narration-box {
   position: fixed;
-  bottom: 90px;
+  bottom: 110px;
   left: 1em; right: 1em;
   background: rgba(20,17,13,0.9);
   border: 1px solid var(--amber);
@@ -206,12 +206,48 @@ h1.display::after, h2.display::after {
   position: fixed;
   bottom: 0; left: 0; right: 0;
   display: flex;
-  justify-content: space-around;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  padding: 0.8em;
+  gap: .4em;
+  padding: 0.6em .5em;
   background: linear-gradient(to top, rgba(20,17,13,0.95), transparent);
   z-index: 20;
 }
+#hud-bottom button {
+  padding: .55em .8em;
+  font-size: .85rem;
+  white-space: nowrap;
+}
+#hud-bottom .stat-pill { font-size: .8rem; }
+
+/* Aviso discreto en el botón de dado cuando hay acciones de escena
+   pendientes de intentar (no se abren solas, para no tapar la narración). */
+#btn-dice.con-aviso {
+  position: relative;
+  border-color: var(--amber-glow);
+  color: var(--amber-glow);
+}
+#btn-dice.con-aviso::after {
+  content: "";
+  position: absolute;
+  top: -3px; right: -3px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--amber-glow);
+  box-shadow: 0 0 6px var(--amber-glow);
+}
+
+/* Panel flotante ligero (p.ej. escribir en el chat): no oscurece el resto
+   de la pantalla, a diferencia de los modales grandes (ficha, acciones...). */
+.floating-panel {
+  position: fixed;
+  left: 1em; right: 1em;
+  bottom: 86px;
+  z-index: 45;
+  display: none;
+}
+.floating-panel.visible { display: block; }
 
 .stat-pill {
   font-family: var(--font-mono);
@@ -355,9 +391,10 @@ h1.display::after, h2.display::after {
 #chat-overlay {
   position: fixed;
   left: 0; right: 0;
-  bottom: 92px;
-  height: 42vh;
-  z-index: 30;
+  top: 64px;
+  bottom: auto;
+  height: 26vh;
+  z-index: 15;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -473,4 +510,15 @@ h1.display::after, h2.display::after {
 
 @media (prefers-reduced-motion: reduce) {
   .rune-ring.active { animation: none; opacity: 1; }
+}
+
+@media (max-width: 380px) {
+  #hud-bottom button, #hud-bottom .stat-pill {
+    font-size: .75rem;
+    padding: .5em .6em;
+  }
+  /* En pantallas muy estrechas, solo el icono para no desbordar */
+  #btn-accion, #btn-inspeccionar { font-size: 0; padding: .5em .65em; }
+  #btn-accion::before { content: "✍️"; font-size: 1rem; }
+  #btn-inspeccionar::before { content: "🔍"; font-size: 1rem; }
 }

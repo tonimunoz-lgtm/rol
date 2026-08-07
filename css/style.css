@@ -180,6 +180,28 @@ h1.display::after, h2.display::after {
 #narration-box.visible { display: block; }
 #narration-box p { line-height: 1.5; }
 
+#toast-box {
+  position: fixed;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+  background: rgba(20,17,13,0.94);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  padding: .9em 1.4em;
+  max-width: 85vw;
+  text-align: center;
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s ease, transform .25s ease;
+}
+#toast-box.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+#toast-box p { margin: 0; font-size: .95rem; color: var(--parchment); }
+
 #hud-bottom {
   position: fixed;
   bottom: 0; left: 0; right: 0;

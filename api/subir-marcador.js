@@ -13,7 +13,7 @@
 // 2. Comprobamos contra Firestore (con ese mismo token) que ese uid es
 //    realmente el masterUid de la partida indicada.
 
-const { put } = require("@vercel/blob");
+const { put, del } = require("@vercel/blob");
 
 // Misma apiKey pública que en js/firebase-config.js: es pública por diseño,
 // solo sirve para identificar el proyecto ante Firebase, no da permisos por
@@ -78,9 +78,9 @@ async function handler(req, res) {
     return;
   }
 
-  const { partidaId, tipo, filename, dataBase64 } = req.body || {};
-  if (!partidaId || !filename || !dataBase64) {
-    res.status(400).json({ error: "Faltan datos (partidaId, filename o dataBase64)" });
+  const { partidaId, accion } = req.body || {};
+  if (!partidaId) {
+    res.status(400).json({ error: "Falta partidaId" });
     return;
   }
 
@@ -106,6 +106,30 @@ async function handler(req, res) {
     return;
   }
 
+  // ---------- Borrar un archivo ya subido (control manual desde el panel) ----------
+  if (accion === "borrar") {
+    const { url } = req.body || {};
+    if (!url) {
+      res.status(400).json({ error: "Falta 'url'" });
+      return;
+    }
+    try {
+      await del(url);
+      res.status(200).json({ borrado: true });
+    } catch (err) {
+      console.error("Error borrando el archivo:", err);
+      res.status(500).json({ error: `No se pudo borrar: ${err.message}` });
+    }
+    return;
+  }
+
+  // ---------- Subir un archivo nuevo ----------
+  const { tipo, filename, dataBase64, urlAnterior } = req.body || {};
+  if (!filename || !dataBase64) {
+    res.status(400).json({ error: "Faltan datos (filename o dataBase64)" });
+    return;
+  }
+
   const buffer = Buffer.from(dataBase64, "base64");
   if (buffer.length > MAX_BYTES) {
     res.status(413).json({
@@ -122,6 +146,20 @@ async function handler(req, res) {
       access: "public",
       addRandomSuffix: false,
     });
+
+    // Si esto sustituye a un archivo anterior (p.ej. recompilar el
+    // targets.mind, o cambiar el vídeo de un marcador), borramos el
+    // antiguo para no dejar basura acumulándose en el almacenamiento. Si
+    // falla (por ejemplo, porque la "url anterior" no era en realidad un
+    // archivo nuestro), no pasa nada — el archivo nuevo ya se subió bien.
+    if (urlAnterior && urlAnterior.includes("blob.vercel-storage.com") && urlAnterior !== blob.url) {
+      try {
+        await del(urlAnterior);
+      } catch (e) {
+        console.warn("No se pudo borrar el archivo anterior (no crítico):", e.message);
+      }
+    }
+
     res.status(200).json({ url: blob.url });
   } catch (err) {
     console.error(err);

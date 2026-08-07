@@ -491,6 +491,31 @@ h1.display::after, h2.display::after {
   background: var(--ink);
   color: var(--amber);
 }
+.nav-short { display: none; }
+
+#lista-mis-partidas .partida-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5em;
+  padding: .45em .6em;
+  border: 1px solid #3a3226;
+  border-radius: var(--radius);
+  margin-bottom: .35em;
+  cursor: pointer;
+  font-size: .8rem;
+}
+#lista-mis-partidas .partida-chip:hover { border-color: var(--amber); }
+#lista-mis-partidas .partida-chip.activa {
+  border-color: var(--amber);
+  background: var(--ink);
+  color: var(--amber);
+}
+#lista-mis-partidas .partida-chip .mono { font-size: .78rem; }
+
+#opciones-partida-avanzado summary { list-style: none; }
+#opciones-partida-avanzado summary::-webkit-details-marker { display: none; }
+#opciones-partida-avanzado[open] summary { margin-bottom: .3em; }
 #master-content {
   padding: 2em;
   overflow-y: auto;
@@ -509,24 +534,57 @@ h1.display::after, h2.display::after {
 .field label { font-size: .85rem; color: var(--parchment-dim); }
 .escena-row .es-trigger-valor-campo { margin-top: -.3em; }
 
+#lista-escenas { counter-reset: escena-contador; }
+.escena-row {
+  counter-increment: escena-contador;
+  position: relative;
+  border: 1px solid #3a3226;
+  border-left: 5px solid var(--amber);
+  background: var(--ink-soft);
+  padding: 1em;
+  margin-bottom: 1.6em;
+  border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+}
+.escena-numero {
+  font-family: var(--font-display);
+  color: var(--ink);
+  background: var(--amber);
+  display: inline-block;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: .25em .7em;
+  border-radius: 999px;
+  margin-bottom: .8em;
+}
+.escena-numero::before { content: counter(escena-contador) " · "; }
+
 @media (max-width: 720px) {
   #master-view { grid-template-columns: 1fr; }
   #master-sidebar {
     border-right: none;
     border-bottom: 1px solid #3a3226;
-    padding: 1em;
+    padding: .8em;
   }
+  #master-sidebar > h2 { font-size: .95rem; margin-bottom: .6em; }
+  #mis-partidas-bloque { margin-bottom: .8em; }
   #master-sidebar nav {
-    display: flex;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: .3em;
-    padding-bottom: .3em;
-    -webkit-overflow-scrolling: touch;
   }
   #master-sidebar nav a {
-    white-space: nowrap;
+    text-align: center;
+    padding: .5em .3em;
     margin-bottom: 0;
+    font-size: .72rem;
+    border: 1px solid #3a3226;
   }
+  .nav-full { display: none; }
+  .nav-short { display: inline; }
+  #opciones-partida-avanzado { margin-top: .8em; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
 }
 

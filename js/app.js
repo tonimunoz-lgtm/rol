@@ -271,7 +271,9 @@ async function mostrarSeleccionPersonaje(overlay, code, nombreJugador) {
     card.style.textAlign = "left";
     card.innerHTML = `
       <div style="display:flex; gap:.8em; align-items:flex-start;">
-        <div style="width:64px; height:64px; flex-shrink:0;">${generarAvatarSVG(p.raza, p.clase)}</div>
+        <div style="width:64px; height:64px; flex-shrink:0; ${p.retratoUrl ? "border-radius:var(--radius); overflow:hidden;" : ""}">${
+          p.retratoUrl ? `<img src="${p.retratoUrl}" style="width:100%; height:100%; object-fit:cover;" />` : generarAvatarSVG(p.raza, p.clase)
+        }</div>
         <div>
           <strong class="display" style="font-size:1rem;">${p.nombre}</strong>
           <p class="mono" style="font-size:.75rem; color:var(--parchment-dim); margin:.3em 0;">${p.raza || ""} · ${p.clase || ""}</p>
@@ -392,6 +394,11 @@ async function bootGame() {
       ultimaEscenaMostrada = escenaActualId;
       const escena = encontrarEscena(guionActual, escenaActualId);
       if (escena?.narracion) mostrarNarracion(escena.narracion);
+      if (escena?.fondoUrl) {
+        mostrarFondoEspecifico(escena.fondoUrl);
+      } else {
+        volverARotacionFondo();
+      }
       intentarMostrarPruebaEscenaActual();
     }
     actualizarMusicaAmbiente();
@@ -1019,6 +1026,7 @@ function renderBitacora() {
       .map(
         (p) => `
       <div class="habilidad-card">
+        ${p.retratoUrl ? `<img src="${p.retratoUrl}" style="width:48px; height:64px; object-fit:cover; border-radius:var(--radius); border:1px solid #3a3226; flex-shrink:0;" />` : ""}
         <div class="h-info">
           <div class="h-nombre">${p.titulo}</div>
           <p class="h-desc">${p.texto || ""}</p>
@@ -1252,7 +1260,9 @@ const NOMBRES_ATRIBUTOS = {
 function renderFicha(data) {
   els.fichaNombre.textContent = data.nombrePersonaje || data.nombre;
   els.fichaRazaClase.textContent = [data.raza, data.clase].filter(Boolean).join(" · ");
-  els.fichaRetrato.innerHTML = `<div style="width:120px; height:120px; margin:0 auto .8em;">${generarAvatarSVG(data.raza, data.clase)}</div>`;
+  els.fichaRetrato.innerHTML = data.retratoUrl
+    ? `<div style="width:120px; height:120px; margin:0 auto .8em; border-radius:var(--radius); overflow:hidden;"><img src="${data.retratoUrl}" style="width:100%; height:100%; object-fit:cover;" /></div>`
+    : `<div style="width:120px; height:120px; margin:0 auto .8em;">${generarAvatarSVG(data.raza, data.clase)}</div>`;
 
   const atributos = data.atributos || {};
   els.fichaAtributos.innerHTML = Object.entries(NOMBRES_ATRIBUTOS)
@@ -1781,6 +1791,36 @@ function mostrarSiguienteFondo() {
   nueva.src = siguiente.url;
 }
 
+// Cuando una escena del guion tiene su propio fondo generado con IA (a
+// partir de su narración), sustituye la rotación de fotos genéricas de
+// Pexels por esa imagen concreta mientras esa escena esté activa. En
+// cuanto se entra en una escena sin fondo propio, se vuelve a la rotación
+// normal — así conviven ambos sistemas sin pisarse.
+let fondoEscenaActivo = null;
+
+function mostrarFondoEspecifico(url) {
+  if (fondoEscenaActivo === url) return;
+  fondoEscenaActivo = url;
+  pausarRotacionFondo();
+
+  const activaAhora = els.fondoImgA.classList.contains("activa") ? els.fondoImgA : els.fondoImgB;
+  const nueva = activaAhora === els.fondoImgA ? els.fondoImgB : els.fondoImgA;
+  nueva.onload = () => {
+    nueva.classList.add("activa");
+    activaAhora.classList.remove("activa");
+  };
+  nueva.src = url;
+}
+
+function volverARotacionFondo() {
+  if (fondoEscenaActivo === null) return; // ya estábamos en la rotación normal
+  fondoEscenaActivo = null;
+  if (imagenesAmbiente.length > 0) {
+    mostrarSiguienteFondo();
+    if (!modoInspeccionActivo) reanudarRotacionFondo();
+  }
+}
+
 function pausarRotacionFondo() {
   if (intervaloFondo) {
     clearInterval(intervaloFondo);
@@ -1789,6 +1829,7 @@ function pausarRotacionFondo() {
 }
 
 function reanudarRotacionFondo() {
+  if (fondoEscenaActivo !== null) return; // hay un fondo propio de la escena, no lo pisamos con la rotación
   if (imagenesAmbiente.length > 0 && !intervaloFondo) {
     intervaloFondo = setInterval(mostrarSiguienteFondo, 9000);
   }

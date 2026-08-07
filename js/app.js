@@ -6,6 +6,7 @@ import {
   collection, addDoc, serverTimestamp,
   query, where, getDocs, runTransaction,
 } from "./firebase-config.js";
+import { normalizarGuion, normalizarEscenaActual, encontrarEscena } from "./guion-utils.js";
 
 const els = {
   playerName: document.getElementById("player-name-label"),
@@ -46,6 +47,7 @@ const els = {
   combateDañoForm: document.getElementById("combate-daño-form"),
   combateObjetivo: document.getElementById("combate-objetivo"),
   combateDañoValor: document.getElementById("combate-daño-valor"),
+  combateTipoDanio: document.getElementById("combate-tipo-danio"),
   btnAplicarDaño: document.getElementById("btn-aplicar-daño"),
   btnToggleMusica: document.getElementById("btn-toggle-musica"),
   musicaAmbiente: document.getElementById("musica-ambiente"),
@@ -70,6 +72,14 @@ function tirarDado(caras) {
   return 1 + Math.floor(Math.random() * caras);
 }
 
+// Aplica la resistencia del objetivo (si tiene alguna configurada) al daño
+// bruto de un tipo concreto. 1 = normal, 0.5 = resistente, 0 = inmune,
+// 1.5 = vulnerable. Sin resistencias configuradas, el daño no cambia.
+function aplicarResistencia(danioBruto, tipoDanio, resistencias) {
+  const multiplicador = resistencias?.[tipoDanio ?? "fisico"] ?? 1;
+  return Math.max(0, Math.round(danioBruto * multiplicador));
+}
+
 let ultimoDadoResultado = null;
 let enemigosCombateActual = [];
 let ordenCombateActual = [];
@@ -78,7 +88,7 @@ let jugadorDataActual = null;
 
 let jugadorRefActual = null;
 let guionActual = [];
-let escenaActualLocal = 0;
+let escenaActualLocalId = null;
 let ultimaEscenaMostrada = null;
 let combateActivoAnterior = false;
 
@@ -322,9 +332,7 @@ async function bootGame() {
     const data = snap.data();
     enemigosCombateActual = data.enemigos || [];
     renderCombateJugador(data.combate);
-    if (data.musicaAmbienteUrl && els.musicaAmbiente.getAttribute("src") !== data.musicaAmbienteUrl) {
-      els.musicaAmbiente.src = data.musicaAmbienteUrl;
-    }
+    musicaAmbienteBase = data.musicaAmbienteUrl || null;
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
     const combateActivoAhora = !!data.combate?.activo;
@@ -338,14 +346,18 @@ async function bootGame() {
       if (en.vida <= 0) verificarAvanceGuion({ tipo: "enemigo_derrotado", valor: en.nombre });
     });
 
-    // Guion: guardamos el estado y mostramos la narración si ha cambiado de escena
-    guionActual = data.guion || [];
-    const idx = data.escenaActual ?? 0;
-    escenaActualLocal = idx;
-    if (idx !== ultimaEscenaMostrada && guionActual[idx]) {
-      ultimaEscenaMostrada = idx;
-      if (guionActual[idx].narracion) mostrarNarracion(guionActual[idx].narracion);
+    // Guion: normalizamos (compatibilidad con partidas antiguas y con el
+    // nuevo formato de ramificaciones) y mostramos la narración/música si
+    // ha cambiado de escena.
+    guionActual = normalizarGuion(data.guion || []);
+    const escenaActualId = normalizarEscenaActual(data.escenaActual, guionActual);
+    escenaActualLocalId = escenaActualId;
+    if (escenaActualId !== ultimaEscenaMostrada) {
+      ultimaEscenaMostrada = escenaActualId;
+      const escena = encontrarEscena(guionActual, escenaActualId);
+      if (escena?.narracion) mostrarNarracion(escena.narracion);
     }
+    actualizarMusicaAmbiente();
   });
 
   // Eventos en vivo lanzados por el master o por otros jugadores
@@ -435,48 +447,33 @@ function renderCombateJugador(combate) {
 // ---------- 3c. Guion automático: comprueba si la escena actual debe avanzar ----------
 async function verificarAvanceGuion(contexto) {
   if (!guionActual || guionActual.length === 0) return;
-  const idx = escenaActualLocal ?? 0;
-  const escena = guionActual[idx];
-  if (!escena || !escena.trigger || escena.trigger.tipo === "manual") return;
-  if (idx + 1 >= guionActual.length) return; // no hay escena siguiente
+  const escena = encontrarEscena(guionActual, escenaActualLocalId);
+  if (!escena || !escena.salidas || escena.salidas.length === 0) return;
 
-  const t = escena.trigger;
   const normaliza = (v) => String(v ?? "").trim().toLowerCase();
-  let cumple = false;
-  if (t.tipo === "marcador" && contexto.tipo === "marcador" && Number(t.valor) === Number(contexto.valor)) {
-    cumple = true;
-  } else if (t.tipo === "objeto" && contexto.tipo === "objeto" && normaliza(t.valor) === normaliza(contexto.valor)) {
-    cumple = true;
-  } else if (
-    t.tipo === "objeto_usado" &&
-    contexto.tipo === "objeto_usado" &&
-    normaliza(t.valor) === normaliza(contexto.valor)
-  ) {
-    cumple = true;
-  } else if (
-    t.tipo === "habilidad_usada" &&
-    contexto.tipo === "habilidad_usada" &&
-    normaliza(t.valor) === normaliza(contexto.valor)
-  ) {
-    cumple = true;
-  } else if (
-    t.tipo === "enemigo_derrotado" &&
-    contexto.tipo === "enemigo_derrotado" &&
-    normaliza(t.valor) === normaliza(contexto.valor)
-  ) {
-    cumple = true;
-  } else if (t.tipo === "combate_terminado" && contexto.tipo === "combate_terminado") {
-    cumple = true;
-  }
-  if (!cumple) return;
+  const salidaCumplida = escena.salidas.find((salida) => {
+    const t = salida.trigger || {};
+    if (t.tipo === "marcador" && contexto.tipo === "marcador") {
+      return Number(t.valor) === Number(contexto.valor);
+    }
+    if (
+      ["objeto", "objeto_usado", "habilidad_usada", "enemigo_derrotado"].includes(t.tipo) &&
+      t.tipo === contexto.tipo
+    ) {
+      return normaliza(t.valor) === normaliza(contexto.valor);
+    }
+    if (t.tipo === "combate_terminado" && contexto.tipo === "combate_terminado") return true;
+    return false;
+  });
+  if (!salidaCumplida || !salidaCumplida.siguienteId) return;
 
   try {
     await runTransaction(db, async (tx) => {
       const ref = doc(db, "partidas", currentPartidaId);
       const snap = await tx.get(ref);
-      const actual = snap.data()?.escenaActual ?? 0;
-      if (actual !== idx) return; // otro jugador ya la avanzó, no dupliques
-      tx.update(ref, { escenaActual: idx + 1 });
+      const actualId = normalizarEscenaActual(snap.data()?.escenaActual, guionActual);
+      if (actualId !== escena.id) return; // otro jugador ya la avanzó, no dupliques
+      tx.update(ref, { escenaActual: salidaCumplida.siguienteId });
     });
   } catch (e) {
     console.warn("No se pudo avanzar de escena:", e.message);
@@ -485,18 +482,21 @@ async function verificarAvanceGuion(contexto) {
 
 els.btnAplicarDaño.addEventListener("click", async () => {
   const [tipo, valor] = els.combateObjetivo.value.split(":");
-  const daño = Number(els.combateDañoValor.value) || 0;
-  if (daño <= 0) return;
+  const danioBruto = Number(els.combateDañoValor.value) || 0;
+  const tipoDanio = els.combateTipoDanio.value;
+  if (danioBruto <= 0) return;
 
   let objetivoNombre = "";
+  let danioAplicado = danioBruto;
 
   if (tipo === "enemigo") {
     const idx = Number(valor);
     const enemigo = enemigosCombateActual[idx];
     if (!enemigo) return;
     objetivoNombre = enemigo.nombre;
+    // Los enemigos no tienen resistencias configurables en esta versión.
     const nuevos = [...enemigosCombateActual];
-    nuevos[idx] = { ...enemigo, vida: Math.max(0, enemigo.vida - daño) };
+    nuevos[idx] = { ...enemigo, vida: Math.max(0, enemigo.vida - danioAplicado) };
     await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
   } else if (tipo === "jugador") {
     const objetivoRef = doc(db, "partidas", currentPartidaId, "jugadores", valor);
@@ -504,14 +504,15 @@ els.btnAplicarDaño.addEventListener("click", async () => {
     if (!objetivoSnap.exists()) return;
     const objetivoData = objetivoSnap.data();
     objetivoNombre = objetivoData.nombrePersonaje || objetivoData.nombre;
-    await updateDoc(objetivoRef, { vida: Math.max(0, objetivoData.vida - daño) });
+    danioAplicado = aplicarResistencia(danioBruto, tipoDanio, objetivoData.resistencias);
+    await updateDoc(objetivoRef, { vida: Math.max(0, objetivoData.vida - danioAplicado) });
   }
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "daño",
     atacante: jugadorDataActual?.nombrePersonaje || jugadorDataActual?.nombre || "Jugador",
     objetivoNombre,
-    valor: daño,
+    valor: danioAplicado,
     timestamp: serverTimestamp(),
   });
 });
@@ -534,8 +535,10 @@ function actualizarIconoVoz() {
   els.btnToggleVoz.title = modoVoz === "ia" ? "Voz IA (ElevenLabs) — toca para volver a la del dispositivo" : "Voz del dispositivo — toca para probar la voz IA";
 }
 
-// ---------- 4b. Música ambiente ----------
+// ---------- 4b. Música ambiente (variable por escena) ----------
 let musicaSonando = false;
+let musicaAmbienteBase = null; // pista general de la partida, si no hay una específica de la escena activa
+
 els.btnToggleMusica.addEventListener("click", () => {
   if (!els.musicaAmbiente.src) return;
   if (musicaSonando) {
@@ -548,6 +551,18 @@ els.btnToggleMusica.addEventListener("click", () => {
   }
   musicaSonando = !musicaSonando;
 });
+
+// Cada escena del guion puede tener su propia pista (musicaUrl); si no la
+// tiene, usamos la pista general de la partida. Cambia sola al cambiar de
+// escena, sin cortar la reproducción si no hace falta (mismo archivo).
+function actualizarMusicaAmbiente() {
+  const escena = encontrarEscena(guionActual, escenaActualLocalId);
+  const url = escena?.musicaUrl || musicaAmbienteBase;
+  if (!url || els.musicaAmbiente.getAttribute("src") === url) return;
+  els.musicaAmbiente.src = url;
+  els.musicaAmbiente.load();
+  if (musicaSonando) els.musicaAmbiente.play().catch(() => {});
+}
 
 function mostrarNarracion(texto) {
   els.narrationText.textContent = texto;
@@ -749,11 +764,16 @@ async function usarObjeto(idx, data) {
   const objeto = inventario[idx];
   if (!objeto) return;
 
+  const efecto = objeto.efecto || {};
+  const esArea = efecto.alcance === "area" && (efecto.tipo === "curar" || efecto.tipo === "danio");
+
+  // Efecto sobre uno mismo (se aplica siempre, sea individual o de área).
   let nuevaVida = data.vida;
-  if (objeto.efecto?.tipo === "curar") {
-    nuevaVida = Math.min(data.vidaMax ?? data.vida, data.vida + Number(objeto.efecto.valor || 0));
-  } else if (objeto.efecto?.tipo === "danio") {
-    nuevaVida = Math.max(0, data.vida - Number(objeto.efecto.valor || 0));
+  if (efecto.tipo === "curar") {
+    nuevaVida = Math.min(data.vidaMax ?? data.vida, data.vida + Number(efecto.valor || 0));
+  } else if (efecto.tipo === "danio") {
+    const danioPropio = aplicarResistencia(Number(efecto.valor || 0), efecto.tipoDanio, data.resistencias);
+    nuevaVida = Math.max(0, data.vida - danioPropio);
   }
 
   if (objeto.cantidad > 1) {
@@ -763,6 +783,8 @@ async function usarObjeto(idx, data) {
   }
 
   await updateDoc(jugadorRefActual, { inventario, vida: nuevaVida });
+
+  if (esArea) await aplicarEfectoAreaAOtrosJugadores(efecto);
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "objeto",
@@ -774,11 +796,32 @@ async function usarObjeto(idx, data) {
 
   const nombrePersonaje = data.nombrePersonaje || data.nombre;
   let efectoTexto = "";
-  if (objeto.efecto?.tipo === "curar") efectoTexto = ` (recupera ${objeto.efecto.valor} de vida)`;
-  else if (objeto.efecto?.tipo === "danio") efectoTexto = ` (pierde ${objeto.efecto.valor} de vida)`;
+  if (efecto.tipo === "curar") efectoTexto = ` (recupera ${efecto.valor} de vida${esArea ? ", todo el grupo" : ""})`;
+  else if (efecto.tipo === "danio") efectoTexto = ` (${efecto.valor} de daño${esArea ? ", todo el grupo" : ""})`;
   añadirMensajeChat({ tipo: "narracion", texto: `🎒 ${nombrePersonaje} usa "${objeto.nombre}"${efectoTexto}.` });
 
   verificarAvanceGuion({ tipo: "objeto_usado", valor: objeto.nombre });
+}
+
+// Aplica un efecto de objeto de área (curar/dañar) a los DEMÁS jugadores
+// conectados a esta partida — uno mismo ya se resuelve en usarObjeto. Cada
+// jugador recibe el efecto ajustado por sus propias resistencias.
+async function aplicarEfectoAreaAOtrosJugadores(efecto) {
+  const jugadoresSnap = await getDocs(collection(db, "partidas", currentPartidaId, "jugadores"));
+  const otros = jugadoresSnap.docs.filter((d) => d.id !== currentJugadorId);
+  await Promise.all(
+    otros.map(async (d) => {
+      const jd = d.data();
+      let nuevaVida = jd.vida;
+      if (efecto.tipo === "curar") {
+        nuevaVida = Math.min(jd.vidaMax ?? jd.vida, jd.vida + Number(efecto.valor || 0));
+      } else if (efecto.tipo === "danio") {
+        const danio = aplicarResistencia(Number(efecto.valor || 0), efecto.tipoDanio, jd.resistencias);
+        nuevaVida = Math.max(0, jd.vida - danio);
+      }
+      await updateDoc(doc(db, "partidas", currentPartidaId, "jugadores", d.id), { vida: nuevaVida });
+    })
+  );
 }
 
 let ataquePendiente = null;
@@ -863,14 +906,18 @@ async function ejecutarUsoHabilidad(idx, habilidad, data, usosActuales, restante
         objetivoNombre = objetivoData.nombrePersonaje || objetivoData.nombre;
         if (acierta) {
           const caras = Number((habilidad.dado || "d6").replace("d", "")) || 6;
-          daño = Math.max(1, tirarDado(caras) + modificador);
+          const danioBruto = Math.max(1, tirarDado(caras) + modificador);
+          daño = aplicarResistencia(danioBruto, habilidad.tipoDanio, objetivoData.resistencias);
           await updateDoc(objetivoRef, { vida: Math.max(0, objetivoData.vida - daño) });
         }
       }
     }
 
+    const etiquetaDanio = { fisico: "físico", fuego: "de fuego", hielo: "de hielo", veneno: "de veneno", mental: "mental" }[
+      habilidad.tipoDanio
+    ] || "";
     textoNarracion = acierta
-      ? `⚔️ ${nombreAtacante} usa "${habilidad.nombre}" contra ${objetivoNombre} (tirada ${tiradaImpacto}) y acierta: ${daño} de daño.`
+      ? `⚔️ ${nombreAtacante} usa "${habilidad.nombre}" contra ${objetivoNombre} (tirada ${tiradaImpacto}) y acierta: ${daño} de daño${etiquetaDanio ? ` ${etiquetaDanio}` : ""}.`
       : `⚔️ ${nombreAtacante} usa "${habilidad.nombre}" contra ${objetivoNombre} (tirada ${tiradaImpacto}) pero falla.`;
     añadirMensajeChat({ tipo: "narracion", texto: textoNarracion });
   } else if (habilidad.dado && habilidad.dado !== "ninguno") {
@@ -1282,16 +1329,14 @@ async function resolverTrampa(marcador) {
   const yaActivadas = jugadorDataActual.trampasActivadas || [];
   if (yaActivadas.includes(marcador.id)) return;
 
-  const { atributo, dificultad, danio, descripcion } = marcador.trampa;
+  const { atributo, dificultad, danio, tipoDanio, descripcion } = marcador.trampa;
   const modificador = modificadorDeAtributo(atributo, jugadorDataActual.atributos);
   const tirada = tirarDado(20) + modificador;
   const supera = tirada >= (dificultad || 12);
   const nombrePersonaje = jugadorDataActual.nombrePersonaje || jugadorDataActual.nombre;
 
-  let nuevaVida = jugadorDataActual.vida;
-  if (!supera) {
-    nuevaVida = Math.max(0, jugadorDataActual.vida - (danio || 0));
-  }
+  const danioFinal = supera ? 0 : aplicarResistencia(danio || 0, tipoDanio, jugadorDataActual.resistencias);
+  const nuevaVida = supera ? jugadorDataActual.vida : Math.max(0, jugadorDataActual.vida - danioFinal);
 
   await updateDoc(jugadorRefActual, {
     trampasActivadas: [...yaActivadas, marcador.id],
@@ -1300,7 +1345,7 @@ async function resolverTrampa(marcador) {
 
   const texto = supera
     ? `⚠️ ${nombrePersonaje} esquiva la trampa${descripcion ? ` (${descripcion})` : ""} — tirada ${tirada}.`
-    : `⚠️ ${nombrePersonaje} cae en la trampa${descripcion ? ` (${descripcion})` : ""} — tirada ${tirada}, pierde ${danio || 0} de vida.`;
+    : `⚠️ ${nombrePersonaje} cae en la trampa${descripcion ? ` (${descripcion})` : ""} — tirada ${tirada}, pierde ${danioFinal} de vida.`;
   mostrarNarracion(texto);
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
@@ -1309,7 +1354,7 @@ async function resolverTrampa(marcador) {
     nombreJugador: jugadorDataActual.nombre,
     superada: supera,
     tirada,
-    danio: supera ? 0 : danio || 0,
+    danio: danioFinal,
     timestamp: serverTimestamp(),
   });
 }

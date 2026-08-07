@@ -134,7 +134,7 @@ function llamarGroq(url, prompt, forzarJson) {
   const body = {
     model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
-    max_tokens: 4200,
+    max_tokens: 5200,
     temperature: 0.7,
     // Sin esto, el modelo puede gastar parte del presupuesto de tokens
     // "pensando" antes de escribir el JSON final, dejando menos margen del
@@ -199,6 +199,21 @@ con exactamente esta forma:
     }
   ],
   "giroFinal": "El giro o revelación final de la partida",
+  "enemigosSugeridos": [
+    {
+      "nombre": "Nombre del enemigo",
+      "vida": 20,
+      "tipoDanio": "fisico",
+      "descripcion": "1 frase: qué es y cómo ataca"
+    }
+  ],
+  "mapa": {
+    "descripcion": "1-2 frases de ambientación general del mapa (época, aspecto del terreno)",
+    "lugares": [
+      { "nombre": "Nombre del lugar", "tipo": "pueblo", "x": 20, "y": 30, "descripcion": "1 frase" }
+    ],
+    "conexiones": [[0, 1], [1, 2]]
+  },
   "personajesSugeridos": [
     {
       "nombre": "Nombre del personaje jugable",
@@ -216,6 +231,18 @@ con exactamente esta forma:
     }
   ]
 }
+
+Genera entre 2 y 4 "enemigosSugeridos" coherentes con la ambientación (tipo de amenaza acorde a
+la dificultad pedida), con vida proporcional a la dificultad general.
+
+Para "mapa": genera entre 4 y 7 "lugares" que reflejen la geografía de la historia (pueblos,
+puentes, ríos, bosques, ruinas, cuevas, montañas, castillos, pantanos, caminos...). El campo
+"tipo" debe ser uno de: pueblo, bosque, rio, puente, montana, ruinas, cueva, castillo, mar,
+pantano, camino, otro. Los campos "x" e "y" son coordenadas de 0 a 100 (como un porcentaje del
+mapa) que reflejen su posición relativa real según la trama (p.ej. si un puente conecta dos
+zonas, ponlo entre ambas). "conexiones" es una lista de pares de ÍNDICES (posición en el array
+"lugares", empezando en 0) que deben conectarse visualmente por un camino/río en el mapa —
+conecta los lugares en un orden que tenga sentido narrativo (el recorrido lógico de la partida).
 
 Genera exactamente ${numPersonajes} personajes en "personajesSugeridos" (aunque se hayan pedido
 ${c.numeroJugadores} jugadores, limita los personajes generados a ${numPersonajes} para no

@@ -442,6 +442,36 @@ function crearFilaListaItem(contenedorId, item = null) {
     row.querySelector(".li-danio-caras-prueba").value = item?.danioCaras ?? 6;
   }
 
+  // El retrato (con IA) solo tiene sentido para PNJs.
+  if (contenedorId === "lista-pnjs") {
+    const bloqueRetrato = row.querySelector(".li-retrato-bloque");
+    bloqueRetrato.style.display = "flex";
+    row.querySelector(".li-retrato-url").value = item?.retratoUrl || "";
+    actualizarPreviewRetrato(row.querySelector(".li-retrato-preview"), item?.retratoUrl || "");
+    row.querySelector(".btn-generar-retrato-pnj").addEventListener("click", async () => {
+      const boton = row.querySelector(".btn-generar-retrato-pnj");
+      const status = row.querySelector(".li-retrato-status");
+      const titulo = row.querySelector(".li-titulo").value.trim();
+      if (!titulo) return alert("Ponle un título/nombre al PNJ primero.");
+      boton.disabled = true;
+      status.textContent = "Generando...";
+      try {
+        const url = await generarImagenIA("personaje", {
+          nombre: titulo,
+          descripcion: row.querySelector(".li-texto").value.trim(),
+          rol: "pnj",
+        });
+        row.querySelector(".li-retrato-url").value = url;
+        actualizarPreviewRetrato(row.querySelector(".li-retrato-preview"), url);
+        status.textContent = "Retrato generado. Se guardará al pulsar \"Guardar PNJs\".";
+      } catch (err) {
+        status.textContent = `Error: ${err.message}`;
+      } finally {
+        boton.disabled = false;
+      }
+    });
+  }
+
   row.querySelector(".btn-quitar-item").addEventListener("click", () => row.remove());
   $(contenedorId).appendChild(row);
   return row;
@@ -470,6 +500,9 @@ function leerListaEditor(contenedorId) {
         item.tipoDanioPrueba = row.querySelector(".li-tipo-danio-prueba").value;
         item.danioDados = Number(row.querySelector(".li-danio-dados-prueba").value) || 1;
         item.danioCaras = Number(row.querySelector(".li-danio-caras-prueba").value) || 6;
+      }
+      if (contenedorId === "lista-pnjs") {
+        item.retratoUrl = row.querySelector(".li-retrato-url")?.value || "";
       }
       return item;
     })
@@ -562,6 +595,25 @@ function archivoABase64(file) {
     reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
     reader.readAsDataURL(file);
   });
+}
+
+// ---------- Generación de imágenes con IA (Flux vía Pollinations → Vercel Blob) ----------
+async function generarImagenIA(tipo, datos) {
+  const idToken = await auth.currentUser.getIdToken();
+  const resp = await fetch("/api/generar-imagen", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ tipo, datos }),
+  });
+  if (!resp.ok) {
+    let detalle = "";
+    try {
+      detalle = (await resp.json()).error || "";
+    } catch (_) {}
+    throw new Error(detalle || `Error ${resp.status} generando la imagen.`);
+  }
+  const data = await resp.json();
+  return data.url;
 }
 
 async function subirArchivo(file, tipo) {
@@ -1302,6 +1354,8 @@ function crearFilaEscena(escena = null) {
     row.querySelector(".es-narracion").value = escena.narracion || "";
     row.querySelector(".es-musica-url").value = escena.musicaUrl || "";
     row.querySelector(".es-objetivo").value = escena.objetivo || "";
+    row.querySelector(".es-fondo-url").value = escena.fondoUrl || "";
+    actualizarPreviewFondoEscena(row, escena.fondoUrl || "");
   }
 
   row.querySelector(".es-nombre").addEventListener("input", refrescarSelectsDestinoEscena);
@@ -1327,6 +1381,7 @@ function crearFilaEscena(escena = null) {
     await subirMusicaEscena(fileInput.files[0], row);
   });
   row.querySelector(".btn-enriquecer-narracion").addEventListener("click", () => enriquecerNarracionEscena(row));
+  row.querySelector(".btn-generar-fondo-escena").addEventListener("click", () => generarFondoEscena(row));
 
   $("lista-escenas").appendChild(row);
   refrescarSelectsPnj();
@@ -1338,6 +1393,39 @@ function crearFilaEscena(escena = null) {
   (escena?.salidas || []).forEach((salida) => crearFilaSalida(row, salida));
   actualizarVisibilidadSinSalidas(row);
   refrescarSelectsDestinoEscena();
+}
+
+function actualizarPreviewFondoEscena(escenaRow, url) {
+  const cont = escenaRow.querySelector(".es-fondo-preview");
+  if (url) {
+    cont.style.display = "block";
+    cont.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />`;
+  } else {
+    cont.style.display = "none";
+    cont.innerHTML = "";
+  }
+}
+
+async function generarFondoEscena(escenaRow) {
+  const boton = escenaRow.querySelector(".btn-generar-fondo-escena");
+  const status = escenaRow.querySelector(".es-fondo-status");
+  const narracion = escenaRow.querySelector(".es-narracion").value.trim();
+  if (!narracion) {
+    alert("Escribe primero la narración de la escena (cuanto más rica, mejor saldrá el fondo).");
+    return;
+  }
+  boton.disabled = true;
+  status.textContent = "Generando fondo con IA (puede tardar unos segundos)...";
+  try {
+    const url = await generarImagenIA("escena", { narracion });
+    escenaRow.querySelector(".es-fondo-url").value = url;
+    actualizarPreviewFondoEscena(escenaRow, url);
+    status.textContent = "Fondo generado. Se guardará al pulsar \"Guardar guion\".";
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 // Pide a la IA que reescriba la narración de la escena con más detalle
@@ -1450,6 +1538,7 @@ function leerListaEscenas() {
       narracion: escenaRow.querySelector(".es-narracion").value.trim(),
       objetivo: escenaRow.querySelector(".es-objetivo").value.trim(),
       musicaUrl: escenaRow.querySelector(".es-musica-url").value.trim(),
+      fondoUrl: escenaRow.querySelector(".es-fondo-url").value || "",
       pnj: escenaRow.querySelector(".es-pnj").value || "",
       acciones,
       salidas,
@@ -1549,11 +1638,39 @@ $("btn-sugerir-guion").addEventListener("click", async () => {
 });
 
 // ---------- Mapa del juego (vectorial, con posición vinculada a escenas) ----------
+let mapaFondoUrlActual = "";
 function cargarMapaEnUI(mapaCrudo) {
   const mapa = normalizarMapa(mapaCrudo);
   $("mapa-descripcion").value = mapa.descripcion || "";
+  mapaFondoUrlActual = mapaCrudo?.fondoUrl || "";
+  actualizarStatusFondoMapa();
   renderListaLugares(mapa.lugares, mapa.conexiones);
 }
+
+function actualizarStatusFondoMapa() {
+  $("mapa-fondo-status").textContent = mapaFondoUrlActual
+    ? "Este mapa ya tiene un fondo generado con IA."
+    : "Sin fondo generado todavía (se usa el dibujo vectorial por defecto).";
+}
+
+$("btn-generar-fondo-mapa").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const boton = $("btn-generar-fondo-mapa");
+  const status = $("mapa-fondo-status");
+  boton.disabled = true;
+  status.textContent = "Generando fondo con IA (puede tardar unos segundos)...";
+  try {
+    const url = await generarImagenIA("mapa", { descripcion: $("mapa-descripcion").value.trim() });
+    mapaFondoUrlActual = url;
+    await updateDoc(doc(db, "partidas", currentPartidaId), { "mapa.fondoUrl": url });
+    actualizarStatusFondoMapa();
+    refrescarPreviewMapa();
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+  } finally {
+    boton.disabled = false;
+  }
+});
 
 function renderListaLugares(lugares, conexiones) {
   $("lista-lugares").innerHTML = "";
@@ -1667,7 +1784,7 @@ function leerMapa() {
     });
   });
 
-  return { descripcion: $("mapa-descripcion").value.trim(), lugares, conexiones };
+  return { descripcion: $("mapa-descripcion").value.trim(), fondoUrl: mapaFondoUrlActual, lugares, conexiones };
 }
 
 function refrescarPreviewMapa() {
@@ -1697,18 +1814,50 @@ function renderEnemigosSugeridos(enemigos) {
     cont.innerHTML = "";
     return;
   }
-  cont.innerHTML = enemigosSugeridosActuales
-    .map(
-      (e, i) => `
-      <button type="button" class="btn-add-enemigo-sugerido" data-idx="${i}" style="font-size:.8rem; margin:.2em .3em .2em 0;" title="${e.descripcion || ""}">
-        + ${e.nombre} (${e.vida} PV)
-      </button>`
-    )
-    .join("");
+  cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.8rem; margin-bottom:.5em;">Enemigos sugeridos por la IA — añádelos al combate con un clic:</p>` +
+    enemigosSugeridosActuales
+      .map(
+        (e, i) => `
+        <div class="card enemigo-sugerido-card" data-idx="${i}" style="display:flex; gap:.7em; align-items:center; margin-bottom:.5em; padding:.6em;">
+          <div class="enemigo-sugerido-retrato" style="width:48px; height:64px; flex-shrink:0; border:1px solid #3a3226; border-radius:var(--radius); overflow:hidden; background:var(--ink);">
+            ${e.retratoUrl ? `<img src="${e.retratoUrl}" style="width:100%; height:100%; object-fit:cover;" />` : ""}
+          </div>
+          <div style="flex:1;">
+            <strong>${e.nombre}</strong> <span class="mono" style="color:var(--parchment-dim); font-size:.8rem;">❤ ${e.vida}</span>
+            <p style="color:var(--parchment-dim); font-size:.78rem; margin:.2em 0;">${e.descripcion || ""}</p>
+            <div style="display:flex; gap:.4em; flex-wrap:wrap;">
+              <button type="button" class="btn-add-enemigo-sugerido" data-idx="${i}" style="font-size:.75rem;">+ Añadir al combate</button>
+              <button type="button" class="btn-retrato-enemigo-sugerido" data-idx="${i}" style="font-size:.75rem;">✨ ${e.retratoUrl ? "Regenerar" : "Generar"} retrato</button>
+            </div>
+            <p class="enemigo-sugerido-status" data-idx="${i}" style="color:var(--parchment-dim); font-size:.72rem; margin:.2em 0 0;"></p>
+          </div>
+        </div>`
+      )
+      .join("");
+
   cont.querySelectorAll(".btn-add-enemigo-sugerido").forEach((btn) => {
     btn.addEventListener("click", () => {
       const e = enemigosSugeridosActuales[Number(btn.dataset.idx)];
-      if (e) añadirEnemigoActual(e.nombre, e.vida, e.tipoDanio);
+      if (e) añadirEnemigoActual(e.nombre, e.vida, e.tipoDanio, e.retratoUrl);
+    });
+  });
+  cont.querySelectorAll(".btn-retrato-enemigo-sugerido").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const idx = Number(btn.dataset.idx);
+      const e = enemigosSugeridosActuales[idx];
+      if (!e || !currentPartidaId) return;
+      const status = cont.querySelector(`.enemigo-sugerido-status[data-idx="${idx}"]`);
+      btn.disabled = true;
+      status.textContent = "Generando...";
+      try {
+        const url = await generarImagenIA("personaje", { nombre: e.nombre, descripcion: e.descripcion, rol: "enemigo" });
+        enemigosSugeridosActuales[idx] = { ...e, retratoUrl: url };
+        await updateDoc(doc(db, "partidas", currentPartidaId), { enemigosSugeridos: enemigosSugeridosActuales });
+        renderEnemigosSugeridos(enemigosSugeridosActuales);
+      } catch (err) {
+        status.textContent = `Error: ${err.message}`;
+        btn.disabled = false;
+      }
     });
   });
 }
@@ -1790,8 +1939,11 @@ function renderEnemigos() {
   cont.innerHTML = enemigosActuales
     .map(
       (en, idx) => `
-    <div class="card" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.5em;">
-      <div><strong>${en.nombre}</strong> <span class="mono" style="color:var(--parchment-dim);">❤ ${en.vida}/${en.vidaMax}</span></div>
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.5em; gap:.6em;">
+      <div style="display:flex; align-items:center; gap:.6em;">
+        ${en.retratoUrl ? `<img src="${en.retratoUrl}" style="width:32px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #3a3226;" />` : ""}
+        <div><strong>${en.nombre}</strong> <span class="mono" style="color:var(--parchment-dim);">❤ ${en.vida}/${en.vidaMax}</span></div>
+      </div>
       <div style="display:flex; gap:.3em;">
         <button class="btn-enemigo-ajustar" data-idx="${idx}" data-delta="-5" style="font-size:.7rem;">-5</button>
         <button class="btn-enemigo-ajustar" data-idx="${idx}" data-delta="-1" style="font-size:.7rem;">-1</button>
@@ -1820,10 +1972,13 @@ function renderEnemigos() {
   );
 }
 
-async function añadirEnemigoActual(nombre, vida, tipoDanio) {
+async function añadirEnemigoActual(nombre, vida, tipoDanio, retratoUrl) {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
   if (!nombre) return;
-  const nuevos = [...enemigosActuales, { nombre, vida, vidaMax: vida, tipoDanio: tipoDanio || "fisico" }];
+  const nuevos = [
+    ...enemigosActuales,
+    { nombre, vida, vidaMax: vida, tipoDanio: tipoDanio || "fisico", retratoUrl: retratoUrl || "" },
+  ];
   await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
 }
 
@@ -2007,6 +2162,35 @@ $("btn-cancelar-personaje").addEventListener("click", () => {
   $("editor-personaje").style.display = "none";
 });
 
+function actualizarPreviewRetrato(contenedor, url) {
+  contenedor.innerHTML = url ? `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />` : "";
+}
+
+$("btn-generar-retrato-personaje").addEventListener("click", async () => {
+  const boton = $("btn-generar-retrato-personaje");
+  const status = $("p-retrato-status");
+  const nombre = $("p-nombre").value.trim();
+  if (!nombre) return alert("Ponle un nombre al personaje primero.");
+  boton.disabled = true;
+  status.textContent = "Generando retrato con IA...";
+  try {
+    const url = await generarImagenIA("personaje", {
+      nombre,
+      raza: $("p-raza").value.trim(),
+      clase: $("p-clase").value.trim(),
+      descripcion: $("p-descripcion").value.trim(),
+      rol: "jugador",
+    });
+    $("p-retrato-url").value = url;
+    actualizarPreviewRetrato($("p-retrato-preview"), url);
+    status.textContent = "Retrato generado. Se guardará al pulsar \"Guardar personaje\".";
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+  } finally {
+    boton.disabled = false;
+  }
+});
+
 async function abrirEditorPersonaje(personajeId) {
   $("editor-personaje").style.display = "block";
   $("lista-habilidades-editor").innerHTML = "";
@@ -2020,6 +2204,8 @@ async function abrirEditorPersonaje(personajeId) {
       (id) => ($(id).value = 10)
     );
     document.querySelectorAll(".p-resistencia").forEach((sel) => (sel.value = "1"));
+    $("p-retrato-url").value = "";
+    actualizarPreviewRetrato($("p-retrato-preview"), "");
     crearFilaHabilidad();
     return;
   }
@@ -2033,6 +2219,8 @@ async function abrirEditorPersonaje(personajeId) {
   $("p-clase").value = p.clase || "";
   $("p-descripcion").value = p.descripcion || "";
   $("p-vida").value = p.vidaBase ?? 10;
+  $("p-retrato-url").value = p.retratoUrl || "";
+  actualizarPreviewRetrato($("p-retrato-preview"), p.retratoUrl || "");
   const a = p.atributos || {};
   $("p-fuerza").value = a.fuerza ?? 10;
   $("p-destreza").value = a.destreza ?? 10;
@@ -2090,6 +2278,7 @@ $("btn-guardar-personaje").addEventListener("click", async () => {
     raza: $("p-raza").value.trim(),
     clase: $("p-clase").value.trim(),
     descripcion: $("p-descripcion").value.trim(),
+    retratoUrl: $("p-retrato-url").value || "",
     vidaBase: Number($("p-vida").value) || 10,
     atributos: {
       fuerza: Number($("p-fuerza").value) || 10,

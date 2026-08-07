@@ -846,7 +846,7 @@ function crearFilaSalida(escenaRow, salida = null) {
   const actualizarCampoValor = () => {
     const tipo = tipoSelect.value;
     const campo = row.querySelector(".sal-trigger-valor-campo");
-    if (tipo === "combate_terminado") {
+    if (tipo === "combate_terminado" || tipo === "prueba_superada" || tipo === "prueba_fallada") {
       campo.style.display = "none";
       return;
     }
@@ -921,6 +921,19 @@ function crearFilaEscena(escena = null) {
     row.querySelector(".es-musica-url").value = escena.musicaUrl || "";
   }
 
+  const prueba = escena?.prueba;
+  row.querySelector(".es-prueba-activa").checked = !!prueba?.activa;
+  row.querySelector(".es-prueba-atributo").value = prueba?.atributo || "destreza";
+  row.querySelector(".es-prueba-dificultad").value = prueba?.dificultad ?? 12;
+  row.querySelector(".es-prueba-tipo-danio").value = prueba?.tipoDanio || "fisico";
+  row.querySelector(".es-prueba-danio-dados").value = prueba?.danioDados ?? 2;
+  row.querySelector(".es-prueba-danio-caras").value = prueba?.danioCaras ?? 6;
+  const camposPrueba = row.querySelector(".es-prueba-campos");
+  camposPrueba.style.display = prueba?.activa ? "block" : "none";
+  row.querySelector(".es-prueba-activa").addEventListener("change", (e) => {
+    camposPrueba.style.display = e.target.checked ? "block" : "none";
+  });
+
   row.querySelector(".es-nombre").addEventListener("input", refrescarSelectsDestinoEscena);
   row.querySelector(".btn-quitar-escena").addEventListener("click", () => {
     row.remove();
@@ -939,6 +952,7 @@ function crearFilaEscena(escena = null) {
     }
     await subirMusicaEscena(fileInput.files[0], row);
   });
+  row.querySelector(".btn-enriquecer-narracion").addEventListener("click", () => enriquecerNarracionEscena(row));
 
   $("lista-escenas").appendChild(row);
   (escena?.salidas || (escena?.trigger && escena.trigger.tipo !== "manual" ? [{ trigger: escena.trigger }] : [])).forEach(
@@ -946,6 +960,39 @@ function crearFilaEscena(escena = null) {
   );
   actualizarVisibilidadSinSalidas(row);
   refrescarSelectsDestinoEscena();
+}
+
+// Pide a la IA que reescriba la narración de la escena con más detalle
+// sensorial (clima, luz, sonidos), sin cambiar la mecánica ni el sentido.
+async function enriquecerNarracionEscena(escenaRow) {
+  const boton = escenaRow.querySelector(".btn-enriquecer-narracion");
+  const textarea = escenaRow.querySelector(".es-narracion");
+  const textoActual = textarea.value.trim();
+  if (!textoActual) {
+    alert("Escribe primero algo de narración (aunque sea breve) para que la IA la enriquezca.");
+    return;
+  }
+  try {
+    boton.disabled = true;
+    boton.textContent = "Enriqueciendo...";
+    const idToken = await auth.currentUser.getIdToken();
+    const resp = await fetch("/api/enriquecer-narracion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ texto: textoActual, nombreEscena: escenaRow.querySelector(".es-nombre").value.trim() }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || `Error ${resp.status}`);
+    }
+    const { texto } = await resp.json();
+    if (texto) textarea.value = texto;
+  } catch (err) {
+    alert(`No se pudo enriquecer la narración: ${err.message}`);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "✨ Enriquecer con IA (ambiente, clima, luz, sonido)";
+  }
 }
 
 async function subirMusicaEscena(file, escenaRow) {
@@ -991,6 +1038,16 @@ function leerListaEscenas() {
       nombre: escenaRow.querySelector(".es-nombre").value.trim() || "Escena sin nombre",
       narracion: escenaRow.querySelector(".es-narracion").value.trim(),
       musicaUrl: escenaRow.querySelector(".es-musica-url").value.trim(),
+      prueba: escenaRow.querySelector(".es-prueba-activa").checked
+        ? {
+            activa: true,
+            atributo: escenaRow.querySelector(".es-prueba-atributo").value,
+            dificultad: Number(escenaRow.querySelector(".es-prueba-dificultad").value) || 12,
+            tipoDanio: escenaRow.querySelector(".es-prueba-tipo-danio").value,
+            danioDados: Number(escenaRow.querySelector(".es-prueba-danio-dados").value) || 1,
+            danioCaras: Number(escenaRow.querySelector(".es-prueba-danio-caras").value) || 6,
+          }
+        : null,
       salidas,
     };
   });

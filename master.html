@@ -230,6 +230,58 @@
           <div class="field"><label>Carisma</label><input id="p-carisma" type="number" min="1" max="20" value="10" /></div>
         </div>
 
+        <h4 style="margin-bottom:.3em;">Resistencias al daño (opcional)</h4>
+        <p style="color:var(--parchment-dim); font-size:.8rem; margin:0 0 .5em;">
+          Ajusta cuánto daño de cada tipo recibe realmente este personaje. "Normal" no cambia nada.
+        </p>
+        <div class="grid-3" id="p-resistencias" style="margin-bottom:1em;">
+          <div class="field">
+            <label>🗡️ Físico</label>
+            <select class="p-resistencia" data-tipo="fisico">
+              <option value="1">Normal</option>
+              <option value="0.5">Resistente (-50%)</option>
+              <option value="0">Inmune (0%)</option>
+              <option value="1.5">Vulnerable (+50%)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>🔥 Fuego</label>
+            <select class="p-resistencia" data-tipo="fuego">
+              <option value="1">Normal</option>
+              <option value="0.5">Resistente (-50%)</option>
+              <option value="0">Inmune (0%)</option>
+              <option value="1.5">Vulnerable (+50%)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>❄️ Hielo</label>
+            <select class="p-resistencia" data-tipo="hielo">
+              <option value="1">Normal</option>
+              <option value="0.5">Resistente (-50%)</option>
+              <option value="0">Inmune (0%)</option>
+              <option value="1.5">Vulnerable (+50%)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>☠️ Veneno</label>
+            <select class="p-resistencia" data-tipo="veneno">
+              <option value="1">Normal</option>
+              <option value="0.5">Resistente (-50%)</option>
+              <option value="0">Inmune (0%)</option>
+              <option value="1.5">Vulnerable (+50%)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>🌀 Mental</label>
+            <select class="p-resistencia" data-tipo="mental">
+              <option value="1">Normal</option>
+              <option value="0.5">Resistente (-50%)</option>
+              <option value="0">Inmune (0%)</option>
+              <option value="1.5">Vulnerable (+50%)</option>
+            </select>
+          </div>
+        </div>
+
         <h4 style="margin-bottom:.3em;">Habilidades</h4>
         <div id="lista-habilidades-editor"></div>
         <button id="btn-add-habilidad" style="font-size:.85rem; margin-bottom:1em;">+ Añadir habilidad</button>
@@ -259,6 +311,23 @@
             </select>
           </div>
           <div class="field"><label>Valor del efecto</label><input class="o-efecto-valor" type="number" min="0" value="0" /></div>
+          <div class="field o-campos-danio" style="display:none;">
+            <label>Tipo de daño</label>
+            <select class="o-efecto-tipo-danio">
+              <option value="fisico">🗡️ Físico</option>
+              <option value="fuego">🔥 Fuego</option>
+              <option value="hielo">❄️ Hielo</option>
+              <option value="veneno">☠️ Veneno</option>
+              <option value="mental">🌀 Mental</option>
+            </select>
+          </div>
+          <div class="field o-campos-alcance" style="display:none;">
+            <label>Alcance</label>
+            <select class="o-efecto-alcance">
+              <option value="individual">Solo quien lo usa</option>
+              <option value="area">Área — todo el grupo conectado</option>
+            </select>
+          </div>
         </div>
         <div class="field"><label>Descripción</label><input class="o-descripcion" placeholder="Qué es y para qué sirve" /></div>
         <button class="btn-quitar-objeto danger" style="font-size:.75rem;">Quitar objeto</button>
@@ -397,7 +466,8 @@
         <div id="m-campos-trampa" class="m-campos" style="display:none;">
           <p style="color:var(--parchment-dim); font-size:.85rem;">
             Al escanear este marcador, el jugador tira 1d20 + su atributo elegido. Si iguala o
-            supera la dificultad, la supera sin daño; si no, recibe el daño indicado.
+            supera la dificultad, la supera sin daño; si no, recibe el daño indicado (ajustado por
+            sus resistencias, si tiene alguna configurada).
           </p>
           <div class="grid-3">
             <div class="field">
@@ -413,8 +483,19 @@
             <div class="field"><label>Dificultad (a superar)</label><input id="m-trampa-dificultad" type="number" min="1" value="12" /></div>
             <div class="field"><label>Daño si falla</label><input id="m-trampa-danio" type="number" min="0" value="5" /></div>
           </div>
+          <div class="field">
+            <label>Tipo de daño</label>
+            <select id="m-trampa-tipo-danio">
+              <option value="fisico">🗡️ Físico</option>
+              <option value="fuego">🔥 Fuego</option>
+              <option value="hielo">❄️ Hielo</option>
+              <option value="veneno">☠️ Veneno</option>
+              <option value="mental">🌀 Mental</option>
+            </select>
+          </div>
           <div class="field"><label>Descripción de la trampa</label><input id="m-trampa-descripcion" placeholder="Un suelo de losas inestables..." /></div>
         </div>
+
 
         <div style="display:flex; gap:.6em; margin-top:1em;">
           <button id="btn-guardar-marcador" class="primary">Guardar marcador</button>
@@ -427,53 +508,87 @@
     <section id="section-guion" class="section-panel">
       <h2 class="display">Guion automático</h2>
       <p style="color:var(--parchment-dim); max-width:640px;">
-        Crea la secuencia de escenas de la partida. Cada escena lanza su narración sola en cuanto
-        se activa, y el juego avanza a la siguiente escena solo cuando pasa lo que tú decidas
-        (escanear un marcador, derrotar a un enemigo, recoger un objeto, terminar un combate...).
-        Tú puedes forzar el avance manualmente en cualquier momento si algo no dispara solo.
+        Crea las escenas de la partida. Cada escena lanza su narración (y su música, si le pones
+        una) sola en cuanto se activa. Cada escena puede tener varias "salidas" — condiciones que,
+        si se cumplen, la hacen saltar a una escena distinta cada una — así la historia puede
+        ramificarse según lo que hagan los jugadores, no solo seguir una secuencia lineal.
       </p>
 
       <div class="card" style="margin-bottom:1em;">
         <strong>Escena activa ahora mismo:</strong>
         <span class="mono" id="guion-escena-actual" style="color:var(--amber);">—</span>
-        <div style="display:flex; gap:.6em; margin-top:.6em;">
-          <button id="btn-forzar-siguiente-escena">Forzar siguiente escena →</button>
-          <button id="btn-reiniciar-guion" class="danger">Volver a la escena 1</button>
+        <div style="display:flex; gap:.6em; margin-top:.6em; flex-wrap:wrap; align-items:center;">
+          <select id="salto-escena-select" style="max-width:260px;"></select>
+          <button id="btn-saltar-escena">Saltar a esa escena →</button>
+          <button id="btn-reiniciar-guion" class="danger">Volver a la primera escena</button>
         </div>
       </div>
 
       <div id="lista-escenas"></div>
       <button id="btn-nueva-escena" class="primary">+ Añadir escena</button>
+      <button id="btn-sugerir-guion" style="margin-left:.6em;">✨ Que la IA proponga un primer borrador</button>
     </section>
 
     <template id="tpl-escena-row">
       <div class="card escena-row" style="margin-bottom:.8em; padding:1em;">
+        <input type="hidden" class="es-id" />
         <div class="grid-2">
           <div class="field"><label>Nombre de la escena (para ti)</label><input class="es-nombre" placeholder="1. Llegada a la cripta" /></div>
           <div class="field">
-            <label>Avanza a la siguiente escena cuando...</label>
-            <select class="es-trigger-tipo">
-              <option value="manual">Solo cuando tú lo fuerces</option>
-              <option value="marcador">Se escanee el marcador con índice...</option>
-              <option value="objeto">Se recoja el objeto llamado...</option>
-              <option value="objeto_usado">Se use el objeto llamado...</option>
-              <option value="habilidad_usada">Se use la habilidad llamada...</option>
-              <option value="enemigo_derrotado">Un enemigo llamado... llegue a 0 de vida</option>
-              <option value="combate_terminado">Termine el combate en curso</option>
-            </select>
+            <label>Música ambiente de esta escena (opcional)</label>
+            <div style="display:flex; gap:.4em;">
+              <input class="es-musica-url" placeholder="URL, o sube un archivo →" style="flex:1;" />
+              <input type="file" class="es-musica-file" accept="audio/*" style="display:none;" />
+              <button type="button" class="btn-subir-musica-escena" style="font-size:.75rem;">Subir</button>
+            </div>
           </div>
-        </div>
-        <div class="field es-trigger-valor-campo" style="display:none;">
-          <label class="es-trigger-valor-label">Valor</label>
-          <input class="es-trigger-valor" placeholder="" />
         </div>
         <div class="field">
           <label>Narración automática al entrar en esta escena (texto + voz)</label>
           <textarea class="es-narracion" rows="3"></textarea>
         </div>
-        <button class="btn-quitar-escena danger" style="font-size:.75rem;">Quitar escena</button>
+
+        <h4 style="margin:1em 0 .4em; color:var(--parchment-dim); font-size:.85rem;">Salidas de esta escena</h4>
+        <p class="es-sin-salidas" style="color:var(--parchment-dim); font-size:.8rem;">
+          Sin salidas: esta escena solo avanza si la saltas a mano arriba.
+        </p>
+        <div class="es-salidas"></div>
+        <button type="button" class="btn-nueva-salida" style="font-size:.75rem;">+ Añadir salida</button>
+
+        <div style="margin-top:1em;">
+          <button class="btn-quitar-escena danger" style="font-size:.75rem;">Quitar escena</button>
+        </div>
       </div>
     </template>
+
+    <template id="tpl-salida-row">
+      <div class="card salida-row" style="margin-bottom:.6em; padding:.8em; background:rgba(0,0,0,0.15);">
+        <div class="grid-2">
+          <div class="field">
+            <label>Salta a la siguiente escena cuando...</label>
+            <select class="sal-trigger-tipo">
+              <option value="marcador">Se escanee el marcador con índice...</option>
+              <option value="objeto">Se recoja el objeto...</option>
+              <option value="objeto_usado">Se use el objeto...</option>
+              <option value="habilidad_usada">Se use la habilidad...</option>
+              <option value="enemigo_derrotado">Un enemigo... llegue a 0 de vida</option>
+              <option value="combate_terminado">Termine el combate en curso</option>
+            </select>
+          </div>
+          <div class="field sal-trigger-valor-campo">
+            <label class="sal-trigger-valor-label">Valor</label>
+            <input class="sal-trigger-valor" placeholder="" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Va a la escena...</label>
+          <select class="sal-destino"></select>
+        </div>
+        <button type="button" class="btn-quitar-salida danger" style="font-size:.7rem;">Quitar salida</button>
+      </div>
+    </template>
+
+
 
     <!-- ---------- Combate por turnos ---------- -->
     <section id="section-combate" class="section-panel">
@@ -579,6 +694,16 @@
           <option value="inteligencia">Inteligencia</option>
           <option value="carisma">Carisma</option>
           <option value="vigor">Vigor</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Tipo de daño (si es un ataque)</label>
+        <select class="h-tipo-danio">
+          <option value="fisico">🗡️ Físico</option>
+          <option value="fuego">🔥 Fuego</option>
+          <option value="hielo">❄️ Hielo</option>
+          <option value="veneno">☠️ Veneno</option>
+          <option value="mental">🌀 Mental</option>
         </select>
       </div>
       <div class="field" style="justify-content:center;">

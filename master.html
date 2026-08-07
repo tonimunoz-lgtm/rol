@@ -176,9 +176,57 @@
       <div class="card lista-item-row" style="margin-bottom:.6em; padding:.8em;">
         <div class="field"><label>Título</label><input class="li-titulo" placeholder="Nombre / título" /></div>
         <div class="field"><label>Descripción</label><textarea class="li-texto" rows="3"></textarea></div>
-        <button class="btn-quitar-item danger" style="font-size:.75rem;">Quitar</button>
+
+        <div class="li-mecanica" style="display:none; margin-top:.6em; padding-top:.6em; border-top:1px solid rgba(255,255,255,0.08);">
+          <label style="display:flex; align-items:center; gap:.4em; cursor:pointer; font-size:.85rem;">
+            <input type="checkbox" class="li-requiere-prueba" />
+            Pide una tirada (se usará solo al generar/actualizar el guion)
+          </label>
+          <div class="li-mecanica-campos" style="display:none; margin-top:.5em;">
+            <div class="grid-3">
+              <div class="field">
+                <label>Atributo</label>
+                <select class="li-atributo-prueba">
+                  <option value="destreza">Destreza</option>
+                  <option value="fuerza">Fuerza</option>
+                  <option value="inteligencia">Inteligencia</option>
+                  <option value="vigor">Vigor</option>
+                  <option value="carisma">Carisma</option>
+                </select>
+              </div>
+              <div class="field"><label>Dificultad</label><input class="li-dificultad-prueba" type="number" min="1" value="12" /></div>
+              <div class="field">
+                <label>Tipo de daño</label>
+                <select class="li-tipo-danio-prueba">
+                  <option value="fisico">🗡️ Físico</option>
+                  <option value="fuego">🔥 Fuego</option>
+                  <option value="hielo">❄️ Hielo</option>
+                  <option value="veneno">☠️ Veneno</option>
+                  <option value="mental">🌀 Mental</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="field"><label>Dados de daño si falla — cantidad</label><input class="li-danio-dados-prueba" type="number" min="1" value="2" /></div>
+              <div class="field">
+                <label>Dados de daño si falla — caras</label>
+                <select class="li-danio-caras-prueba">
+                  <option value="4">d4</option>
+                  <option value="6" selected>d6</option>
+                  <option value="8">d8</option>
+                  <option value="10">d10</option>
+                  <option value="12">d12</option>
+                  <option value="20">d20</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-quitar-item danger" style="font-size:.75rem; margin-top:.6em;">Quitar</button>
       </div>
     </template>
+
 
     <!-- ---------- Personajes ---------- -->
     <section id="section-personajes" class="section-panel">

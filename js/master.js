@@ -1,10 +1,14 @@
 // js/master.js — Panel del Master
 import {
   auth, db,
-  signInWithEmailAndPassword, onAuthStateChanged,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
   collection, addDoc, serverTimestamp, getDocs,
 } from "./firebase-config.js";
+
+// URL de la función serverless que sube archivos (fotos compiladas, vídeos,
+// imágenes de marcadores) a Vercel Blob.
+const SUBIR_MARCADOR_URL = "/api/subir-marcador";
 
 // URL de la función serverless de Vercel que genera la partida con IA.
 // Al ser una ruta relativa dentro del mismo dominio, no hay problemas de CORS.
@@ -13,7 +17,21 @@ const GENERAR_PARTIDA_URL = "/api/generar-partida";
 const $ = (id) => document.getElementById(id);
 let currentPartidaId = localStorage.getItem("runica_master_partidaId") || null;
 
-// ---------- Login ----------
+// ---------- Login / Registro ----------
+let modoRegistro = false;
+
+$("toggle-registro-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  modoRegistro = !modoRegistro;
+  $("login-error").textContent = "";
+  $("login-titulo").textContent = modoRegistro ? "Crear cuenta de Master" : "Acceso del Master";
+  $("login-btn").style.display = modoRegistro ? "none" : "block";
+  $("registro-btn").style.display = modoRegistro ? "block" : "none";
+  $("toggle-registro-link").textContent = modoRegistro
+    ? "¿Ya tienes cuenta? Inicia sesión"
+    : "¿No tienes cuenta todavía? Crea una";
+});
+
 $("login-btn").addEventListener("click", async () => {
   const email = $("login-email").value.trim();
   const pass = $("login-pass").value;
@@ -21,6 +39,24 @@ $("login-btn").addEventListener("click", async () => {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch (err) {
     $("login-error").textContent = "Credenciales incorrectas.";
+  }
+});
+
+$("registro-btn").addEventListener("click", async () => {
+  const email = $("login-email").value.trim();
+  const pass = $("login-pass").value;
+  if (!email || pass.length < 6) {
+    $("login-error").textContent = "Introduce un email y una contraseña de al menos 6 caracteres.";
+    return;
+  }
+  try {
+    await createUserWithEmailAndPassword(auth, email, pass);
+    // onAuthStateChanged se encarga de mostrar el panel una vez creada la cuenta.
+  } catch (err) {
+    $("login-error").textContent =
+      err.code === "auth/email-already-in-use"
+        ? "Ya existe una cuenta con ese email. Inicia sesión en vez de crear una nueva."
+        : "No se pudo crear la cuenta: " + (err.message || "inténtalo de nuevo.");
   }
 });
 
@@ -32,9 +68,9 @@ onAuthStateChanged(auth, async (user) => {
     $("master-view").style.display = "none";
     return;
   }
-  // NOTA DE SEGURIDAD: esto solo oculta/muestra UI. El control real de que
-  // este usuario es "master" lo hacen las reglas de Firestore (ver README),
-  // comprobando un documento en /masters/{uid}.
+  // Cualquier cuenta registrada (no anónima) puede actuar de master. El
+  // control real de qué partidas puede editar cada quien lo hacen las reglas
+  // de Firestore, comparando su uid con el campo masterUid de cada partida.
   $("login-view").style.display = "none";
   $("master-view").style.display = "grid";
 
@@ -323,13 +359,127 @@ function escucharLogEventos(codigo) {
   });
 }
 
-// ---------- Ruta del targets.mind (archivo estático servido por Vercel) ----------
+// ---------- Subida genérica de archivos a Vercel Blob ----------
+function archivoABase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function subirArchivo(file, tipo) {
+  if (!currentPartidaId) throw new Error("Primero crea o carga una partida.");
+  const dataBase64 = await archivoABase64(file);
+  const idToken = await auth.currentUser.getIdToken();
+  const resp = await fetch(SUBIR_MARCADOR_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ partidaId: currentPartidaId, tipo, filename: file.name, dataBase64 }),
+  });
+  if (!resp.ok) {
+    let detalle = "";
+    try {
+      detalle = (await resp.json()).error || "";
+    } catch (_) {}
+    throw new Error(detalle || `Error ${resp.status} subiendo el archivo.`);
+  }
+  const data = await resp.json();
+  return data.url;
+}
+
+function archivoAImagen(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`No se pudo leer la imagen "${file.name}".`));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// ---------- Compilar fotos → targets.mind, todo dentro del navegador ----------
+// Usa el propio motor de MindAR (el mismo que compila el compilador oficial
+// de https://hiukim.github.io/mind-ar-js-doc/tools/compile), cargado como
+// script en master.html. No hace falta salir de la app ni tocar GitHub.
+$("btn-compilar-marcadores").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const input = $("marcadores-fotos-input");
+  const files = Array.from(input.files || []);
+  if (!files.length) return alert("Selecciona al menos una foto.");
+
+  const status = $("targets-status");
+  const boton = $("btn-compilar-marcadores");
+  const CompilerClass = window.MINDAR?.IMAGE?.Compiler || window.MINDAR?.Compiler;
+  if (!CompilerClass) {
+    status.textContent = "No se pudo cargar el motor de compilación. Recarga la página e inténtalo de nuevo.";
+    return;
+  }
+
+  boton.disabled = true;
+  try {
+    status.textContent = "Leyendo fotos...";
+    const imagenes = await Promise.all(files.map(archivoAImagen));
+
+    const compiler = new CompilerClass();
+    await compiler.compileImageTargets(imagenes, (progreso) => {
+      status.textContent = `Compilando marcadores... ${progreso.toFixed(0)}%`;
+    });
+
+    status.textContent = "Subiendo targets.mind...";
+    const buffer = await compiler.exportData();
+    const archivoMind = new File([buffer], "targets.mind");
+    const url = await subirArchivo(archivoMind, "targets");
+
+    await updateDoc(doc(db, "partidas", currentPartidaId), { marcadoresTargetUrl: url });
+    $("targets-path").value = url;
+    status.textContent =
+      `Listo: ${files.length} marcador(es) compilado(s) y subido(s). Recuerda el orden — la foto ` +
+      `1ª que subiste es el índice 0, la 2ª es el índice 1, y así sucesivamente.`;
+  } catch (err) {
+    console.error(err);
+    status.textContent = `Error: ${err.message}`;
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+// ---------- Ruta manual del targets.mind (opción avanzada) ----------
 $("btn-guardar-targets-path").addEventListener("click", async () => {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
   const ruta = $("targets-path").value.trim();
   if (!ruta) return;
   await updateDoc(doc(db, "partidas", currentPartidaId), { marcadoresTargetUrl: ruta });
   $("targets-status").textContent = "Ruta guardada correctamente.";
+});
+
+// ---------- Subida de vídeo/imagen de un marcador concreto ----------
+$("btn-subir-video").addEventListener("click", async () => {
+  const file = $("m-archivo-video-file").files?.[0];
+  if (!file) return alert("Selecciona primero un archivo de vídeo.");
+  try {
+    $("btn-subir-video").disabled = true;
+    const url = await subirArchivo(file, "video");
+    $("m-archivo-video").value = url;
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    $("btn-subir-video").disabled = false;
+  }
+});
+
+$("btn-subir-imagen").addEventListener("click", async () => {
+  const file = $("m-archivo-imagen-file").files?.[0];
+  if (!file) return alert("Selecciona primero un archivo de imagen.");
+  try {
+    $("btn-subir-imagen").disabled = true;
+    const url = await subirArchivo(file, "imagen");
+    $("m-archivo-imagen").value = url;
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    $("btn-subir-imagen").disabled = false;
+  }
 });
 
 // ---------- Marcadores AR: asociación de índice → contenido ----------

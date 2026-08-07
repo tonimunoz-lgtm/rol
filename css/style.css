@@ -586,6 +586,8 @@ h1.display::after, h2.display::after {
   .nav-short { display: inline; }
   #opciones-partida-avanzado { margin-top: .8em; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  #master-content { max-height: none; overflow-y: visible; }
+  #master-view { min-height: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

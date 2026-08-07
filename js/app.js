@@ -336,7 +336,15 @@ async function mostrarSeleccionPersonaje(overlay, code, nombreJugador) {
 }
 
 // ---------- 3. Arrancar la partida: ficha, marcadores AR, eventos en vivo ----------
+let juegoYaIniciado = false;
 async function bootGame() {
+  // Si algo llega a llamar a bootGame() más de una vez en la misma sesión
+  // (p.ej. unirse con código y que justo después se refresque el estado de
+  // auth), sin esta protección se registrarían los mismos "escuchadores"
+  // por duplicado, y cada narración/mensaje aparecería repetido.
+  if (juegoYaIniciado) return;
+  juegoYaIniciado = true;
+
   const jugadorRef = doc(db, "partidas", currentPartidaId, "jugadores", currentJugadorId);
   jugadorRefActual = jugadorRef;
 

@@ -63,7 +63,7 @@ async function handler(req, res) {
     if (!elevenResp.ok) {
       const errorBody = await elevenResp.text();
       console.error("Error de ElevenLabs:", elevenResp.status, errorBody);
-      res.status(500).json({ error: `ElevenLabs respondió ${elevenResp.status}` });
+      res.status(500).json({ error: `ElevenLabs respondió ${elevenResp.status}: ${errorBody.slice(0, 300)}` });
       return;
     }
 

@@ -195,6 +195,8 @@
           <label>Ambientación general del mapa (opcional, solo para ti)</label>
           <textarea id="mapa-descripcion" rows="2"></textarea>
         </div>
+        <button id="btn-generar-fondo-mapa" type="button">✨ Generar fondo del mapa con IA</button>
+        <p id="mapa-fondo-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
 
         <div id="mapa-preview" class="mapa-viewport" style="height:40vh; margin-bottom:1em;"></div>
 
@@ -255,6 +257,15 @@
       <div class="card lista-item-row" style="margin-bottom:.6em; padding:.8em;">
         <div class="field"><label>Título</label><input class="li-titulo" placeholder="Nombre / título" /></div>
         <div class="field"><label>Descripción</label><textarea class="li-texto" rows="3"></textarea></div>
+
+        <div class="li-retrato-bloque" style="display:none; align-items:flex-start; gap:1em; margin:.6em 0;">
+          <div class="li-retrato-preview" style="width:60px; height:80px; flex-shrink:0; border:1px solid #3a3226; border-radius:var(--radius); overflow:hidden; background:var(--ink);"></div>
+          <div>
+            <button type="button" class="btn-generar-retrato-pnj" style="font-size:.75rem;">✨ Generar retrato con IA</button>
+            <input type="hidden" class="li-retrato-url" />
+            <p class="li-retrato-status" style="color:var(--parchment-dim); font-size:.75rem;"></p>
+          </div>
+        </div>
 
         <div class="li-mecanica" style="display:none; margin-top:.6em; padding-top:.6em; border-top:1px solid rgba(255,255,255,0.08);">
           <label style="display:flex; align-items:center; gap:.4em; cursor:pointer; font-size:.85rem;">
@@ -346,6 +357,15 @@
         <div class="field">
           <label>Descripción / trasfondo</label>
           <textarea id="p-descripcion" rows="2"></textarea>
+        </div>
+
+        <div style="display:flex; gap:1em; align-items:flex-start; margin-bottom:1em;">
+          <div id="p-retrato-preview" style="width:90px; height:120px; flex-shrink:0; border:1px solid #3a3226; border-radius:var(--radius); overflow:hidden; background:var(--ink);"></div>
+          <div>
+            <button id="btn-generar-retrato-personaje" type="button">✨ Generar retrato con IA</button>
+            <input type="hidden" id="p-retrato-url" />
+            <p id="p-retrato-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
+          </div>
         </div>
 
         <h4 style="margin-bottom:.3em;">Atributos</h4>
@@ -684,6 +704,12 @@
         <button type="button" class="btn-enriquecer-narracion" style="font-size:.75rem;">
           ✨ Enriquecer con IA (ambiente, clima, luz, sonido)
         </button>
+        <button type="button" class="btn-generar-fondo-escena" style="font-size:.75rem;">
+          🖼️ Generar fondo de esta escena con IA
+        </button>
+        <input type="hidden" class="es-fondo-url" />
+        <div class="es-fondo-preview" style="display:none; width:120px; height:72px; margin-top:.5em; border:1px solid #3a3226; border-radius:var(--radius); overflow:hidden; background:var(--ink);"></div>
+        <p class="es-fondo-status" style="color:var(--parchment-dim); font-size:.78rem;"></p>
 
         <div class="field" style="margin-top:.8em;">
           <label>Objetivo de esta escena (qué deben lograr los jugadores — no se toca al enriquecer)</label>

@@ -91,8 +91,13 @@ ${texto.trim()}
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 350,
+        max_tokens: 900,
         temperature: 0.8,
+        // openai/gpt-oss-120b es un modelo "razonador": sin esto, puede
+        // gastarse el presupuesto de tokens pensando y dejar el texto final
+        // vacío. "low" reduce ese gasto interno para una tarea tan simple
+        // como reescribir un párrafo.
+        reasoning_effort: "low",
       }),
     });
 

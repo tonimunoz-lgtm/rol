@@ -653,17 +653,29 @@ const ETIQUETAS_ATRIBUTO_PRUEBA = {
 const ETIQUETAS_TIPO_DANIO = {
   fisico: "físico", fuego: "de fuego", hielo: "de hielo", veneno: "de veneno", mental: "mental",
 };
-let escenaAccionesActual = null; // la escena cuyas acciones están mostradas ahora mismo en el modal
-let escenaAccionesMostradaId = null; // evita reabrir el modal varias veces para la misma escena
+let escenaAccionesActual = null; // la escena con acciones pendientes (si hay alguna)
 
+// Ya NO se abre el modal solo al cambiar de escena (tapaba la narración y
+// el chat). Solo actualizamos el aviso del botón de dado; el jugador decide
+// cuándo abrirlo, con calma, después de leer y hablar con el grupo.
 function intentarMostrarPruebaEscenaActual() {
   const escena = encontrarEscena(guionActual, escenaActualLocalId);
-  if (!escena || !jugadorDataActual) return;
-  if (!escena.acciones || escena.acciones.length === 0) return;
-  if (escenaAccionesMostradaId === escena.id) return;
+  escenaAccionesActual = escena?.acciones?.length > 0 ? escena : null;
+  actualizarAvisoDado();
+}
 
-  escenaAccionesMostradaId = escena.id;
-  escenaAccionesActual = escena;
+function accionPendiente(accion) {
+  return !jugadorDataActual?.accionesCompletadas?.[accion.id]?.superada;
+}
+
+function actualizarAvisoDado() {
+  const hayPendientes = !!escenaAccionesActual?.acciones?.some(accionPendiente);
+  els.btnDice.classList.toggle("con-aviso", hayPendientes);
+}
+
+function abrirModalAcciones() {
+  const escena = escenaAccionesActual;
+  if (!escena) return;
   els.accionesTitulo.textContent = escena.nombre || "Acciones";
   if (escena.pnj) {
     els.accionesPnj.textContent = `🗣️ ${escena.pnj} está aquí.`;
@@ -679,23 +691,37 @@ function renderAccionesModal() {
   const escena = escenaAccionesActual;
   if (!escena) return;
   const completadas = jugadorDataActual?.accionesCompletadas || {};
+  const intentos = jugadorDataActual?.intentosAccion || {};
 
   els.accionesLista.innerHTML = escena.acciones
     .map((a) => {
       const hecha = completadas[a.id];
+      const fallosPrevios = intentos[a.id] || 0;
+      const dificultadEfectiva = a.dificultad + fallosPrevios;
       const descripcion =
         a.tipo === "prueba"
-          ? `Tirada de ${ETIQUETAS_ATRIBUTO_PRUEBA[a.atributo] || a.atributo} (dificultad ${a.dificultad}). Si fallas, ${a.danioDados}d${a.danioCaras} de daño ${ETIQUETAS_TIPO_DANIO[a.tipoDanio] || ""}.`
+          ? `Tirada de ${ETIQUETAS_ATRIBUTO_PRUEBA[a.atributo] || a.atributo} (dificultad ${dificultadEfectiva}${
+              fallosPrevios > 0 ? `, +${fallosPrevios} por intento${fallosPrevios > 1 ? "s" : ""} fallido${fallosPrevios > 1 ? "s" : ""}` : ""
+            }). Si fallas, ${a.danioDados}d${a.danioCaras} de daño ${ETIQUETAS_TIPO_DANIO[a.tipoDanio] || ""}.`
           : "Interacción.";
+      const etiquetaBoton = hecha
+        ? "✅ Hecho"
+        : a.tipo === "prueba"
+        ? fallosPrevios > 0
+          ? "🎲 Reintentar"
+          : "🎲 Tirar"
+        : "🗣️ Hacer";
       return `
         <div class="habilidad-card" style="margin-bottom:.6em;">
           <div class="h-info">
             <div class="h-nombre">${a.etiqueta}</div>
-            ${!hecha ? `<p class="h-desc">${descripcion}</p>` : `<p class="h-desc mono" style="color:var(--amber);">${hecha.texto || ""}</p>`}
+            <p class="h-desc">${descripcion}</p>
+            ${fallosPrevios > 0 && !hecha ? `<p class="h-desc mono" style="color:var(--rust);">Último intento: fallo.</p>` : ""}
+            ${hecha ? `<p class="h-desc mono" style="color:var(--amber);">${hecha.texto || ""}</p>` : ""}
           </div>
           <div style="text-align:right;">
             <button class="btn-hacer-accion" data-id="${a.id}" ${hecha ? "disabled" : ""} style="margin-top:.4em; font-size:.75rem;">
-              ${hecha ? (hecha.superada ? "✅ Hecho" : "❌ Fallado") : a.tipo === "prueba" ? "🎲 Tirar" : "🗣️ Hacer"}
+              ${etiquetaBoton}
             </button>
           </div>
         </div>`;
@@ -716,21 +742,23 @@ async function ejecutarAccionEscena(accionId) {
   }
   const accion = escena.acciones.find((a) => a.id === accionId);
   if (!accion) return;
-  const yaCompletadas = jugadorDataActual.accionesCompletadas || {};
-  if (yaCompletadas[accionId]) return; // ya hecha, no se repite
+  if (jugadorDataActual.accionesCompletadas?.[accionId]?.superada) return; // ya superada, no se repite
 
   if (accion.tipo === "prueba") {
-    await ejecutarAccionPrueba(escena, accion, yaCompletadas);
+    await ejecutarAccionPrueba(escena, accion);
   } else {
-    await ejecutarAccionPnj(escena, accion, yaCompletadas);
+    await ejecutarAccionPnj(escena, accion);
   }
 }
 
-async function ejecutarAccionPrueba(escena, accion, yaCompletadas) {
+async function ejecutarAccionPrueba(escena, accion) {
   const nombrePersonaje = jugadorDataActual.nombrePersonaje || jugadorDataActual.nombre;
+  const fallosPrevios = jugadorDataActual.intentosAccion?.[accion.id] || 0;
+  const dificultadEfectiva = accion.dificultad + fallosPrevios;
+
   const modificador = modificadorDeAtributo(accion.atributo, jugadorDataActual.atributos);
   const tirada = tirarDado(20) + modificador;
-  const supera = tirada >= accion.dificultad;
+  const supera = tirada >= dificultadEfectiva;
 
   let danioFinal = 0;
   let nuevaVida = jugadorDataActual.vida;
@@ -748,12 +776,18 @@ async function ejecutarAccionPrueba(escena, accion, yaCompletadas) {
       ? `${nombrePersonaje} tira ${ETIQUETAS_ATRIBUTO_PRUEBA[accion.atributo] || accion.atributo} → ${tirada}. ¡Lo consigue!`
       : `${nombrePersonaje} tira ${ETIQUETAS_ATRIBUTO_PRUEBA[accion.atributo] || accion.atributo} → ${tirada}. Falla y pierde ${danioFinal} de vida.`);
 
-  await updateDoc(jugadorRefActual, {
-    vida: nuevaVida,
-    [`accionesCompletadas.${accion.id}`]: { superada: supera, texto: textoResultado },
-  });
+  // Solo se marca como "completada" (y se bloquea el botón) si la supera.
+  // Si falla, puede reintentarlo cuantas veces quiera, pero cada fallo sube
+  // la dificultad +1 la próxima vez — el riesgo de insistir es acumulativo.
+  const cambios = { vida: nuevaVida };
+  if (supera) {
+    cambios[`accionesCompletadas.${accion.id}`] = { superada: true, texto: textoResultado };
+  } else {
+    cambios[`intentosAccion.${accion.id}`] = fallosPrevios + 1;
+  }
+  await updateDoc(jugadorRefActual, cambios);
 
-  const textoDifundido = `🎲 ${nombrePersonaje} — "${accion.etiqueta}" → ${tirada} (dificultad ${accion.dificultad}). ${textoResultado}`;
+  const textoDifundido = `🎲 ${nombrePersonaje} — "${accion.etiqueta}" → ${tirada} (dificultad ${dificultadEfectiva}). ${textoResultado}`;
   mostrarToast(textoDifundido);
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
@@ -775,7 +809,7 @@ async function ejecutarAccionPrueba(escena, accion, yaCompletadas) {
   verificarAvanceGuion({ tipo: supera ? "accion_superada" : "accion_fallada", valor: accion.id });
 }
 
-async function ejecutarAccionPnj(escena, accion, yaCompletadas) {
+async function ejecutarAccionPnj(escena, accion) {
   const nombrePersonaje = jugadorDataActual.nombrePersonaje || jugadorDataActual.nombre;
   let textoResultado = accion.textoPnj?.trim() || `${escena.pnj || "El PNJ"} responde.`;
   const cambiosJugador = {
@@ -793,16 +827,20 @@ async function ejecutarAccionPnj(escena, accion, yaCompletadas) {
     const idx = inventario.findIndex((o) => o.nombre === accion.objetoNombre);
     if (idx >= 0) {
       inventario[idx] = { ...inventario[idx], cantidad: (inventario[idx].cantidad || 1) + (accion.objetoCantidad || 1) };
-    } else {
+      cambiosJugador.inventario = inventario;
+      textoResultado += ` (Recibes: ${accion.objetoNombre}.)`;
+    } else if (inventario.length < LIMITE_INVENTARIO) {
       inventario.push({
         nombre: accion.objetoNombre,
         cantidad: accion.objetoCantidad || 1,
         descripcion: accion.objetoDescripcion || "",
         efecto: { tipo: "ninguno", valor: 0 },
       });
+      cambiosJugador.inventario = inventario;
+      textoResultado += ` (Recibes: ${accion.objetoNombre}.)`;
+    } else {
+      textoResultado += ` (Te ofrece ${accion.objetoNombre}, pero no te cabe en la mochila.)`;
     }
-    cambiosJugador.inventario = inventario;
-    textoResultado += ` (Recibes: ${accion.objetoNombre}.)`;
   } else if (accion.efectoPnj === "avisar_trampa") {
     const yaActivadas = jugadorDataActual.trampasActivadas || [];
     const pendientes = marcadoresGuardados.filter((m) => m.tipo === "trampa" && !yaActivadas.includes(m.id));
@@ -1056,9 +1094,18 @@ function hablar(texto) {
 
 els.btnSpeak.addEventListener("click", () => hablar(els.narrationText.textContent));
 
-// ---------- 4b. Ficha de personaje: atributos y habilidades ----------
-els.btnFicha.addEventListener("click", () => els.fichaModal.classList.add("visible"));
+// ---------- 4b. Ficha de personaje: atributos, habilidades e inventario ----------
+function abrirFicha() {
+  els.fichaModal.classList.add("visible");
+}
+els.btnFicha.addEventListener("click", abrirFicha);
+els.invPill.addEventListener("click", abrirFicha);
 els.btnCerrarFicha.addEventListener("click", () => els.fichaModal.classList.remove("visible"));
+
+// Límite de mochila: una persona normal no puede cargar con infinitas
+// cosas. Cuenta como "un hueco" cada objeto distinto (no cada unidad: si ya
+// tienes pociones, coger más pociones no ocupa hueco nuevo).
+const LIMITE_INVENTARIO = 6;
 
 const NOMBRES_ATRIBUTOS = {
   fuerza: "FUE", destreza: "DES", vigor: "VIG", inteligencia: "INT", carisma: "CAR",
@@ -1121,8 +1168,13 @@ function renderInventario(data) {
   const inventario = data.inventario || [];
   els.fichaInventario.innerHTML = "";
 
+  const aviso = document.createElement("p");
+  aviso.style.cssText = "color:var(--parchment-dim); font-size:.8rem; margin:-0.4em 0 .6em;";
+  aviso.textContent = `Mochila: ${inventario.length}/${LIMITE_INVENTARIO} huecos.`;
+  els.fichaInventario.appendChild(aviso);
+
   if (inventario.length === 0) {
-    els.fichaInventario.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Mochila vacía.</p>`;
+    els.fichaInventario.innerHTML += `<p style="color:var(--parchment-dim); font-size:.85rem;">Mochila vacía.</p>`;
     return;
   }
 
@@ -1137,6 +1189,7 @@ function renderInventario(data) {
       <div style="text-align:right;">
         <div class="h-usos mono">x${obj.cantidad}</div>
         <button class="btn-usar-objeto" data-idx="${idx}" style="margin-top:.4em; font-size:.75rem;">Usar</button>
+        <button class="btn-tirar-objeto danger" data-idx="${idx}" style="margin-top:.3em; font-size:.7rem;">🗑️ Tirar</button>
       </div>
     `;
     els.fichaInventario.appendChild(card);
@@ -1145,6 +1198,20 @@ function renderInventario(data) {
   els.fichaInventario.querySelectorAll(".btn-usar-objeto").forEach((btn) => {
     btn.addEventListener("click", () => usarObjeto(Number(btn.dataset.idx), data));
   });
+  els.fichaInventario.querySelectorAll(".btn-tirar-objeto").forEach((btn) => {
+    btn.addEventListener("click", () => soltarObjeto(Number(btn.dataset.idx), data));
+  });
+}
+
+// Tirar un objeto al suelo: lo quita de la mochila para siempre (no se
+// puede recuperar), típicamente para hacer sitio a otra cosa.
+async function soltarObjeto(idx, data) {
+  const inventario = [...(data.inventario || [])];
+  const objeto = inventario[idx];
+  if (!objeto) return;
+  if (!confirm(`¿Tirar "${objeto.nombre}"? No podrás recuperarlo.`)) return;
+  inventario.splice(idx, 1);
+  await updateDoc(jugadorRefActual, { inventario });
 }
 
 async function usarObjeto(idx, data) {
@@ -1373,6 +1440,10 @@ async function resolverDeteccionTrampas(nombrePersonaje, tiradaDeteccion) {
 
 // ---------- 5. Dados ----------
 els.btnDice.addEventListener("click", async () => {
+  if (escenaAccionesActual?.acciones?.some(accionPendiente)) {
+    abrirModalAcciones();
+    return;
+  }
   const resultado = 1 + Math.floor(Math.random() * 20); // d20 por defecto
   ultimoDadoResultado = resultado;
   els.btnDice.textContent = `🎲 ${resultado}`;
@@ -1382,7 +1453,7 @@ els.btnDice.addEventListener("click", async () => {
     resultado,
     timestamp: serverTimestamp(),
   });
-  setTimeout(() => (els.btnDice.textContent = "🎲 Tirar dado"), 2500);
+  setTimeout(() => (els.btnDice.textContent = "🎲 Dado"), 2500);
 });
 
 els.btnLogout.addEventListener("click", () => {
@@ -1755,6 +1826,13 @@ async function recogerObjeto(marcador) {
 
   const inventario = [...(jugadorDataActual.inventario || [])];
   const existente = inventario.findIndex((o) => o.nombre === marcador.objeto.nombre);
+  if (existente < 0 && inventario.length >= LIMITE_INVENTARIO) {
+    mostrarNarracion(
+      `🎒 Ves "${marcador.objeto.nombre}", pero no te cabe en la mochila. Tira algo primero (Ficha → mochila) y vuelve a escanear.`
+    );
+    return;
+  }
+
   if (existente >= 0) {
     inventario[existente] = {
       ...inventario[existente],

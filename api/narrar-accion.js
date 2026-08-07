@@ -78,8 +78,11 @@ async function handler(req, res) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 60,
+        max_tokens: 300,
         temperature: 0.9,
+        // Igual que en enriquecer-narracion.js: sin esto, el modelo puede
+        // gastar el presupuesto de tokens "pensando" y devolver texto vacío.
+        reasoning_effort: "low",
       }),
     });
 

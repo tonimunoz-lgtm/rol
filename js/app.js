@@ -57,16 +57,16 @@ const els = {
   habilidadAtaqueObjetivo: document.getElementById("habilidad-ataque-objetivo"),
   btnConfirmarAtaque: document.getElementById("btn-confirmar-ataque"),
   btnCancelarAtaque: document.getElementById("btn-cancelar-ataque"),
-  pruebaModal: document.getElementById("prueba-modal"),
-  pruebaTitulo: document.getElementById("prueba-titulo"),
-  pruebaCondiciones: document.getElementById("prueba-condiciones"),
-  btnTirarPrueba: document.getElementById("btn-tirar-prueba"),
-  pruebaResultado: document.getElementById("prueba-resultado"),
-  btnCerrarPrueba: document.getElementById("btn-cerrar-prueba"),
+  pruebaModal: document.getElementById("acciones-modal"),
+  accionesTitulo: document.getElementById("acciones-titulo"),
+  accionesPnj: document.getElementById("acciones-pnj"),
+  accionesLista: document.getElementById("acciones-lista"),
+  btnCerrarPrueba: document.getElementById("btn-cerrar-acciones"),
   btnBitacora: document.getElementById("btn-bitacora"),
   bitacoraModal: document.getElementById("bitacora-modal"),
   btnCerrarBitacora: document.getElementById("btn-cerrar-bitacora"),
   bitacoraPnjs: document.getElementById("bitacora-pnjs"),
+  bitacoraObjetivo: document.getElementById("bitacora-objetivo"),
   bitacoraPistas: document.getElementById("bitacora-pistas"),
   btnPedirPista: document.getElementById("btn-pedir-pista"),
   bitacoraPistasAgotadas: document.getElementById("bitacora-pistas-agotadas"),
@@ -338,6 +338,7 @@ async function bootGame() {
     els.invPill.textContent = `🎒 ${(data.inventario || []).length}`;
     renderFicha(data);
     intentarMostrarPruebaEscenaActual();
+    if (els.pruebaModal.classList.contains("visible")) renderAccionesModal();
   });
 
   // Estado general de la partida en tiempo real: narraciones puntuales ya se
@@ -351,7 +352,6 @@ async function bootGame() {
     musicaAmbienteBase = data.musicaAmbienteUrl || null;
     pnjsActual = data.pnjs || [];
     pistasActual = data.pistas || [];
-    if (els.bitacoraModal.classList.contains("visible")) renderBitacora();
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
     const combateActivoAhora = !!data.combate?.activo;
@@ -378,6 +378,7 @@ async function bootGame() {
       intentarMostrarPruebaEscenaActual();
     }
     actualizarMusicaAmbiente();
+    if (els.bitacoraModal.classList.contains("visible")) renderBitacora();
   });
 
   // Eventos en vivo lanzados por el master o por otros jugadores
@@ -406,16 +407,13 @@ async function bootGame() {
           mostrarToast(evento.texto);
           añadirMensajeChat({ tipo: "narracion", texto: evento.texto });
         }
-        // Resultado de una prueba de escena (p.ej. cruzar un puente): lo
-        // difundimos a todos, igual que las habilidades. Quien tiró ya lo
-        // vio en el propio modal, pero lo volvemos a mostrar en el chat
-        // para que quede constancia igual que para el resto.
+        // Resultado de una acción de escena (tirada o interacción con PNJ):
+        // lo difundimos a todos. Quien la hizo ya lo vio en el propio
+        // modal, pero lo volvemos a mostrar en el chat para que quede
+        // constancia igual que para el resto.
         if (evento.tipo === "prueba") {
-          const texto = `🎲 ${evento.nombreJugador || "Alguien"} tira en "${evento.escenaNombre}" → ${evento.tirada} (dificultad ${evento.dificultad}). ${
-            evento.supera ? "¡Supera la prueba!" : `Falla y pierde ${evento.danio} de vida.`
-          }`;
-          if (evento.jugadorId !== currentJugadorId) mostrarToast(texto);
-          añadirMensajeChat({ tipo: "narracion", texto });
+          if (evento.jugadorId !== currentJugadorId) mostrarToast(evento.texto);
+          añadirMensajeChat({ tipo: "narracion", texto: evento.texto });
         }
         // Frase de ambientación generada por IA (opcional, decorativa): la
         // pide una sola vez quien hizo la acción y se difunde como
@@ -482,32 +480,69 @@ async function verificarAvanceGuion(contexto) {
   if (!escena || !escena.salidas || escena.salidas.length === 0) return;
 
   const normaliza = (v) => String(v ?? "").trim().toLowerCase();
-  const salidaCumplida = escena.salidas.find((salida) => {
+  let todosSuperaronCache = null; // se calcula como mucho una vez por llamada
+
+  for (const salida of escena.salidas) {
     const t = salida.trigger || {};
+    let cumple = false;
     if (t.tipo === "marcador" && contexto.tipo === "marcador") {
-      return Number(t.valor) === Number(contexto.valor);
-    }
-    if (
+      cumple = Number(t.valor) === Number(contexto.valor);
+    } else if (
       ["objeto", "objeto_usado", "habilidad_usada", "enemigo_derrotado"].includes(t.tipo) &&
       t.tipo === contexto.tipo
     ) {
-      return normaliza(t.valor) === normaliza(contexto.valor);
+      cumple = normaliza(t.valor) === normaliza(contexto.valor);
+    } else if (t.tipo === "combate_terminado" && contexto.tipo === "combate_terminado") {
+      cumple = true;
+    } else if (t.tipo === "accion_superada" && contexto.tipo === "accion_superada" && normaliza(t.valor) === normaliza(contexto.valor)) {
+      cumple = true;
+    } else if (t.tipo === "accion_fallada" && contexto.tipo === "accion_fallada" && normaliza(t.valor) === normaliza(contexto.valor)) {
+      cumple = true;
+    } else if (
+      t.tipo === "todos_accion_superada" &&
+      contexto.tipo === "accion_superada" &&
+      normaliza(t.valor) === normaliza(contexto.valor)
+    ) {
+      if (todosSuperaronCache === null) todosSuperaronCache = await verificarTodosSuperaronAccion(contexto.valor);
+      cumple = todosSuperaronCache;
     }
-    if (t.tipo === "combate_terminado" && contexto.tipo === "combate_terminado") return true;
-    if (t.tipo === "prueba_superada" && contexto.tipo === "prueba_superada") return true;
-    if (t.tipo === "prueba_fallada" && contexto.tipo === "prueba_fallada") return true;
-    return false;
-  });
-  if (!salidaCumplida || !salidaCumplida.siguienteId) return;
+    if (cumple) {
+      await avanzarAEscena(escena, salida);
+      return;
+    }
+  }
+}
 
+// Para el trigger "TODOS superen la acción": comprueba que cada jugador
+// conectado a la partida tenga esa acción marcada como superada.
+async function verificarTodosSuperaronAccion(accionId) {
+  const snap = await getDocs(collection(db, "partidas", currentPartidaId, "jugadores"));
+  if (snap.empty) return false;
+  return snap.docs.every((d) => d.data()?.accionesCompletadas?.[accionId]?.superada === true);
+}
+
+async function avanzarAEscena(escenaActual, salida) {
+  if (!salida.siguienteId) return;
   try {
+    let avanzo = false;
     await runTransaction(db, async (tx) => {
       const ref = doc(db, "partidas", currentPartidaId);
       const snap = await tx.get(ref);
       const actualId = normalizarEscenaActual(snap.data()?.escenaActual, guionActual);
-      if (actualId !== escena.id) return; // otro jugador ya la avanzó, no dupliques
-      tx.update(ref, { escenaActual: salidaCumplida.siguienteId });
+      if (actualId !== escenaActual.id) return; // otro jugador ya la avanzó, no dupliques
+      tx.update(ref, { escenaActual: salida.siguienteId });
+      avanzo = true;
     });
+    // El texto de transición ("cruzas el puente y, unos metros más allá...")
+    // se narra a todos justo al avanzar, antes de que llegue la narración
+    // propia de la siguiente escena.
+    if (avanzo && salida.transicion) {
+      await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+        tipo: "narracion",
+        texto: salida.transicion,
+        timestamp: serverTimestamp(),
+      });
+    }
   } catch (e) {
     console.warn("No se pudo avanzar de escena:", e.message);
   }
@@ -611,96 +646,188 @@ function mostrarToast(texto, duracionMs = 4500) {
   toastTimeoutId = setTimeout(() => els.toastBox.classList.remove("visible"), duracionMs);
 }
 
-// ---------- Prueba de escena (tirada vinculada a la narración del guion) ----------
+// ---------- Acciones de escena (tiradas y/o interacción con PNJ) ----------
 const ETIQUETAS_ATRIBUTO_PRUEBA = {
   destreza: "Destreza", fuerza: "Fuerza", vigor: "Vigor", inteligencia: "Inteligencia", carisma: "Carisma",
 };
-let escenaPruebaActual = null; // la escena cuya prueba está mostrada ahora mismo en el modal
-let escenaPruebaMostradaId = null; // evita reabrir el modal varias veces para la misma escena
+const ETIQUETAS_TIPO_DANIO = {
+  fisico: "físico", fuego: "de fuego", hielo: "de hielo", veneno: "de veneno", mental: "mental",
+};
+let escenaAccionesActual = null; // la escena cuyas acciones están mostradas ahora mismo en el modal
+let escenaAccionesMostradaId = null; // evita reabrir el modal varias veces para la misma escena
 
 function intentarMostrarPruebaEscenaActual() {
   const escena = encontrarEscena(guionActual, escenaActualLocalId);
-  if (!escena?.prueba?.activa || !jugadorDataActual) return;
-  if (escenaPruebaMostradaId === escena.id) return;
-  const yaCompletadas = jugadorDataActual.pruebasCompletadas || [];
-  if (yaCompletadas.includes(escena.id)) return;
+  if (!escena || !jugadorDataActual) return;
+  if (!escena.acciones || escena.acciones.length === 0) return;
+  if (escenaAccionesMostradaId === escena.id) return;
 
-  escenaPruebaMostradaId = escena.id;
-  escenaPruebaActual = escena;
-  const p = escena.prueba;
-  els.pruebaTitulo.textContent = escena.nombre || "Prueba";
-  els.pruebaCondiciones.textContent =
-    `Tirada de ${ETIQUETAS_ATRIBUTO_PRUEBA[p.atributo] || p.atributo} (dificultad ${p.dificultad}). ` +
-    `Si fallas, ${p.danioDados}d${p.danioCaras} de daño ${{
-      fisico: "físico", fuego: "de fuego", hielo: "de hielo", veneno: "de veneno", mental: "mental",
-    }[p.tipoDanio] || ""}.`;
-  els.pruebaResultado.textContent = "";
-  els.btnTirarPrueba.disabled = false;
-  els.btnTirarPrueba.style.display = "inline-block";
+  escenaAccionesMostradaId = escena.id;
+  escenaAccionesActual = escena;
+  els.accionesTitulo.textContent = escena.nombre || "Acciones";
+  if (escena.pnj) {
+    els.accionesPnj.textContent = `🗣️ ${escena.pnj} está aquí.`;
+    els.accionesPnj.style.display = "block";
+  } else {
+    els.accionesPnj.style.display = "none";
+  }
+  renderAccionesModal();
   els.pruebaModal.classList.add("visible");
 }
 
-els.btnTirarPrueba.addEventListener("click", async () => {
-  const escena = escenaPruebaActual;
+function renderAccionesModal() {
+  const escena = escenaAccionesActual;
+  if (!escena) return;
+  const completadas = jugadorDataActual?.accionesCompletadas || {};
+
+  els.accionesLista.innerHTML = escena.acciones
+    .map((a) => {
+      const hecha = completadas[a.id];
+      const descripcion =
+        a.tipo === "prueba"
+          ? `Tirada de ${ETIQUETAS_ATRIBUTO_PRUEBA[a.atributo] || a.atributo} (dificultad ${a.dificultad}). Si fallas, ${a.danioDados}d${a.danioCaras} de daño ${ETIQUETAS_TIPO_DANIO[a.tipoDanio] || ""}.`
+          : "Interacción.";
+      return `
+        <div class="habilidad-card" style="margin-bottom:.6em;">
+          <div class="h-info">
+            <div class="h-nombre">${a.etiqueta}</div>
+            ${!hecha ? `<p class="h-desc">${descripcion}</p>` : `<p class="h-desc mono" style="color:var(--amber);">${hecha.texto || ""}</p>`}
+          </div>
+          <div style="text-align:right;">
+            <button class="btn-hacer-accion" data-id="${a.id}" ${hecha ? "disabled" : ""} style="margin-top:.4em; font-size:.75rem;">
+              ${hecha ? (hecha.superada ? "✅ Hecho" : "❌ Fallado") : a.tipo === "prueba" ? "🎲 Tirar" : "🗣️ Hacer"}
+            </button>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  els.accionesLista.querySelectorAll(".btn-hacer-accion").forEach((btn) => {
+    btn.addEventListener("click", () => ejecutarAccionEscena(btn.dataset.id));
+  });
+}
+
+async function ejecutarAccionEscena(accionId) {
+  const escena = escenaAccionesActual;
   if (!escena || !jugadorDataActual || !jugadorRefActual) return;
-  // Si la escena ya cambió mientras el jugador dudaba, no tiramos contra
-  // una prueba que ya no está activa.
   if (escena.id !== escenaActualLocalId) {
-    els.pruebaResultado.textContent = "Esta escena ya no está activa.";
-    els.btnTirarPrueba.style.display = "none";
+    alert("Esta escena ya no está activa.");
     return;
   }
+  const accion = escena.acciones.find((a) => a.id === accionId);
+  if (!accion) return;
+  const yaCompletadas = jugadorDataActual.accionesCompletadas || {};
+  if (yaCompletadas[accionId]) return; // ya hecha, no se repite
 
-  els.btnTirarPrueba.disabled = true;
-  const p = escena.prueba;
-  const modificador = modificadorDeAtributo(p.atributo, jugadorDataActual.atributos);
-  const tirada = tirarDado(20) + modificador;
-  const supera = tirada >= p.dificultad;
+  if (accion.tipo === "prueba") {
+    await ejecutarAccionPrueba(escena, accion, yaCompletadas);
+  } else {
+    await ejecutarAccionPnj(escena, accion, yaCompletadas);
+  }
+}
+
+async function ejecutarAccionPrueba(escena, accion, yaCompletadas) {
   const nombrePersonaje = jugadorDataActual.nombrePersonaje || jugadorDataActual.nombre;
+  const modificador = modificadorDeAtributo(accion.atributo, jugadorDataActual.atributos);
+  const tirada = tirarDado(20) + modificador;
+  const supera = tirada >= accion.dificultad;
 
   let danioFinal = 0;
   let nuevaVida = jugadorDataActual.vida;
   if (!supera) {
     let danioBruto = 0;
-    for (let i = 0; i < (p.danioDados || 1); i++) danioBruto += tirarDado(p.danioCaras || 6);
-    danioFinal = aplicarResistencia(danioBruto, p.tipoDanio, jugadorDataActual.resistencias);
+    for (let i = 0; i < (accion.danioDados || 1); i++) danioBruto += tirarDado(accion.danioCaras || 6);
+    danioFinal = aplicarResistencia(danioBruto, accion.tipoDanio, jugadorDataActual.resistencias);
     nuevaVida = Math.max(0, jugadorDataActual.vida - danioFinal);
   }
 
-  const yaCompletadas = jugadorDataActual.pruebasCompletadas || [];
+  const desenlace = (supera ? accion.textoExito : accion.textoFallo)?.trim();
+  const textoResultado =
+    desenlace ||
+    (supera
+      ? `${nombrePersonaje} tira ${ETIQUETAS_ATRIBUTO_PRUEBA[accion.atributo] || accion.atributo} → ${tirada}. ¡Lo consigue!`
+      : `${nombrePersonaje} tira ${ETIQUETAS_ATRIBUTO_PRUEBA[accion.atributo] || accion.atributo} → ${tirada}. Falla y pierde ${danioFinal} de vida.`);
+
   await updateDoc(jugadorRefActual, {
     vida: nuevaVida,
-    pruebasCompletadas: [...yaCompletadas, escena.id],
+    [`accionesCompletadas.${accion.id}`]: { superada: supera, texto: textoResultado },
   });
 
-  const texto = supera
-    ? `🎲 ${nombrePersonaje} tira ${ETIQUETAS_ATRIBUTO_PRUEBA[p.atributo] || p.atributo} → ${tirada}. ¡Supera la prueba!`
-    : `🎲 ${nombrePersonaje} tira ${ETIQUETAS_ATRIBUTO_PRUEBA[p.atributo] || p.atributo} → ${tirada}. Falla y pierde ${danioFinal} de vida.`;
-  els.pruebaResultado.textContent = texto;
-  els.btnTirarPrueba.style.display = "none";
-  mostrarToast(texto);
+  const textoDifundido = `🎲 ${nombrePersonaje} — "${accion.etiqueta}" → ${tirada} (dificultad ${accion.dificultad}). ${textoResultado}`;
+  mostrarToast(textoDifundido);
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "prueba",
     jugadorId: currentJugadorId,
     nombreJugador: jugadorDataActual.nombre,
-    escenaNombre: escena.nombre,
-    tirada,
-    dificultad: p.dificultad,
+    texto: textoDifundido,
     supera,
-    danio: danioFinal,
     timestamp: serverTimestamp(),
   });
 
   enriquecerConNarracionIA({
     tipo: "prueba",
     personaje: nombrePersonaje,
-    atributo: ETIQUETAS_ATRIBUTO_PRUEBA[p.atributo] || p.atributo,
-    resultado: supera ? "supera la prueba" : `falla y pierde ${danioFinal} de vida`,
+    atributo: ETIQUETAS_ATRIBUTO_PRUEBA[accion.atributo] || accion.atributo,
+    resultado: supera ? "lo consigue" : `falla y pierde ${danioFinal} de vida`,
   });
 
-  verificarAvanceGuion({ tipo: supera ? "prueba_superada" : "prueba_fallada" });
-});
+  verificarAvanceGuion({ tipo: supera ? "accion_superada" : "accion_fallada", valor: accion.id });
+}
+
+async function ejecutarAccionPnj(escena, accion, yaCompletadas) {
+  const nombrePersonaje = jugadorDataActual.nombrePersonaje || jugadorDataActual.nombre;
+  let textoResultado = accion.textoPnj?.trim() || `${escena.pnj || "El PNJ"} responde.`;
+  const cambiosJugador = {
+    [`accionesCompletadas.${accion.id}`]: { superada: true, texto: textoResultado },
+  };
+
+  if (accion.efectoPnj === "dar_pista") {
+    const actuales = jugadorDataActual.pistasDesbloqueadas || 0;
+    if (actuales < pistasActual.length) {
+      cambiosJugador.pistasDesbloqueadas = actuales + 1;
+      textoResultado += " (Nueva pista en tu Bitácora.)";
+    }
+  } else if (accion.efectoPnj === "dar_objeto" && accion.objetoNombre) {
+    const inventario = [...(jugadorDataActual.inventario || [])];
+    const idx = inventario.findIndex((o) => o.nombre === accion.objetoNombre);
+    if (idx >= 0) {
+      inventario[idx] = { ...inventario[idx], cantidad: (inventario[idx].cantidad || 1) + (accion.objetoCantidad || 1) };
+    } else {
+      inventario.push({
+        nombre: accion.objetoNombre,
+        cantidad: accion.objetoCantidad || 1,
+        descripcion: accion.objetoDescripcion || "",
+        efecto: { tipo: "ninguno", valor: 0 },
+      });
+    }
+    cambiosJugador.inventario = inventario;
+    textoResultado += ` (Recibes: ${accion.objetoNombre}.)`;
+  } else if (accion.efectoPnj === "avisar_trampa") {
+    const yaActivadas = jugadorDataActual.trampasActivadas || [];
+    const pendientes = marcadoresGuardados.filter((m) => m.tipo === "trampa" && !yaActivadas.includes(m.id));
+    textoResultado +=
+      pendientes.length > 0
+        ? ` (Te avisa de: ${pendientes.map((m) => `"${m.nombre || "una trampa"}"`).join(", ")}.)`
+        : " (No conoce ningún peligro más en esta sala.)";
+  }
+
+  await updateDoc(jugadorRefActual, cambiosJugador);
+
+  const textoDifundido = `🗣️ ${nombrePersonaje} — "${accion.etiqueta}": ${textoResultado}`;
+  mostrarToast(textoDifundido);
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "prueba",
+    jugadorId: currentJugadorId,
+    nombreJugador: jugadorDataActual.nombre,
+    texto: textoDifundido,
+    supera: true,
+    timestamp: serverTimestamp(),
+  });
+
+  verificarAvanceGuion({ tipo: "accion_superada", valor: accion.id });
+}
 
 els.btnCerrarPrueba.addEventListener("click", () => {
   els.pruebaModal.classList.remove("visible");
@@ -730,6 +857,21 @@ function renderBitacora() {
       </div>`
       )
       .join("");
+  }
+
+  // Objetivo de la escena activa: siempre visible, sin anuncio — es
+  // orientación básica ("qué tengo que hacer aquí"), no una pista profunda.
+  const escenaActiva = encontrarEscena(guionActual, escenaActualLocalId);
+  if (escenaActiva?.objetivo) {
+    els.bitacoraObjetivo.innerHTML = `
+      <div class="habilidad-card" style="border-color:var(--amber);">
+        <div class="h-info">
+          <div class="h-nombre">🎯 Objetivo actual</div>
+          <p class="h-desc">${escenaActiva.objetivo}</p>
+        </div>
+      </div>`;
+  } else {
+    els.bitacoraObjetivo.innerHTML = "";
   }
 
   // Pistas: solo se ven las que este jugador ya ha desbloqueado (viendo un

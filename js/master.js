@@ -149,7 +149,7 @@ $("btn-generar").addEventListener("click", async () => {
     }
     const partida = await resp.json();
 
-    const guionBorrador = construirGuionDesdeEncuentros(partida.trampasEncuentros || []);
+    const guionBorrador = construirGuionDesdeEncuentros(partida.trampasEncuentros || [], partida.giroFinal);
 
     await setDoc(doc(db, "partidas", codigo), {
       nombre: configuracion.nombre,
@@ -277,6 +277,26 @@ function crearFilaListaItem(contenedorId, item = null) {
     row.querySelector(".li-titulo").value = item.titulo || "";
     row.querySelector(".li-texto").value = item.texto || "";
   }
+
+  // La mecánica estructurada (tirada automática) solo tiene sentido para
+  // "Trampas y encuentros" — en PNJs/Pistas/Giro se queda oculta.
+  if (contenedorId === "lista-trampas") {
+    const bloqueMecanica = row.querySelector(".li-mecanica");
+    bloqueMecanica.style.display = "block";
+    const checkbox = row.querySelector(".li-requiere-prueba");
+    const campos = row.querySelector(".li-mecanica-campos");
+    checkbox.checked = !!item?.requierePrueba;
+    campos.style.display = item?.requierePrueba ? "block" : "none";
+    checkbox.addEventListener("change", (e) => {
+      campos.style.display = e.target.checked ? "block" : "none";
+    });
+    row.querySelector(".li-atributo-prueba").value = item?.atributoPrueba || "destreza";
+    row.querySelector(".li-dificultad-prueba").value = item?.dificultadPrueba ?? 12;
+    row.querySelector(".li-tipo-danio-prueba").value = item?.tipoDanioPrueba || "fisico";
+    row.querySelector(".li-danio-dados-prueba").value = item?.danioDados ?? 2;
+    row.querySelector(".li-danio-caras-prueba").value = item?.danioCaras ?? 6;
+  }
+
   row.querySelector(".btn-quitar-item").addEventListener("click", () => row.remove());
   $(contenedorId).appendChild(row);
   return row;
@@ -293,10 +313,21 @@ function renderListaEditor(contenedorId, items) {
 
 function leerListaEditor(contenedorId) {
   return Array.from(document.querySelectorAll(`#${contenedorId} .lista-item-row`))
-    .map((row) => ({
-      titulo: row.querySelector(".li-titulo").value.trim(),
-      texto: row.querySelector(".li-texto").value.trim(),
-    }))
+    .map((row) => {
+      const item = {
+        titulo: row.querySelector(".li-titulo").value.trim(),
+        texto: row.querySelector(".li-texto").value.trim(),
+      };
+      if (contenedorId === "lista-trampas") {
+        item.requierePrueba = row.querySelector(".li-requiere-prueba").checked;
+        item.atributoPrueba = row.querySelector(".li-atributo-prueba").value;
+        item.dificultadPrueba = Number(row.querySelector(".li-dificultad-prueba").value) || 12;
+        item.tipoDanioPrueba = row.querySelector(".li-tipo-danio-prueba").value;
+        item.danioDados = Number(row.querySelector(".li-danio-dados-prueba").value) || 1;
+        item.danioCaras = Number(row.querySelector(".li-danio-caras-prueba").value) || 6;
+      }
+      return item;
+    })
     .filter((item) => item.titulo || item.texto);
 }
 
@@ -738,22 +769,64 @@ $("btn-guardar-marcador").addEventListener("click", async () => {
 });
 
 // Convierte una lista de trampas/encuentros de la historia en una secuencia
-// lineal de escenas-borrador (una por encuentro), encadenadas por avance
-// manual: el master decide luego el disparador real de cada una y puede
-// añadir ramificaciones. Se usa tanto al crear la partida (borrador
-// automático "junto con la historia") como desde el botón manual.
-function construirGuionDesdeEncuentros(encuentros) {
+// lineal de escenas-borrador (una por encuentro), encadenadas automáticamente.
+// Si el encuentro tiene mecánica estructurada (checkbox "Pide una tirada"
+// marcado en Trampas y encuentros), la escena sale ya con su prueba
+// configurada y sus dos salidas (superar/fallar) listas — sin que haga
+// falta rellenar nada a mano. Si no la tiene, sale con una salida genérica
+// "termine el combate" que el master puede cambiar por lo que corresponda.
+// Se usa tanto al crear la partida (borrador automático "junto con la
+// historia") como desde el botón manual.
+function construirGuionDesdeEncuentros(encuentros, giroFinal) {
   const escenas = (encuentros || []).map((enc, i) => ({
     id: generarIdEscena(),
     nombre: `${i + 1}. ${enc.titulo || "Escena"}`,
     narracion: enc.texto || "",
     musicaUrl: "",
+    prueba: enc.requierePrueba
+      ? {
+          activa: true,
+          atributo: enc.atributoPrueba || "destreza",
+          dificultad: enc.dificultadPrueba || 12,
+          tipoDanio: enc.tipoDanioPrueba || "fisico",
+          danioDados: enc.danioDados || 2,
+          danioCaras: enc.danioCaras || 6,
+        }
+      : null,
     salidas: [],
   }));
-  for (let i = 0; i < escenas.length - 1; i++) {
-    escenas[i].salidas = [{ trigger: { tipo: "combate_terminado" }, siguienteId: escenas[i + 1].id }];
+
+  // Escena final con el giro/revelación, si lo hay: es el destino de la
+  // última escena de encuentros.
+  let escenaFinal = null;
+  if (giroFinal && giroFinal.trim()) {
+    escenaFinal = {
+      id: generarIdEscena(),
+      nombre: `${escenas.length + 1}. Desenlace`,
+      narracion: giroFinal.trim(),
+      musicaUrl: "",
+      prueba: null,
+      salidas: [],
+    };
   }
-  return escenas;
+
+  const todas = escenaFinal ? [...escenas, escenaFinal] : escenas;
+  for (let i = 0; i < todas.length - 1; i++) {
+    const actual = todas[i];
+    const siguienteId = todas[i + 1].id;
+    if (actual.prueba?.activa) {
+      // Con prueba: dos salidas ya vinculadas a superar/fallar, ambas
+      // llevan a la siguiente escena por defecto (el master puede cambiar
+      // el destino de "fallar" a una escena distinta si quiere una rama).
+      actual.salidas = [
+        { trigger: { tipo: "prueba_superada" }, siguienteId },
+        { trigger: { tipo: "prueba_fallada" }, siguienteId },
+      ];
+    } else {
+      actual.salidas = [{ trigger: { tipo: "combate_terminado" }, siguienteId }];
+    }
+  }
+  return todas;
 }
 
 // ---------- Guion automático (storyboard de escenas, con ramificaciones) ----------
@@ -1131,14 +1204,15 @@ $("btn-sugerir-guion").addEventListener("click", async () => {
     return;
   }
 
-  const nuevasEscenas = construirGuionDesdeEncuentros(encuentros);
+  const nuevasEscenas = construirGuionDesdeEncuentros(encuentros, data.giroFinal);
 
   nuevasEscenas.forEach((es) => crearFilaEscena(es));
   refrescarSelectsDestinoEscena();
   resolverDestinosPendientes();
   alert(
-    "Borrador añadido. Revisa el disparador de cada salida (ahora mismo todas están puestas como " +
-    "\"termine el combate\", cámbialas por lo que corresponda) y añade ramificaciones si quieres."
+    "Borrador añadido: una escena por cada trampa/encuentro (con su tirada ya configurada si la " +
+    "marcaste como \"Pide una tirada\") y una escena final con el giro, si lo tenías escrito. " +
+    "Revisa los disparadores y añade ramificaciones si quieres."
   );
 });
 

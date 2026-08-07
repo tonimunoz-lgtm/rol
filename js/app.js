@@ -1184,10 +1184,17 @@ if ("speechSynthesis" in window) {
 
 function mejorVozEspanola() {
   if (vocesDisponibles.length === 0) return null;
+  const esVoces = vocesDisponibles.filter((v) => v.lang?.startsWith("es"));
+  if (esVoces.length === 0) return null;
+  // Las voces "de red" (Google, Microsoft...) suenan bastante más naturales
+  // que las compactas que trae el propio dispositivo sin conexión — son
+  // esas últimas las que dan esa sensación robótica. Las priorizamos si
+  // están disponibles, sin depender de ningún servicio de pago.
   return (
-    vocesDisponibles.find((v) => v.lang === "es-ES") ||
-    vocesDisponibles.find((v) => v.lang?.startsWith("es")) ||
-    null
+    esVoces.find((v) => v.lang === "es-ES" && v.localService === false) ||
+    esVoces.find((v) => v.localService === false) ||
+    esVoces.find((v) => v.lang === "es-ES") ||
+    esVoces[0]
   );
 }
 
@@ -1773,7 +1780,7 @@ async function cargarImagenesAmbientacion(configuracion) {
     if (!resp.ok) return;
     const { imagenes } = await resp.json();
     imagenesAmbiente = imagenes || [];
-    if (imagenesAmbiente.length > 0) {
+    if (imagenesAmbiente.length > 0 && fondoEscenaActivo === null) {
       mostrarSiguienteFondo();
       if (!modoInspeccionActivo) reanudarRotacionFondo();
     }

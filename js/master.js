@@ -417,6 +417,14 @@ function escucharLogEventos(codigo) {
 }
 
 // ---------- Subida genérica de archivos a Vercel Blob ----------
+// Vercel (plan Hobby) corta cualquier petición a una función serverless en
+// ~4.5MB de cuerpo, ANTES de que nuestro propio código llegue a ejecutarse
+// — así que si el archivo (ya codificado en base64, que pesa ~33% más que
+// el original) se pasa de ahí, la respuesta ni siquiera es un JSON con un
+// error legible, es un 413 en bruto del propio Vercel. Por eso lo
+// comprobamos aquí ANTES de intentar nada, con margen de sobra.
+const LIMITE_ARCHIVO_BYTES = 3 * 1024 * 1024; // ~3MB en crudo ≈ ~4MB ya en base64
+
 function archivoABase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -428,6 +436,12 @@ function archivoABase64(file) {
 
 async function subirArchivo(file, tipo) {
   if (!currentPartidaId) throw new Error("Primero crea o carga una partida.");
+  if (file.size > LIMITE_ARCHIVO_BYTES) {
+    throw new Error(
+      `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)}MB; el máximo desde aquí es ${(LIMITE_ARCHIVO_BYTES / 1024 / 1024).toFixed(0)}MB ` +
+      `(límite técnico de Vercel, no de la app). Comprime el vídeo/imagen o acórtalo, o aloja el archivo en otro sitio y pega su URL directamente.`
+    );
+  }
   const dataBase64 = await archivoABase64(file);
   const idToken = await auth.currentUser.getIdToken();
   const resp = await fetch(SUBIR_MARCADOR_URL, {
@@ -440,6 +454,9 @@ async function subirArchivo(file, tipo) {
     try {
       detalle = (await resp.json()).error || "";
     } catch (_) {}
+    if (!detalle && resp.status === 413) {
+      detalle = "El archivo es demasiado grande para subirlo desde aquí (límite ~4MB). Comprímelo o acórtalo.";
+    }
     throw new Error(detalle || `Error ${resp.status} subiendo el archivo.`);
   }
   const data = await resp.json();
@@ -457,8 +474,31 @@ function archivoAImagen(file) {
 
 // ---------- Compilar fotos → targets.mind, todo dentro del navegador ----------
 // Usa el propio motor de MindAR (el mismo que compila el compilador oficial
-// de https://hiukim.github.io/mind-ar-js-doc/tools/compile), cargado como
-// script en master.html. No hace falta salir de la app ni tocar GitHub.
+// de https://hiukim.github.io/mind-ar-js-doc/tools/compile), cargado bajo
+// demanda con import() dinámico. No hace falta salir de la app ni tocar
+// GitHub.
+//
+// NOTA TÉCNICA: mindar-image.prod.js (el compilador "puro", sin depender de
+// aframe) se publica en npm como módulo ES desde hace varias versiones, así
+// que cargarlo con un <script> normal falla ("Cannot use import statement
+// outside a module"). Y la ruta alternativa por GitHub (cdn.jsdelivr.net/gh/...)
+// da 404: esos archivos compilados nunca se subieron al repo, solo a npm.
+// La forma que sí funciona es importarlo como el módulo ES que realmente
+// es, con import() dinámico, justo aquí, en el momento de compilar (no hace
+// falta cargarlo de antemano en el <head>).
+let mindArCompilerPromise = null;
+function cargarCompiladorMindAR() {
+  if (!mindArCompilerPromise) {
+    mindArCompilerPromise = import("https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js")
+      .then((mod) => mod.Compiler || mod.default?.Compiler || window.MINDAR?.IMAGE?.Compiler || window.MINDAR?.Compiler || null)
+      .catch((err) => {
+        console.error("No se pudo cargar el compilador de MindAR:", err);
+        return null;
+      });
+  }
+  return mindArCompilerPromise;
+}
+
 $("btn-compilar-marcadores").addEventListener("click", async () => {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
   const input = $("marcadores-fotos-input");
@@ -467,9 +507,10 @@ $("btn-compilar-marcadores").addEventListener("click", async () => {
 
   const status = $("targets-status");
   const boton = $("btn-compilar-marcadores");
-  const CompilerClass = window.MINDAR?.IMAGE?.Compiler || window.MINDAR?.Compiler;
+  status.textContent = "Cargando el motor de compilación...";
+  const CompilerClass = await cargarCompiladorMindAR();
   if (!CompilerClass) {
-    status.textContent = "No se pudo cargar el motor de compilación. Recarga la página e inténtalo de nuevo.";
+    status.textContent = "No se pudo cargar el motor de compilación. Comprueba tu conexión e inténtalo de nuevo.";
     return;
   }
 

@@ -53,6 +53,11 @@
     <button id="btn-speak" class="primary" style="margin-top:.5em;">🔊 Escuchar narración</button>
   </div>
 
+  <!-- Aviso corto y centrado, para acciones puntuales (uso de habilidades,
+       detecciones...) que no son la narración de una escena: se autocierra
+       solo y no requiere que nadie la cierre a mano. -->
+  <div id="toast-box"><p id="toast-text"></p></div>
+
   <!-- La escena AR se inyecta aquí en tiempo de ejecución (ver js/app.js),
        pero la cámara solo se activa cuando el jugador pulsa "Inspeccionar". -->
   <div id="ar-scene-container"></div>

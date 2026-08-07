@@ -136,6 +136,10 @@ function llamarGroq(url, prompt, forzarJson) {
     messages: [{ role: "user", content: prompt }],
     max_tokens: 4200,
     temperature: 0.7,
+    // Sin esto, el modelo puede gastar parte del presupuesto de tokens
+    // "pensando" antes de escribir el JSON final, dejando menos margen del
+    // que parece para el contenido real.
+    reasoning_effort: "low",
   };
   if (forzarJson) body.response_format = { type: "json_object" };
 

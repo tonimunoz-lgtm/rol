@@ -131,6 +131,7 @@
         <button class="historia-subtab-btn" data-subtab="pnjs" style="font-size:.85rem;">PNJs</button>
         <button class="historia-subtab-btn" data-subtab="pistas" style="font-size:.85rem;">Pistas</button>
         <button class="historia-subtab-btn" data-subtab="trampas" style="font-size:.85rem;">Trampas y encuentros</button>
+        <button class="historia-subtab-btn" data-subtab="mapa" style="font-size:.85rem;">Mapa</button>
         <button class="historia-subtab-btn" data-subtab="giro" style="font-size:.85rem;">Giro final</button>
       </div>
 
@@ -163,6 +164,24 @@
         <button id="btn-guardar-trampas" class="primary" style="margin-left:.5em;">Guardar trampas/encuentros</button>
       </div>
 
+      <div id="historia-subtab-mapa" class="historia-subtab" style="display:none;">
+        <p style="color:var(--parchment-dim); font-size:.85rem; max-width:640px;">
+          Un mapa vectorial (no una imagen fija), con aspecto de pergamino de época. Los jugadores
+          pueden moverse por él con zoom y verán marcada su posición actual, según a qué escena
+          del guion vincules cada lugar.
+        </p>
+        <div class="field">
+          <label>Ambientación general del mapa (opcional, solo para ti)</label>
+          <textarea id="mapa-descripcion" rows="2"></textarea>
+        </div>
+
+        <div id="mapa-preview" class="mapa-viewport" style="height:40vh; margin-bottom:1em;"></div>
+
+        <div id="lista-lugares"></div>
+        <button id="btn-nuevo-lugar" style="font-size:.85rem;">+ Añadir lugar</button>
+        <button id="btn-guardar-mapa" class="primary" style="margin-left:.5em;">💾 Guardar mapa</button>
+      </div>
+
       <div id="historia-subtab-giro" class="historia-subtab" style="display:none;">
         <div class="field">
           <label>Giro o revelación final</label>
@@ -171,6 +190,44 @@
         <button id="btn-guardar-giro" class="primary">Guardar giro final</button>
       </div>
     </section>
+
+    <template id="tpl-lugar-row">
+      <div class="card lugar-row" style="margin-bottom:.6em; padding:.8em;">
+        <input type="hidden" class="lug-id" />
+        <div class="grid-3">
+          <div class="field"><label>Nombre</label><input class="lug-nombre" placeholder="Aldea de Skogby" /></div>
+          <div class="field">
+            <label>Tipo</label>
+            <select class="lug-tipo">
+              <option value="pueblo">🏘️ Pueblo</option>
+              <option value="bosque">🌲 Bosque</option>
+              <option value="rio">🌊 Río</option>
+              <option value="puente">🌉 Puente</option>
+              <option value="montana">⛰️ Montaña</option>
+              <option value="ruinas">🏛️ Ruinas</option>
+              <option value="cueva">🕳️ Cueva</option>
+              <option value="castillo">🏰 Castillo</option>
+              <option value="mar">⚓ Mar/costa</option>
+              <option value="pantano">🥀 Pantano</option>
+              <option value="camino">🛤️ Camino</option>
+              <option value="otro">📍 Otro</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Escena vinculada (opcional)</label>
+            <select class="lug-escena"></select>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="field"><label>Posición X (0-100)</label><input class="lug-x" type="number" min="0" max="100" value="50" /></div>
+          <div class="field"><label>Posición Y (0-100)</label><input class="lug-y" type="number" min="0" max="100" value="50" /></div>
+          <div class="field"><label>Conecta con...</label><select class="lug-conecta" multiple size="3"></select></div>
+        </div>
+        <div class="field"><label>Descripción breve</label><input class="lug-descripcion" placeholder="Qué hay aquí" /></div>
+        <button type="button" class="btn-quitar-lugar danger" style="font-size:.75rem;">Quitar lugar</button>
+      </div>
+    </template>
+
 
     <template id="tpl-lista-item">
       <div class="card lista-item-row" style="margin-bottom:.6em; padding:.8em;">
@@ -766,6 +823,7 @@
         objetivo posible al aplicar daño en su turno.
       </p>
       <div id="lista-enemigos"></div>
+      <div id="lista-enemigos-sugeridos" style="margin-top:.6em;"></div>
       <div class="grid-3" style="margin-top:.6em; align-items:end;">
         <div class="field"><label>Nombre</label><input id="en-nombre" placeholder="Lobo del hielo" /></div>
         <div class="field"><label>Vida</label><input id="en-vida" type="number" min="1" value="10" /></div>

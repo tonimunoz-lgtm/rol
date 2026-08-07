@@ -30,7 +30,10 @@ const els = {
   fichaAtributos: document.getElementById("ficha-atributos"),
   fichaHabilidades: document.getElementById("ficha-habilidades"),
   fichaRetrato: document.getElementById("ficha-retrato"),
-  fichaInventario: document.getElementById("ficha-inventario"),
+  inventarioLista: document.getElementById("inventario-lista"),
+  inventarioModal: document.getElementById("inventario-modal"),
+  btnCerrarInventario: document.getElementById("btn-cerrar-inventario"),
+  inventarioCapacidad: document.getElementById("inventario-capacidad"),
   btnImprimirFicha: document.getElementById("btn-imprimir-ficha"),
   btnAccion: document.getElementById("btn-accion"),
   accionModal: document.getElementById("accion-modal"),
@@ -337,6 +340,7 @@ async function bootGame() {
     els.hpPill.textContent = `❤ ${data.vida}/${data.vidaMax ?? data.vida}`;
     els.invPill.textContent = `🎒 ${(data.inventario || []).length}`;
     renderFicha(data);
+    if (els.inventarioModal.classList.contains("visible")) renderInventario(data);
     intentarMostrarPruebaEscenaActual();
     if (els.pruebaModal.classList.contains("visible")) renderAccionesModal();
   });
@@ -405,14 +409,6 @@ async function bootGame() {
         }
         if (evento.tipo === "deteccion") {
           mostrarToast(evento.texto);
-          añadirMensajeChat({ tipo: "narracion", texto: evento.texto });
-        }
-        // Resultado de una acción de escena (tirada o interacción con PNJ):
-        // lo difundimos a todos. Quien la hizo ya lo vio en el propio
-        // modal, pero lo volvemos a mostrar en el chat para que quede
-        // constancia igual que para el resto.
-        if (evento.tipo === "prueba") {
-          if (evento.jugadorId !== currentJugadorId) mostrarToast(evento.texto);
           añadirMensajeChat({ tipo: "narracion", texto: evento.texto });
         }
         // Frase de ambientación generada por IA (opcional, decorativa): la
@@ -744,6 +740,10 @@ async function ejecutarAccionEscena(accionId) {
   if (!accion) return;
   if (jugadorDataActual.accionesCompletadas?.[accionId]?.superada) return; // ya superada, no se repite
 
+  // Cerramos el modal ya: el resultado se narra en pantalla principal para
+  // todos (incluido quien la ha hecho), no dentro del propio modal.
+  els.pruebaModal.classList.remove("visible");
+
   if (accion.tipo === "prueba") {
     await ejecutarAccionPrueba(escena, accion);
   } else {
@@ -787,15 +787,13 @@ async function ejecutarAccionPrueba(escena, accion) {
   }
   await updateDoc(jugadorRefActual, cambios);
 
-  const textoDifundido = `🎲 ${nombrePersonaje} — "${accion.etiqueta}" → ${tirada} (dificultad ${dificultadEfectiva}). ${textoResultado}`;
-  mostrarToast(textoDifundido);
+  const textoDifundido = `🎲 "${accion.etiqueta}" (${nombrePersonaje}) → ${tirada} (dificultad ${dificultadEfectiva}). ${textoResultado}`;
 
+  // Se narra como cualquier otra narración de escena: aparece en grande
+  // para todos (sustituyendo lo que hubiera antes en pantalla) y con voz.
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
-    tipo: "prueba",
-    jugadorId: currentJugadorId,
-    nombreJugador: jugadorDataActual.nombre,
+    tipo: "narracion",
     texto: textoDifundido,
-    supera,
     timestamp: serverTimestamp(),
   });
 
@@ -852,15 +850,10 @@ async function ejecutarAccionPnj(escena, accion) {
 
   await updateDoc(jugadorRefActual, cambiosJugador);
 
-  const textoDifundido = `🗣️ ${nombrePersonaje} — "${accion.etiqueta}": ${textoResultado}`;
-  mostrarToast(textoDifundido);
-
+  const textoDifundido = `🗣️ "${accion.etiqueta}" (${nombrePersonaje}): ${textoResultado}`;
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
-    tipo: "prueba",
-    jugadorId: currentJugadorId,
-    nombreJugador: jugadorDataActual.nombre,
+    tipo: "narracion",
     texto: textoDifundido,
-    supera: true,
     timestamp: serverTimestamp(),
   });
 
@@ -1094,13 +1087,20 @@ function hablar(texto) {
 
 els.btnSpeak.addEventListener("click", () => hablar(els.narrationText.textContent));
 
-// ---------- 4b. Ficha de personaje: atributos, habilidades e inventario ----------
+// ---------- 4b. Ficha de personaje: atributos y habilidades ----------
 function abrirFicha() {
   els.fichaModal.classList.add("visible");
 }
 els.btnFicha.addEventListener("click", abrirFicha);
-els.invPill.addEventListener("click", abrirFicha);
 els.btnCerrarFicha.addEventListener("click", () => els.fichaModal.classList.remove("visible"));
+
+// ---------- 4b-2. Inventario (modal propio, ya no se repite en la ficha) ----------
+function abrirInventario() {
+  renderInventario(jugadorDataActual);
+  els.inventarioModal.classList.add("visible");
+}
+els.invPill.addEventListener("click", abrirInventario);
+els.btnCerrarInventario.addEventListener("click", () => els.inventarioModal.classList.remove("visible"));
 
 // Límite de mochila: una persona normal no puede cargar con infinitas
 // cosas. Cuenta como "un hueco" cada objeto distinto (no cada unidad: si ya
@@ -1133,9 +1133,7 @@ function renderFicha(data) {
 
   if (habilidades.length === 0) {
     els.fichaHabilidades.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Este personaje no tiene habilidades especiales.</p>`;
-    return;
-  }
-
+  } else {
   habilidades.forEach((h, idx) => {
     const restantes = usos[idx];
     const ilimitada = restantes === -1;
@@ -1160,45 +1158,72 @@ function renderFicha(data) {
   els.fichaHabilidades.querySelectorAll(".btn-usar-habilidad").forEach((btn) => {
     btn.addEventListener("click", () => usarHabilidad(Number(btn.dataset.idx), data));
   });
+  }
+}
 
-  renderInventario(data);
+// Elige un icono orientativo según el nombre/efecto del objeto. No es una
+// imagen real (cada partida puede tener objetos con cualquier nombre que
+// invente el master, así que no hay forma de generar arte único para cada
+// uno sin un servicio de generación de imágenes aparte), pero da un golpe
+// de vista distinto por tipo de objeto en vez de solo texto.
+function iconoParaObjeto(obj) {
+  const n = (obj.nombre || "").toLowerCase();
+  const mapa = [
+    [/espada|daga|hacha|lanza|arma blanca/, "🗡️"],
+    [/arco|flecha|ballesta/, "🏹"],
+    [/escudo/, "🛡️"],
+    [/poci[oó]n|elixir|brebaje/, "🧪"],
+    [/llave/, "🔑"],
+    [/amuleto|colgante|talism[aá]n/, "📿"],
+    [/anillo/, "💍"],
+    [/libro|tomo|grimorio|pergamino/, "📖"],
+    [/mapa/, "🗺️"],
+    [/antorcha|vela|linterna/, "🔦"],
+    [/cuerda|soga/, "🪢"],
+    [/oro|moneda|gema|joya/, "💰"],
+    [/comida|pan|carne|fruta/, "🍖"],
+    [/veneno/, "☠️"],
+    [/cristal|piedra rúnica|runa/, "🔮"],
+  ];
+  const encontrado = mapa.find(([regex]) => regex.test(n));
+  if (encontrado) return encontrado[1];
+  if (obj.efecto?.tipo === "curar") return "🧪";
+  if (obj.efecto?.tipo === "danio") return "💣";
+  return "📦";
 }
 
 function renderInventario(data) {
+  if (!data) return;
   const inventario = data.inventario || [];
-  els.fichaInventario.innerHTML = "";
-
-  const aviso = document.createElement("p");
-  aviso.style.cssText = "color:var(--parchment-dim); font-size:.8rem; margin:-0.4em 0 .6em;";
-  aviso.textContent = `Mochila: ${inventario.length}/${LIMITE_INVENTARIO} huecos.`;
-  els.fichaInventario.appendChild(aviso);
+  els.inventarioCapacidad.textContent = `${inventario.length}/${LIMITE_INVENTARIO} huecos usados`;
+  els.inventarioLista.innerHTML = "";
 
   if (inventario.length === 0) {
-    els.fichaInventario.innerHTML += `<p style="color:var(--parchment-dim); font-size:.85rem;">Mochila vacía.</p>`;
+    els.inventarioLista.innerHTML = `<p style="grid-column:1/-1; color:var(--parchment-dim); font-size:.85rem;">Mochila vacía.</p>`;
     return;
   }
 
   inventario.forEach((obj, idx) => {
     const card = document.createElement("div");
-    card.className = "habilidad-card";
+    card.className = "card";
+    card.style.cssText = "padding:.7em; text-align:center;";
     card.innerHTML = `
-      <div class="h-info">
-        <div class="h-nombre">${obj.nombre}</div>
-        <p class="h-desc">${obj.descripcion || ""}</p>
-      </div>
-      <div style="text-align:right;">
-        <div class="h-usos mono">x${obj.cantidad}</div>
-        <button class="btn-usar-objeto" data-idx="${idx}" style="margin-top:.4em; font-size:.75rem;">Usar</button>
-        <button class="btn-tirar-objeto danger" data-idx="${idx}" style="margin-top:.3em; font-size:.7rem;">🗑️ Tirar</button>
+      <div style="font-size:2.2rem; line-height:1;">${iconoParaObjeto(obj)}</div>
+      <div style="font-weight:600; font-size:.85rem; margin:.4em 0 .1em;">${obj.nombre}</div>
+      <div class="mono" style="color:var(--parchment-dim); font-size:.75rem;">x${obj.cantidad}</div>
+      <p style="color:var(--parchment-dim); font-size:.72rem; margin:.3em 0;">${obj.descripcion || ""}</p>
+      <div style="display:flex; gap:.3em; justify-content:center; margin-top:.4em;">
+        <button class="btn-usar-objeto" data-idx="${idx}" style="font-size:.7rem; padding:.4em .5em;">Usar</button>
+        <button class="btn-tirar-objeto danger" data-idx="${idx}" style="font-size:.7rem; padding:.4em .5em;">🗑️</button>
       </div>
     `;
-    els.fichaInventario.appendChild(card);
+    els.inventarioLista.appendChild(card);
   });
 
-  els.fichaInventario.querySelectorAll(".btn-usar-objeto").forEach((btn) => {
+  els.inventarioLista.querySelectorAll(".btn-usar-objeto").forEach((btn) => {
     btn.addEventListener("click", () => usarObjeto(Number(btn.dataset.idx), data));
   });
-  els.fichaInventario.querySelectorAll(".btn-tirar-objeto").forEach((btn) => {
+  els.inventarioLista.querySelectorAll(".btn-tirar-objeto").forEach((btn) => {
     btn.addEventListener("click", () => soltarObjeto(Number(btn.dataset.idx), data));
   });
 }
@@ -1440,7 +1465,12 @@ async function resolverDeteccionTrampas(nombrePersonaje, tiradaDeteccion) {
 
 // ---------- 5. Dados ----------
 els.btnDice.addEventListener("click", async () => {
-  if (escenaAccionesActual?.acciones?.some(accionPendiente)) {
+  // Recalculamos aquí mismo, en vez de fiarnos solo de la variable
+  // cacheada: así, aunque el modal se haya cerrado y reabra, o la escena
+  // no haya cambiado, siempre refleja el estado real de las acciones.
+  const escena = encontrarEscena(guionActual, escenaActualLocalId);
+  if (escena?.acciones?.some(accionPendiente)) {
+    escenaAccionesActual = escena;
     abrirModalAcciones();
     return;
   }

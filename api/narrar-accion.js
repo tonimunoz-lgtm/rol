@@ -117,5 +117,12 @@ function construirPrompt(c) {
       c.resultado || ""
     }". Describe ese instante sin repetir literalmente el resultado.`;
   }
+  if (c.tipo === "prueba") {
+    return `${base} Un personaje llamado "${c.personaje || "un aventurero"}" acaba de hacer una tirada de ${
+      c.atributo || "habilidad"
+    } ante un peligro físico del entorno (como cruzar algo inestable o esquivar un obstáculo). Resultado: "${
+      c.resultado || ""
+    }". Describe ese instante con tensión, sin repetir literalmente el resultado.`;
+  }
   return null;
 }

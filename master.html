@@ -547,6 +547,58 @@
           <label>Narración automática al entrar en esta escena (texto + voz)</label>
           <textarea class="es-narracion" rows="3"></textarea>
         </div>
+        <button type="button" class="btn-enriquecer-narracion" style="font-size:.75rem;">
+          ✨ Enriquecer con IA (ambiente, clima, luz, sonido)
+        </button>
+
+        <h4 style="margin:1em 0 .4em; color:var(--parchment-dim); font-size:.85rem;">Prueba de esta escena (opcional)</h4>
+        <label style="display:flex; align-items:center; gap:.4em; cursor:pointer; font-size:.85rem;">
+          <input type="checkbox" class="es-prueba-activa" />
+          Esta escena pide una tirada (p.ej. cruzar un puente, esquivar algo, resistir un peligro)
+        </label>
+        <div class="es-prueba-campos" style="display:none; margin-top:.6em;">
+          <p style="color:var(--parchment-dim); font-size:.8rem;">
+            En cuanto se active la escena, a cada jugador le aparecerá un botón para tirar. Si
+            falla, el daño se calcula y se resta de su vida solo (ajustado por sus resistencias).
+          </p>
+          <div class="grid-3">
+            <div class="field">
+              <label>Atributo</label>
+              <select class="es-prueba-atributo">
+                <option value="destreza">Destreza</option>
+                <option value="fuerza">Fuerza</option>
+                <option value="inteligencia">Inteligencia</option>
+                <option value="vigor">Vigor</option>
+                <option value="carisma">Carisma</option>
+              </select>
+            </div>
+            <div class="field"><label>Dificultad</label><input class="es-prueba-dificultad" type="number" min="1" value="12" /></div>
+            <div class="field">
+              <label>Tipo de daño</label>
+              <select class="es-prueba-tipo-danio">
+                <option value="fisico">🗡️ Físico</option>
+                <option value="fuego">🔥 Fuego</option>
+                <option value="hielo">❄️ Hielo</option>
+                <option value="veneno">☠️ Veneno</option>
+                <option value="mental">🌀 Mental</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label>Dados de daño si falla — cantidad</label><input class="es-prueba-danio-dados" type="number" min="1" value="2" /></div>
+            <div class="field">
+              <label>Dados de daño si falla — caras</label>
+              <select class="es-prueba-danio-caras">
+                <option value="4">d4</option>
+                <option value="6" selected>d6</option>
+                <option value="8">d8</option>
+                <option value="10">d10</option>
+                <option value="12">d12</option>
+                <option value="20">d20</option>
+              </select>
+            </div>
+          </div>
+        </div>
 
         <h4 style="margin:1em 0 .4em; color:var(--parchment-dim); font-size:.85rem;">Salidas de esta escena</h4>
         <p class="es-sin-salidas" style="color:var(--parchment-dim); font-size:.8rem;">
@@ -567,6 +619,8 @@
           <div class="field">
             <label>Salta a la siguiente escena cuando...</label>
             <select class="sal-trigger-tipo">
+              <option value="prueba_superada">Alguien SUPERE la prueba de esta escena</option>
+              <option value="prueba_fallada">Alguien FALLE la prueba de esta escena</option>
               <option value="marcador">Se escanee el marcador con índice...</option>
               <option value="objeto">Se recoja el objeto...</option>
               <option value="objeto_usado">Se use el objeto...</option>
@@ -587,6 +641,7 @@
         <button type="button" class="btn-quitar-salida danger" style="font-size:.7rem;">Quitar salida</button>
       </div>
     </template>
+
 
 
 

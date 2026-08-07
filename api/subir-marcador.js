@@ -23,7 +23,7 @@ const FIREBASE_PROJECT_ID = "femjoc";
 
 // Margen de seguridad bajo el límite real de tamaño de petición de las
 // funciones serverless de Vercel (4.5MB en el plan Hobby).
-const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_BYTES = 3 * 1024 * 1024;
 
 module.exports = async (req, res) => {
   try {

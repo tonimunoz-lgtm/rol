@@ -504,7 +504,22 @@ h1.display::after, h2.display::after {
 
 @media (max-width: 720px) {
   #master-view { grid-template-columns: 1fr; }
-  #master-sidebar { display: flex; overflow-x: auto; border-right: none; border-bottom: 1px solid #3a3226; }
+  #master-sidebar {
+    border-right: none;
+    border-bottom: 1px solid #3a3226;
+    padding: 1em;
+  }
+  #master-sidebar nav {
+    display: flex;
+    overflow-x: auto;
+    gap: .3em;
+    padding-bottom: .3em;
+    -webkit-overflow-scrolling: touch;
+  }
+  #master-sidebar nav a {
+    white-space: nowrap;
+    margin-bottom: 0;
+  }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
 }
 

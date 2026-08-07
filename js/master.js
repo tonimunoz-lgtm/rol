@@ -6,6 +6,7 @@ import {
   collection, addDoc, serverTimestamp, getDocs,
 } from "./firebase-config.js";
 import { normalizarGuion, normalizarEscenaActual, generarIdEscena } from "./guion-utils.js";
+import { normalizarMapa, renderizarMapaSVG, generarIdLugar, ICONOS_LUGAR } from "./mapa-utils.js";
 
 // URL de la función serverless que sube archivos (fotos compiladas, vídeos,
 // imágenes de marcadores) a Vercel Blob.
@@ -150,6 +151,13 @@ $("btn-generar").addEventListener("click", async () => {
     const partida = await resp.json();
 
     const guionBorrador = construirGuionDesdeEncuentros(partida.trampasEncuentros || [], partida.giroFinal);
+    const mapaGenerado = normalizarMapa(partida.mapa);
+    const enemigosSugeridos = (partida.enemigosSugeridos || []).map((e) => ({
+      nombre: e.nombre || "Enemigo",
+      vida: Number(e.vida) || 10,
+      tipoDanio: ["fisico", "fuego", "hielo", "veneno", "mental"].includes(e.tipoDanio) ? e.tipoDanio : "fisico",
+      descripcion: e.descripcion || "",
+    }));
 
     await setDoc(doc(db, "partidas", codigo), {
       nombre: configuracion.nombre,
@@ -161,6 +169,8 @@ $("btn-generar").addEventListener("click", async () => {
       giroFinal: partida.giroFinal || "",
       guion: guionBorrador,
       escenaActual: guionBorrador[0]?.id ?? null,
+      mapa: mapaGenerado,
+      enemigosSugeridos,
       creadaEn: serverTimestamp(),
       masterUid: auth.currentUser.uid,
     });
@@ -221,6 +231,8 @@ $("btn-generar").addEventListener("click", async () => {
       trampasEncuentros: partida.trampasEncuentros || [],
       giroFinal: partida.giroFinal || "",
       guion: guionBorrador,
+      mapa: mapaGenerado,
+      enemigosSugeridos,
     });
 
     status.textContent = `Partida creada (con un primer borrador de guion, en la pestaña "Guion automático"). Código para los jugadores: ${codigo}`;
@@ -269,6 +281,8 @@ function cargarHistoriaEnUI(data) {
   renderListaEditor("lista-pistas", data.pistas || []);
   renderListaEditor("lista-trampas", data.trampasEncuentros || []);
   renderListaEscenas(data.guion || []);
+  cargarMapaEnUI(data.mapa);
+  renderEnemigosSugeridos(data.enemigosSugeridos || []);
 }
 
 function crearFilaListaItem(contenedorId, item = null) {
@@ -1363,6 +1377,171 @@ $("btn-sugerir-guion").addEventListener("click", async () => {
   );
 });
 
+// ---------- Mapa del juego (vectorial, con posición vinculada a escenas) ----------
+function cargarMapaEnUI(mapaCrudo) {
+  const mapa = normalizarMapa(mapaCrudo);
+  $("mapa-descripcion").value = mapa.descripcion || "";
+  renderListaLugares(mapa.lugares, mapa.conexiones);
+}
+
+function renderListaLugares(lugares, conexiones) {
+  $("lista-lugares").innerHTML = "";
+  (lugares || []).forEach((lug) => crearFilaLugar(lug));
+  refrescarSelectsEscenaLugar();
+  refrescarSelectsConectaLugar();
+  resolverEscenasPendientesLugar();
+  (conexiones || []).forEach(([idA, idB]) => {
+    marcarConexionEnSelect(idA, idB);
+    marcarConexionEnSelect(idB, idA);
+  });
+  refrescarPreviewMapa();
+}
+
+function crearFilaLugar(lugar = null) {
+  const tpl = document.getElementById("tpl-lugar-row");
+  const row = tpl.content.firstElementChild.cloneNode(true);
+  row.querySelector(".lug-id").value = lugar?.id || generarIdLugar();
+  row.querySelector(".lug-nombre").value = lugar?.nombre || "";
+  row.querySelector(".lug-tipo").value = lugar?.tipo || "pueblo";
+  row.querySelector(".lug-x").value = lugar?.x ?? 50;
+  row.querySelector(".lug-y").value = lugar?.y ?? 50;
+  row.querySelector(".lug-descripcion").value = lugar?.descripcion || "";
+  // El desplegable de escena aún no tiene opciones al crear la fila; se
+  // resuelve después de poblarlas (ver resolverEscenasPendientesLugar).
+  row.dataset.escenaPendiente = lugar?.escenaId || "";
+
+  ["lug-nombre", "lug-tipo", "lug-x", "lug-y", "lug-descripcion"].forEach((cls) => {
+    row.querySelector(`.${cls}`).addEventListener("input", refrescarPreviewMapa);
+  });
+  row.querySelector(".lug-nombre").addEventListener("input", refrescarSelectsConectaLugar);
+  row.querySelector(".lug-conecta").addEventListener("change", refrescarPreviewMapa);
+
+  row.querySelector(".btn-quitar-lugar").addEventListener("click", () => {
+    row.remove();
+    refrescarSelectsConectaLugar();
+    refrescarPreviewMapa();
+  });
+
+  $("lista-lugares").appendChild(row);
+}
+
+function refrescarSelectsEscenaLugar() {
+  const escenas = Array.from(document.querySelectorAll("#lista-escenas .escena-row")).map((row) => ({
+    id: row.querySelector(".es-id").value,
+    nombre: row.querySelector(".es-nombre").value.trim() || "(sin nombre)",
+  }));
+  document.querySelectorAll("#lista-lugares .lug-escena").forEach((select) => {
+    const valorActual = select.value;
+    select.innerHTML =
+      `<option value="">— Ninguna —</option>` + escenas.map((e) => `<option value="${e.id}">${e.nombre}</option>`).join("");
+    if (escenas.some((e) => e.id === valorActual)) select.value = valorActual;
+  });
+}
+
+function resolverEscenasPendientesLugar() {
+  document.querySelectorAll("#lista-lugares .lugar-row").forEach((row) => {
+    const pendiente = row.dataset.escenaPendiente;
+    if (pendiente) row.querySelector(".lug-escena").value = pendiente;
+  });
+}
+
+function refrescarSelectsConectaLugar() {
+  const lugares = Array.from(document.querySelectorAll("#lista-lugares .lugar-row")).map((row) => ({
+    id: row.querySelector(".lug-id").value,
+    nombre: row.querySelector(".lug-nombre").value.trim() || "(sin nombre)",
+  }));
+  document.querySelectorAll("#lista-lugares .lugar-row").forEach((row) => {
+    const propioId = row.querySelector(".lug-id").value;
+    const select = row.querySelector(".lug-conecta");
+    const seleccionActual = Array.from(select.selectedOptions).map((o) => o.value);
+    select.innerHTML = lugares
+      .filter((l) => l.id !== propioId)
+      .map((l) => `<option value="${l.id}" ${seleccionActual.includes(l.id) ? "selected" : ""}>${l.nombre}</option>`)
+      .join("");
+  });
+  refrescarPreviewMapa();
+}
+
+function marcarConexionEnSelect(idPropio, idOtro) {
+  const idInput = document.querySelector(`#lista-lugares .lug-id[value="${idPropio}"]`);
+  const row = idInput?.closest(".lugar-row");
+  if (!row) return;
+  const select = row.querySelector(".lug-conecta");
+  const opcion = Array.from(select.options).find((o) => o.value === idOtro);
+  if (opcion) opcion.selected = true;
+}
+
+function leerMapa() {
+  const lugares = Array.from(document.querySelectorAll("#lista-lugares .lugar-row")).map((row) => ({
+    id: row.querySelector(".lug-id").value,
+    nombre: row.querySelector(".lug-nombre").value.trim() || "Lugar sin nombre",
+    tipo: row.querySelector(".lug-tipo").value,
+    x: Number(row.querySelector(".lug-x").value) || 0,
+    y: Number(row.querySelector(".lug-y").value) || 0,
+    descripcion: row.querySelector(".lug-descripcion").value.trim(),
+    escenaId: row.querySelector(".lug-escena")?.value || "",
+  }));
+
+  const vistas = new Set();
+  const conexiones = [];
+  document.querySelectorAll("#lista-lugares .lugar-row").forEach((row) => {
+    const idA = row.querySelector(".lug-id").value;
+    Array.from(row.querySelector(".lug-conecta").selectedOptions).forEach((opcion) => {
+      const idB = opcion.value;
+      const clave = [idA, idB].sort().join("|");
+      if (!vistas.has(clave)) {
+        vistas.add(clave);
+        conexiones.push([idA, idB]);
+      }
+    });
+  });
+
+  return { descripcion: $("mapa-descripcion").value.trim(), lugares, conexiones };
+}
+
+function refrescarPreviewMapa() {
+  $("mapa-preview").innerHTML = renderizarMapaSVG(leerMapa(), null);
+}
+
+$("btn-nuevo-lugar").addEventListener("click", () => {
+  crearFilaLugar();
+  refrescarSelectsEscenaLugar();
+  refrescarSelectsConectaLugar();
+  refrescarPreviewMapa();
+});
+
+$("btn-guardar-mapa").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  await updateDoc(doc(db, "partidas", currentPartidaId), { mapa: leerMapa() });
+  alert("Mapa guardado.");
+});
+
+// ---------- Enemigos sugeridos por la IA (alta rápida en Combate) ----------
+let enemigosSugeridosActuales = [];
+function renderEnemigosSugeridos(enemigos) {
+  enemigosSugeridosActuales = enemigos || [];
+  const cont = $("lista-enemigos-sugeridos");
+  if (!cont) return;
+  if (enemigosSugeridosActuales.length === 0) {
+    cont.innerHTML = "";
+    return;
+  }
+  cont.innerHTML = enemigosSugeridosActuales
+    .map(
+      (e, i) => `
+      <button type="button" class="btn-add-enemigo-sugerido" data-idx="${i}" style="font-size:.8rem; margin:.2em .3em .2em 0;" title="${e.descripcion || ""}">
+        + ${e.nombre} (${e.vida} PV)
+      </button>`
+    )
+    .join("");
+  cont.querySelectorAll(".btn-add-enemigo-sugerido").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const e = enemigosSugeridosActuales[Number(btn.dataset.idx)];
+      if (e) añadirEnemigoActual(e.nombre, e.vida, e.tipoDanio);
+    });
+  });
+}
+
 // ---------- Combate por turnos ----------
 let unsubscribeCombateJugadores = null;
 let jugadoresParaCombate = [];
@@ -1470,13 +1649,18 @@ function renderEnemigos() {
   );
 }
 
-$("btn-add-enemigo").addEventListener("click", async () => {
+async function añadirEnemigoActual(nombre, vida, tipoDanio) {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  if (!nombre) return;
+  const nuevos = [...enemigosActuales, { nombre, vida, vidaMax: vida, tipoDanio: tipoDanio || "fisico" }];
+  await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
+}
+
+$("btn-add-enemigo").addEventListener("click", async () => {
   const nombre = $("en-nombre").value.trim();
   const vida = Number($("en-vida").value) || 10;
   if (!nombre) return alert("Ponle un nombre al enemigo.");
-  const nuevos = [...enemigosActuales, { nombre, vida, vidaMax: vida }];
-  await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
+  await añadirEnemigoActual(nombre, vida);
   $("en-nombre").value = "";
   $("en-vida").value = 10;
 });

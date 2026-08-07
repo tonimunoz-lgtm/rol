@@ -43,6 +43,7 @@ export function normalizarMapa(mapaCrudo) {
 
   return {
     descripcion: mapaCrudo.descripcion || "",
+    fondoUrl: mapaCrudo.fondoUrl || "",
     lugares,
     conexiones,
   };
@@ -247,11 +248,14 @@ export function renderizarMapaSVG(mapa, lugarActivoId) {
   const lugares = mapa?.lugares || [];
   const conexiones = mapa?.conexiones || [];
   const porId = Object.fromEntries(lugares.map((l) => [l.id, l]));
+  const tieneFondoIA = !!mapa?.fondoUrl;
 
-  const mares = lugares
-    .filter((l) => l.tipo === "mar")
-    .map((l) => dibujarMar(l.x, l.y, semillaDesde(l.id)))
-    .join("");
+  const mares = tieneFondoIA
+    ? ""
+    : lugares
+        .filter((l) => l.tipo === "mar")
+        .map((l) => dibujarMar(l.x, l.y, semillaDesde(l.id)))
+        .join("");
 
   const lineas = conexiones
     .map(([idA, idB]) => {
@@ -265,16 +269,18 @@ export function renderizarMapaSVG(mapa, lugarActivoId) {
     })
     .join("");
 
-  const relieve = lugares
-    .map((l) => {
-      const seed = semillaDesde(l.id);
-      if (l.tipo === "montana") return dibujarMontanas(l.x, l.y, seed);
-      if (l.tipo === "bosque") return dibujarBosque(l.x, l.y, seed);
-      if (l.tipo === "lago") return dibujarLago(l.x, l.y, seed);
-      if (l.tipo === "pantano") return dibujarPantano(l.x, l.y, seed);
-      return "";
-    })
-    .join("");
+  const relieve = tieneFondoIA
+    ? ""
+    : lugares
+        .map((l) => {
+          const seed = semillaDesde(l.id);
+          if (l.tipo === "montana") return dibujarMontanas(l.x, l.y, seed);
+          if (l.tipo === "bosque") return dibujarBosque(l.x, l.y, seed);
+          if (l.tipo === "lago") return dibujarLago(l.x, l.y, seed);
+          if (l.tipo === "pantano") return dibujarPantano(l.x, l.y, seed);
+          return "";
+        })
+        .join("");
 
   const OFFSET_Y_ETIQUETA = { montana: -10.5, bosque: 8, lago: 7, pantano: 7, rio: -5, mar: 0 };
 
@@ -325,9 +331,13 @@ export function renderizarMapaSVG(mapa, lugarActivoId) {
           <stop offset="0%" stop-color="#ecd9a8" />
           <stop offset="100%" stop-color="#c3a267" />
         </radialGradient>
+        <clipPath id="mapaRecorte"><rect x="0" y="0" width="100" height="100" /></clipPath>
       </defs>
-      <rect x="0" y="0" width="100" height="100" fill="url(#mapaGradienteFondo)" />
-      ${dibujarTextura()}
+      ${
+        tieneFondoIA
+          ? `<image href="${escaparXML(mapa.fondoUrl)}" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice" clip-path="url(#mapaRecorte)" />`
+          : `<rect x="0" y="0" width="100" height="100" fill="url(#mapaGradienteFondo)" />${dibujarTextura()}`
+      }
       ${mares}
       ${lineas}
       ${relieve}

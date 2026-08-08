@@ -226,10 +226,11 @@ montañas, dilo), repartidos por distintas zonas del mapa, no todos amontonados 
 o localización. Incluye el ambiente general (clima, vegetación, época del año) que sugiere la
 sinopsis. IMPORTANTE: no describas ninguna composición circular, en forma de mandala, de anillo, ni
 de "árbol del mundo" — el terreno debe estar disperso de forma natural por un paisaje rectangular
-amplio, sin ninguna simetría radial. Si hay mar o costa en la lista de lugares, descríbelo como un
-borde en UN lado del mapa, nunca rodeando toda la tierra como si fuera una isla. No menciones
-nombres propios ni texto que deba aparecer escrito en el mapa. Máximo 60 palabras, en inglés, sin
-explicaciones adicionales, sin comillas.
+amplio, sin ninguna simetría radial. Si hay mar o costa en la lista de lugares, descríbela SIEMPRE
+en inglés como "coastline" (nunca "sea" ni "ocean"), como un borde en UN lado del mapa, nunca
+rodeando toda la tierra como si fuera una isla. No menciones nombres propios ni texto que deba
+aparecer escrito en el mapa. Máximo 60 palabras, en inglés, sin explicaciones adicionales, sin
+comillas.
 
 Sinopsis: "${sinopsis || "(sin sinopsis)"}"
 Lugares del mapa: ${listaLugares || "(sin lugares definidos todavía)"}
@@ -268,24 +269,21 @@ async function construirPrompt(tipo, d) {
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
     const prompt =
-      `Top-down bird's-eye map view of a fantasy region, camera looking straight down from ` +
-      `directly above, like a physical paper map spread flat on a table. The terrain fills the ` +
-      `whole frame as seen from directly overhead, with NO horizon line and NO eye-level or ` +
-      `ground-level perspective. Several clearly SEPARATE regions spread across the land with ` +
-      `open space between them: a mountain range confined to one area, a forest in another area, ` +
-      `a river winding across the land seen from above, a lake, ancient ruins, a stone bridge, a ` +
-      `village. Hand-drawn ink linework on aged parchment paper, flat cartographic illustration, ` +
-      `like a tabletop RPG game map handout` +
+      `Fantasy RPG world map poster, flat 2D game map illustration seen from a high elevated ` +
+      `vantage point. Several clearly SEPARATE regions spread across a wide landscape with open ` +
+      `space between them: a mountain range confined to one area, a forest in another area, a ` +
+      `river winding through the land, a lake, ancient ruins, a stone bridge, a village, a ` +
+      `coastline along one edge. Hand-drawn ink linework on aged parchment paper, flat ` +
+      `cartographic illustration style, like a tabletop RPG game map handout` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
       `.`;
     const negativo =
-      `horizon line, landscape photography, scenic vista, eye-level view, ground-level ` +
-      `perspective, valley view, mountain vista, photograph taken from the ground, ` +
+      `satellite view, planet, globe view, directly overhead view, drone photo, ` +
       `circular composition, circle, disc, medallion, globe, round border, circular border, ` +
       `mappa mundi, manuscript, vignette, circular frame, porthole, mandala, radial symmetry, ` +
-      `tree of life, island surrounded by water on all sides, realistic landscape painting, ` +
-      `photographic, 3D depth, atmospheric perspective, dramatic scenic vista, single continuous ` +
-      `mountain range filling the whole frame, detailed photorealistic terrain, drone photo, ` +
+      `tree of life, island surrounded by water on all sides, sea surrounding the land, ` +
+      `photorealistic painted landscape, nature photograph, scenic vista painting, photographic, ` +
+      `single continuous mountain range filling the whole frame, detailed photorealistic terrain, ` +
       `portrait photo, close-up, single building close-up, 3D render, isometric view, aerial ` +
       `photograph, photorealistic, icons, symbols, compass rose, map legend, border frame, ` +
       `${NEGATIVO_COMUN}`;

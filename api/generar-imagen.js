@@ -70,7 +70,7 @@ async function handler(req, res) {
   }
 
   const { tipo, datos } = req.body || {};
-  const prompt = await construirPrompt(tipo, datos || {});
+  const { prompt, negativo } = await construirPrompt(tipo, datos || {});
   if (!prompt) {
     res.status(400).json({ error: "Tipo de imagen no reconocido o faltan datos" });
     return;
@@ -80,7 +80,13 @@ async function handler(req, res) {
 
   try {
     const seed = Math.floor(Math.random() * 1_000_000_000);
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=${width}&height=${height}&nologo=true&seed=${seed}`;
+    let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?model=flux&width=${width}&height=${height}&nologo=true&seed=${seed}`;
+    // El prompt negativo es un parámetro de verdad, separado del prompt
+    // principal — es la forma correcta de excluir cosas. Repetirlas dentro
+    // del propio prompt (aunque sea como "NOT esto") es contraproducente:
+    // el modelo no entiende bien la negación en el texto y a veces acaba
+    // reforzando visualmente justo lo que se quería evitar.
+    if (negativo) url += `&negative_prompt=${encodeURIComponent(negativo)}`;
 
     // El nivel anónimo de Pollinations solo admite 1 petición en cola a la
     // vez por IP — si dos generaciones se solapan (dos pestañas, o dos
@@ -250,55 +256,63 @@ Lugares del mapa: ${listaLugares || "(sin lugares definidos todavía)"}
   }
 }
 
+// Cosas que no queremos en NINGUNA imagen, van siempre en el prompt
+// negativo (parámetro aparte), nunca repetidas dentro del prompt principal.
+const NEGATIVO_COMUN = "text, letters, words, captions, labels, watermark, logo, signature, blurry, low quality";
+
 async function construirPrompt(tipo, d) {
   if (tipo === "mapa") {
     // Solo terreno: nada de nombres, iconos ni fronteras — eso lo dibuja el
     // propio código encima, con precisión, a partir de los lugares reales.
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
-    return (
-      `Black ink hand-drawn fantasy region map on aged sepia parchment, monochrome pen-and-ink ` +
-      `cartography style like a historical atlas — NO color wash, NO painted terrain, fine ` +
-      `linework only in dark brown/black ink. Mountains drawn as small clustered triangular peak ` +
-      `symbols, forests as clusters of small tree symbols, hills as hachure shading, rivers as ` +
-      `thin winding ink lines. A wide rectangular sprawling landmass filling the entire canvas ` +
-      `edge to edge, terrain features scattered naturally across different areas of the map` +
+    const prompt =
+      `Flat 2D top-down fantasy strategy-game world map, illustrated like a board game map or an ` +
+      `old manuscript atlas — abstract and schematic, drawn with a flat orthographic view and no ` +
+      `visual depth or distance perspective. Several clearly SEPARATE regions spread across the ` +
+      `map with open space between them: a mountain range confined to one area, a forest in ` +
+      `another area, a river cutting through open plains, a lake, ancient ruins, a village, and a ` +
+      `coastline along one edge. Hand-drawn ink linework and light watercolor wash on aged ` +
+      `parchment, old-world cartography style` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
-      `. If there is a coastline or sea, it runs along ONE edge of the image only — the landmass ` +
-      `must NOT be surrounded by water on all sides, NOT a circular island, NOT an island of any ` +
-      `shape. Absolutely NOT a circular vignette, NOT a circular frame or porthole view, NOT a ` +
-      `mandala, NOT a colored/painted illustration, NOT photorealistic, NOT a 3D render, NOT an ` +
-      `isometric perspective, NOT a close-up of a single hill. No text, no labels, no icons, no ` +
-      `borders, no UI, no compass, no legend.`
-    );
+      `.`;
+    const negativo =
+      `realistic landscape painting, photographic, 3D depth, atmospheric perspective, dramatic ` +
+      `scenic vista, single continuous mountain range filling the whole frame, detailed ` +
+      `photorealistic terrain, drone photo, circular composition, circle, vignette, circular ` +
+      `frame, porthole, mandala, radial symmetry, tree of life, island surrounded by water on all ` +
+      `sides, portrait photo, close-up, single building close-up, 3D render, isometric view, ` +
+      `aerial photograph, photorealistic, icons, symbols, compass rose, map legend, border frame, ` +
+      `${NEGATIVO_COMUN}`;
+    return { prompt, negativo };
   }
 
   if (tipo === "personaje") {
     const { nombre, raza, clase, descripcion, rol } = d;
     const sujeto = [raza, clase || rol].filter(Boolean).join(" ") || "fantasy character";
     const encuadre = rol === "enemigo" ? "menacing three-quarter portrait, dramatic dark lighting" : "heroic three-quarter portrait";
-    return (
+    const prompt =
       `${encuadre} of a ${sujeto}${nombre ? ` named ${nombre}` : ""}. ${descripcion || ""} ` +
       `${ESTILO_BASE}, painterly concept art, single character, plain softly-lit background, ` +
-      `waist-up framing, detailed costume and face.`
-    );
+      `waist-up framing, detailed costume and face.`;
+    return { prompt, negativo: `multiple people, extra limbs, disfigured, ${NEGATIVO_COMUN}` };
   }
 
   if (tipo === "escena") {
     const narracionOriginal = (d.narracion || "").trim();
-    if (!narracionOriginal) return null;
+    if (!narracionOriginal) return { prompt: null };
 
     const destilada = await destilarNarracionParaImagen(narracionOriginal);
     const descripcionVisual = destilada || narracionOriginal.slice(0, 400);
 
-    return (
+    const prompt =
       `Cinematic fantasy game establishing-shot background art. Scene: ${descripcionVisual}. ` +
       `${ESTILO_BASE}, atmospheric depth, digital painting, dramatic lighting matching the mood ` +
       `described, vertical mobile-screen composition. Depict only what is explicitly described ` +
-      `above — do not add any extra generic human figures, adventurers, or bystanders that are ` +
-      `not part of the described scene.`
-    );
+      `above.`;
+    const negativo = `extra unmentioned people, generic adventurers, bystanders, crowd, ${NEGATIVO_COMUN}`;
+    return { prompt, negativo };
   }
 
-  return null;
+  return { prompt: null };
 }

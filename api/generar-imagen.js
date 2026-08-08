@@ -135,7 +135,10 @@ async function handler(req, res) {
 }
 
 const DIMENSIONES = {
-  mapa: { width: 1024, height: 1024 },
+  // Más grande que antes (1024→1536) para poder ampliar sin que se vea
+  // borroso. Más allá de esto, Flux no suele añadir detalle real — solo
+  // agranda el lienzo sin más nitidez, así que no merece la pena pedir más.
+  mapa: { width: 1536, height: 1536 },
   personaje: { width: 768, height: 1024 },
   // Vertical, pensado para la pantalla del móvil (donde se ve de verdad
   // esta imagen), no horizontal — antes salía recortada/deformada ahí.
@@ -209,11 +212,13 @@ async function destilarAmbientacionMapa(sinopsis, lugares) {
 Vas a describir el TERRENO de un mapa de fantasía para un generador de imágenes, en INGLÉS.
 Tienes la sinopsis de la historia y la lista real de lugares que existen en ese mapa (con su
 tipo: pueblo, bosque, río, lago, montaña, ruinas, cueva, castillo, mar, pantano, camino).
-Describe la COMPOSICIÓN GEOGRÁFICA general que tendría sentido para esos lugares concretos —
-menciona explícitamente los tipos de terreno que aparecen en la lista (si hay un río, dilo; si
-hay montañas, dilo), su disposición aproximada entre sí, y el ambiente general (clima, vegetación,
-época del año) que sugiere la sinopsis. No menciones nombres propios ni texto que deba aparecer
-escrito en el mapa. Máximo 60 palabras, en inglés, sin explicaciones adicionales, sin comillas.
+Describe la COMPOSICIÓN GEOGRÁFICA general de un TERRITORIO AMPLIO (muchos kilómetros de
+extensión, varias regiones distintas) que tendría sentido para esos lugares concretos — menciona
+explícitamente los tipos de terreno que aparecen en la lista (si hay un río, dilo; si hay
+montañas, dilo), repartidos por distintas zonas del mapa, no todos amontonados en un único cerro
+o localización. Incluye el ambiente general (clima, vegetación, época del año) que sugiere la
+sinopsis. No menciones nombres propios ni texto que deba aparecer escrito en el mapa. Máximo 60
+palabras, en inglés, sin explicaciones adicionales, sin comillas.
 
 Sinopsis: "${sinopsis || "(sin sinopsis)"}"
 Lugares del mapa: ${listaLugares || "(sin lugares definidos todavía)"}
@@ -248,13 +253,15 @@ async function construirPrompt(tipo, d) {
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
     return (
-      `Hand-drawn fantasy RPG regional map, antique parchment, top-down illustrated cartography, ` +
-      `highly detailed medieval fantasy map, subtle watercolor and ink textures, dense natural terrain, ` +
-      `winding dirt roads, rivers, hills, forests, rocky mountains, atmospheric terrain shading, ` +
-      `elegant old-world cartography, muted warm parchment colors` +
+      `Flat 2D top-down fantasy world map illustration, orthographic bird's-eye view directly from ` +
+      `above — NOT an aerial photo, NOT a 3D render, NOT an isometric perspective, NOT a close-up ` +
+      `of a single hill or castle. A wide sprawling territory covering many distinct regions, ` +
+      `drawn in the style of a classic hand-illustrated old-world atlas map on aged parchment, ` +
+      `pen-and-ink linework, subtle watercolor terrain shading, winding roads, rivers cutting ` +
+      `across the land, scattered forests, distant mountain ranges, muted warm parchment colors` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
-      `, designed as a video game world map background. ` +
-      `No text, no labels, no icons, no borders, no UI, no compass, no symbols, no legend.`
+      `. No text, no labels, no icons, no borders, no UI, no compass, no legend, no single ` +
+      `dominant foreground structure.`
     );
   }
 

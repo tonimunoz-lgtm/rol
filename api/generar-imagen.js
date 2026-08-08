@@ -193,11 +193,60 @@ Narración: "${narracion}"
   }
 }
 
+// Igual que destilarNarracionParaImagen, pero para el mapa: combina la
+// sinopsis de la partida con la lista REAL de lugares que el master ha
+// creado (nombres y tipos: montañas, ríos, bosques...), para que el
+// terreno generado tenga relación de verdad con lo que hay en el mapa, no
+// solo un paisaje de fantasía genérico.
+async function destilarAmbientacionMapa(sinopsis, lugares) {
+  if (!GROQ_API_KEY) return null;
+  const listaLugares = (lugares || [])
+    .map((l) => `${l.nombre} (${l.tipo})`)
+    .join(", ");
+  if (!sinopsis && !listaLugares) return null;
+
+  const prompt = `
+Vas a describir el TERRENO de un mapa de fantasía para un generador de imágenes, en INGLÉS.
+Tienes la sinopsis de la historia y la lista real de lugares que existen en ese mapa (con su
+tipo: pueblo, bosque, río, lago, montaña, ruinas, cueva, castillo, mar, pantano, camino).
+Describe la COMPOSICIÓN GEOGRÁFICA general que tendría sentido para esos lugares concretos —
+menciona explícitamente los tipos de terreno que aparecen en la lista (si hay un río, dilo; si
+hay montañas, dilo), su disposición aproximada entre sí, y el ambiente general (clima, vegetación,
+época del año) que sugiere la sinopsis. No menciones nombres propios ni texto que deba aparecer
+escrito en el mapa. Máximo 60 palabras, en inglés, sin explicaciones adicionales, sin comillas.
+
+Sinopsis: "${sinopsis || "(sin sinopsis)"}"
+Lugares del mapa: ${listaLugares || "(sin lugares definidos todavía)"}
+`.trim();
+
+  try {
+    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+        temperature: 0.6,
+        reasoning_effort: "low",
+      }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const texto = (data?.choices?.[0]?.message?.content || "").trim().replace(/^["“]|["”]$/g, "");
+    return texto || null;
+  } catch (e) {
+    console.warn("No se pudo destilar la ambientación del mapa (seguimos sin este paso):", e.message);
+    return null;
+  }
+}
+
 async function construirPrompt(tipo, d) {
   if (tipo === "mapa") {
     // Solo terreno: nada de nombres, iconos ni fronteras — eso lo dibuja el
     // propio código encima, con precisión, a partir de los lugares reales.
-    const ambientacion = (d.descripcion || "").trim();
+    const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
+    const ambientacion = destilado || (d.descripcion || "").trim();
     return (
       `Hand-drawn fantasy RPG regional map, antique parchment, top-down illustrated cartography, ` +
       `highly detailed medieval fantasy map, subtle watercolor and ink textures, dense natural terrain, ` +

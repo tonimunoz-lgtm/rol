@@ -1940,10 +1940,15 @@ function añadirMensajeChat(evento) {
     color = colorClaroDesdeTexto(autor);
   }
 
-  historialRegistro.push({ autor, color, texto: evento.texto });
-  if (historialRegistro.length > MAX_LINEAS_REGISTRO) historialRegistro.shift();
-  if (els.bitacoraModal.classList.contains("visible") && document.querySelector('.bitacora-tab-btn[data-tab="registro"]')?.classList.contains("active")) {
-    renderRegistro();
+  // El registro persistente de la Bitácora es para el hilo de la historia
+  // (narración, detecciones, objetos encontrados...), no para la charla
+  // libre entre jugadores — esa se queda solo en el chat efímero de arriba.
+  if (evento.tipo !== "accion") {
+    historialRegistro.push({ autor, color, texto: evento.texto });
+    if (historialRegistro.length > MAX_LINEAS_REGISTRO) historialRegistro.shift();
+    if (els.bitacoraModal.classList.contains("visible") && document.querySelector('.bitacora-tab-btn[data-tab="registro"]')?.classList.contains("active")) {
+      renderRegistro();
+    }
   }
 
   const linea = document.createElement("div");

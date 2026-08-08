@@ -146,25 +146,47 @@
     </div>
   </div>
 
-  <!-- Bitácora: PNJs conocidos y pistas descubiertas (o por descubrir viendo
-       un anuncio con recompensa). -->
+  <!-- Bitácora: sinopsis + escena actual, PNJs conocidos, pistas descubiertas
+       (o por descubrir viendo un anuncio), y registro de todo lo ocurrido. -->
   <div id="bitacora-modal" class="modal-overlay">
     <div class="card" id="bitacora-content" style="max-width:480px; width:90%; max-height:85vh; overflow-y:auto;">
       <button id="btn-cerrar-bitacora" style="float:right; font-size:.75rem;">✕ Cerrar</button>
       <h2 class="display" style="font-size:1.2rem;">📖 Bitácora</h2>
 
-      <h3 style="font-size:1rem; margin-top:1em;">Personajes conocidos</h3>
-      <div id="bitacora-pnjs"></div>
+      <div style="display:flex; gap:.4em; flex-wrap:wrap; margin:.8em 0;">
+        <button class="bitacora-tab-btn active" data-tab="historia" style="font-size:.8rem;">Historia</button>
+        <button class="bitacora-tab-btn" data-tab="pnjs" style="font-size:.8rem;">PNJs</button>
+        <button class="bitacora-tab-btn" data-tab="pistas" style="font-size:.8rem;">Pistas</button>
+        <button class="bitacora-tab-btn" data-tab="registro" style="font-size:.8rem;">Registro</button>
+      </div>
 
-      <h3 style="font-size:1rem; margin-top:1em;">Pistas</h3>
-      <div id="bitacora-objetivo"></div>
-      <div id="bitacora-pistas"></div>
-      <button id="btn-pedir-pista" class="primary" style="margin-top:.6em; width:100%;">
-        🎥 Ver un anuncio para desbloquear una pista
-      </button>
-      <p id="bitacora-pistas-agotadas" style="color:var(--parchment-dim); font-size:.85rem; display:none;">
-        Ya has desbloqueado todas las pistas disponibles.
-      </p>
+      <div id="bitacora-tab-historia" class="bitacora-tab-panel">
+        <h3 style="font-size:1rem;">Sinopsis</h3>
+        <p id="bitacora-sinopsis" style="color:var(--parchment-dim); font-size:.88rem;"></p>
+        <h3 style="font-size:1rem; margin-top:1em;">Dónde estáis ahora</h3>
+        <p id="bitacora-escena-nombre" style="color:var(--amber); font-weight:600; margin-bottom:.3em;"></p>
+        <p id="bitacora-escena-narracion" style="color:var(--parchment-dim); font-size:.88rem;"></p>
+      </div>
+
+      <div id="bitacora-tab-pnjs" class="bitacora-tab-panel" style="display:none;">
+        <div id="bitacora-pnjs"></div>
+      </div>
+
+      <div id="bitacora-tab-pistas" class="bitacora-tab-panel" style="display:none;">
+        <div id="bitacora-objetivo"></div>
+        <div id="bitacora-pistas"></div>
+        <button id="btn-pedir-pista" class="primary" style="margin-top:.6em; width:100%;">
+          🎥 Ver un anuncio para desbloquear una pista
+        </button>
+        <p id="bitacora-pistas-agotadas" style="color:var(--parchment-dim); font-size:.85rem; display:none;">
+          Ya has desbloqueado todas las pistas disponibles.
+        </p>
+      </div>
+
+      <div id="bitacora-tab-registro" class="bitacora-tab-panel" style="display:none;">
+        <p style="color:var(--parchment-dim); font-size:.8rem;">Todo lo que ha ido pasando, de más antiguo a más reciente.</p>
+        <div id="bitacora-registro"></div>
+      </div>
     </div>
   </div>
 

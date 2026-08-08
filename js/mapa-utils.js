@@ -348,7 +348,7 @@ export function renderizarMapaSVG(mapa, lugarActivoId, opciones = {}) {
       </defs>
       ${
         tieneFondoIA
-          ? `<image href="${escaparXML(mapa.fondoUrl)}" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice" clip-path="url(#mapaRecorte)" />`
+          ? `<image href="${escaparXML(mapa.fondoUrl)}" x="0" y="0" width="100" height="100" preserveAspectRatio="none" />`
           : `<rect x="0" y="0" width="100" height="100" fill="url(#mapaGradienteFondo)" />${dibujarTextura()}`
       }
       ${mares}

@@ -268,15 +268,19 @@ async function construirPrompt(tipo, d) {
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
     const prompt =
-      `Fantasy RPG world map poster, flat 2D top-down game map illustration. Several clearly ` +
-      `SEPARATE regions spread across a wide landscape with open space between them: a mountain ` +
-      `range confined to one area, a forest in another area, a river cutting through the land, a ` +
-      `lake, ancient ruins, a stone bridge, a village. Hand-drawn ink linework and light ` +
-      `watercolor wash on aged parchment background, filling the entire canvas edge to edge, ` +
-      `old-world fantasy game map style` +
+      `Top-down bird's-eye map view of a fantasy region, camera looking straight down from ` +
+      `directly above, like a physical paper map spread flat on a table. The terrain fills the ` +
+      `whole frame as seen from directly overhead, with NO horizon line and NO eye-level or ` +
+      `ground-level perspective. Several clearly SEPARATE regions spread across the land with ` +
+      `open space between them: a mountain range confined to one area, a forest in another area, ` +
+      `a river winding across the land seen from above, a lake, ancient ruins, a stone bridge, a ` +
+      `village. Hand-drawn ink linework on aged parchment paper, flat cartographic illustration, ` +
+      `like a tabletop RPG game map handout` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
       `.`;
     const negativo =
+      `horizon line, landscape photography, scenic vista, eye-level view, ground-level ` +
+      `perspective, valley view, mountain vista, photograph taken from the ground, ` +
       `circular composition, circle, disc, medallion, globe, round border, circular border, ` +
       `mappa mundi, manuscript, vignette, circular frame, porthole, mandala, radial symmetry, ` +
       `tree of life, island surrounded by water on all sides, realistic landscape painting, ` +

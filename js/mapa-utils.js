@@ -297,18 +297,23 @@ export function renderizarMapaSVG(mapa, lugarActivoId, opciones = {}) {
         .join("");
 
   const OFFSET_Y_ETIQUETA = { montana: -10.5, bosque: 8, lago: 7, pantano: 7, rio: -5, mar: 0 };
+  const TIPOS_AGUA = ["rio", "lago", "mar", "pantano"];
 
   const marcadores = lugares
     .map((l) => {
       const esActivo = l.id === lugarActivoId;
       const esTerreno = TIPOS_TERRENO.includes(l.tipo);
-      const icono = ICONOS_LUGAR[l.tipo] || ICONOS_LUGAR.otro;
       const claseEtiqueta = esTerreno
         ? l.tipo === "montana" || l.tipo === "bosque"
           ? "mapa-etiqueta-tierra"
           : "mapa-etiqueta-agua"
         : "mapa-etiqueta-asentamiento";
-      const offsetY = esTerreno ? OFFSET_Y_ETIQUETA[l.tipo] ?? 7 : 6.8;
+      const clasePunto = TIPOS_AGUA.includes(l.tipo)
+        ? "mapa-punto-agua"
+        : esTerreno
+          ? "mapa-punto-tierra"
+          : "mapa-punto-asentamiento";
+      const offsetY = esTerreno ? OFFSET_Y_ETIQUETA[l.tipo] ?? 7 : 6;
       // Evita que el texto se salga del mapa cuando el lugar está muy cerca
       // de un borde (habitual en mares/lagos costeros): cambia la
       // alineación en vez de quedarse centrado sobre el borde.
@@ -324,17 +329,11 @@ export function renderizarMapaSVG(mapa, lugarActivoId, opciones = {}) {
              <polygon points="0,-8.5 4.2,-6.8 0,-5.1" class="mapa-aqui-bandera" />
            </g>`
         : "";
-
-      if (esTerreno) {
-        return `<g class="mapa-lugar" data-id="${l.id}" transform="translate(${l.x}, ${l.y})">${etiqueta}${marcaAqui}</g>`;
-      }
-      return `
-        <g class="mapa-lugar" data-id="${l.id}" transform="translate(${l.x}, ${l.y})">
-          <circle r="3.6" class="mapa-lugar-fondo" />
-          <text text-anchor="middle" dominant-baseline="central" font-size="4" class="mapa-lugar-icono">${icono}</text>
-          ${etiqueta}
-          ${marcaAqui}
-        </g>`;
+      // Un único estilo para todos: un punto intermitente + el nombre — sin
+      // iconos ni distinción visual por tipo, así el mapa no depende de que
+      // la imagen generada acierte a dibujar cada edificio en su sitio.
+      const punto = `<circle r="1.6" class="mapa-punto ${clasePunto}" />`;
+      return `<g class="mapa-lugar" data-id="${l.id}" transform="translate(${l.x}, ${l.y})">${punto}${etiqueta}${marcaAqui}</g>`;
     })
     .join("");
 

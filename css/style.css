@@ -845,3 +845,17 @@ h1.display::after, h2.display::after {
 .mapa-cuadricula { stroke: #4a3d2a; stroke-width: 0.15; opacity: 0.3; }
 .mapa-cuadricula-etiqueta { fill: #4a3d2a; opacity: 0.55; font-family: var(--font-mono); }
 .mapa-lugar { touch-action: none; }
+
+/* Punto intermitente para cada lugar del mapa (sustituye a los iconos) */
+.mapa-punto {
+  animation: mapa-punto-parpadeo 1.7s ease-in-out infinite;
+  stroke: #14110d;
+  stroke-width: 0.3;
+}
+@keyframes mapa-punto-parpadeo {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.mapa-punto-asentamiento { fill: var(--amber); }
+.mapa-punto-tierra { fill: #7c6a52; }
+.mapa-punto-agua { fill: #5b93ab; }

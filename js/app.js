@@ -369,7 +369,7 @@ async function bootGame() {
     jugadorDataActual = data;
     els.playerName.textContent = data.nombre;
     els.hpPill.textContent = `❤ ${data.vida}/${data.vidaMax ?? data.vida}`;
-    els.invPill.textContent = `🎒 ${(data.inventario || []).length}`;
+    els.invPill.textContent = `🎒 Mochila ${(data.inventario || []).length}`;
     renderFicha(data);
     if (els.inventarioModal.classList.contains("visible")) renderInventario(data);
     intentarMostrarPruebaEscenaActual();

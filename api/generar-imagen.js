@@ -141,10 +141,11 @@ async function handler(req, res) {
 }
 
 const DIMENSIONES = {
-  // Más grande que antes (1024→1536) para poder ampliar sin que se vea
-  // borroso. Más allá de esto, Flux no suele añadir detalle real — solo
-  // agranda el lienzo sin más nitidez, así que no merece la pena pedir más.
-  mapa: { width: 1536, height: 1536 },
+  // Apaisado (1.5:1), no cuadrado — en las 4 pruebas anteriores, siempre
+  // cuadrado, siempre ha salido algo circular por una razón u otra. Un
+  // lienzo claramente rectangular deja mucho menos margen para que el
+  // modelo "redondee" la composición.
+  mapa: { width: 1536, height: 1024 },
   personaje: { width: 768, height: 1024 },
   // Vertical, pensado para la pantalla del móvil (donde se ve de verdad
   // esta imagen), no horizontal — antes salía recortada/deformada ahí.
@@ -267,22 +268,22 @@ async function construirPrompt(tipo, d) {
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
     const prompt =
-      `Flat 2D top-down fantasy strategy-game world map, illustrated like a board game map or an ` +
-      `old manuscript atlas — abstract and schematic, drawn with a flat orthographic view and no ` +
-      `visual depth or distance perspective. Several clearly SEPARATE regions spread across the ` +
-      `map with open space between them: a mountain range confined to one area, a forest in ` +
-      `another area, a river cutting through open plains, a lake, ancient ruins, a village, and a ` +
-      `coastline along one edge. Hand-drawn ink linework and light watercolor wash on aged ` +
-      `parchment, old-world cartography style` +
+      `Fantasy RPG world map poster, flat 2D top-down game map illustration. Several clearly ` +
+      `SEPARATE regions spread across a wide landscape with open space between them: a mountain ` +
+      `range confined to one area, a forest in another area, a river cutting through the land, a ` +
+      `lake, ancient ruins, a stone bridge, a village. Hand-drawn ink linework and light ` +
+      `watercolor wash on aged parchment background, filling the entire canvas edge to edge, ` +
+      `old-world fantasy game map style` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
       `.`;
     const negativo =
-      `realistic landscape painting, photographic, 3D depth, atmospheric perspective, dramatic ` +
-      `scenic vista, single continuous mountain range filling the whole frame, detailed ` +
-      `photorealistic terrain, drone photo, circular composition, circle, vignette, circular ` +
-      `frame, porthole, mandala, radial symmetry, tree of life, island surrounded by water on all ` +
-      `sides, portrait photo, close-up, single building close-up, 3D render, isometric view, ` +
-      `aerial photograph, photorealistic, icons, symbols, compass rose, map legend, border frame, ` +
+      `circular composition, circle, disc, medallion, globe, round border, circular border, ` +
+      `mappa mundi, manuscript, vignette, circular frame, porthole, mandala, radial symmetry, ` +
+      `tree of life, island surrounded by water on all sides, realistic landscape painting, ` +
+      `photographic, 3D depth, atmospheric perspective, dramatic scenic vista, single continuous ` +
+      `mountain range filling the whole frame, detailed photorealistic terrain, drone photo, ` +
+      `portrait photo, close-up, single building close-up, 3D render, isometric view, aerial ` +
+      `photograph, photorealistic, icons, symbols, compass rose, map legend, border frame, ` +
       `${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }

@@ -217,8 +217,10 @@ extensión, varias regiones distintas) que tendría sentido para esos lugares co
 explícitamente los tipos de terreno que aparecen en la lista (si hay un río, dilo; si hay
 montañas, dilo), repartidos por distintas zonas del mapa, no todos amontonados en un único cerro
 o localización. Incluye el ambiente general (clima, vegetación, época del año) que sugiere la
-sinopsis. No menciones nombres propios ni texto que deba aparecer escrito en el mapa. Máximo 60
-palabras, en inglés, sin explicaciones adicionales, sin comillas.
+sinopsis. IMPORTANTE: no describas ninguna composición circular, en forma de mandala, de anillo, ni
+de "árbol del mundo" — el terreno debe estar disperso de forma natural por un paisaje rectangular
+amplio, sin ninguna simetría radial. No menciones nombres propios ni texto que deba aparecer
+escrito en el mapa. Máximo 60 palabras, en inglés, sin explicaciones adicionales, sin comillas.
 
 Sinopsis: "${sinopsis || "(sin sinopsis)"}"
 Lugares del mapa: ${listaLugares || "(sin lugares definidos todavía)"}
@@ -253,15 +255,18 @@ async function construirPrompt(tipo, d) {
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
     return (
-      `Flat 2D top-down fantasy world map illustration, orthographic bird's-eye view directly from ` +
-      `above — NOT an aerial photo, NOT a 3D render, NOT an isometric perspective, NOT a close-up ` +
-      `of a single hill or castle. A wide sprawling territory covering many distinct regions, ` +
-      `drawn in the style of a classic hand-illustrated old-world atlas map on aged parchment, ` +
-      `pen-and-ink linework, subtle watercolor terrain shading, winding roads, rivers cutting ` +
-      `across the land, scattered forests, distant mountain ranges, muted warm parchment colors` +
+      `Flat 2D top-down fantasy world map illustration, filling the entire rectangular canvas ` +
+      `edge to edge, orthographic bird's-eye view directly from above. A wide sprawling territory ` +
+      `covering many distinct regions, drawn in the style of a classic hand-illustrated old-world ` +
+      `atlas map on aged parchment, pen-and-ink linework, subtle watercolor terrain shading, ` +
+      `winding roads, rivers cutting across the land, scattered forests, distant mountain ranges, ` +
+      `muted warm parchment colors` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
-      `. No text, no labels, no icons, no borders, no UI, no compass, no legend, no single ` +
-      `dominant foreground structure.`
+      `. Absolutely NOT a 3D render, NOT an isometric perspective, NOT an aerial photo, NOT a ` +
+      `close-up of a single hill or castle, NOT a circular vignette, NOT a circular frame or ` +
+      `porthole/telescope view, NOT a mandala or radial symmetrical pattern, NOT a tree-of-life ` +
+      `or world-tree motif, NOT a green orb or sphere. No text, no labels, no icons, no borders, ` +
+      `no UI, no compass, no legend.`
     );
   }
 

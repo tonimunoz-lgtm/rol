@@ -348,7 +348,11 @@ h1.display::after, h2.display::after {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(20, 17, 13, 0.92);
+  /* Antes ocultaba casi del todo la escena de fondo (0.92 de opacidad).
+     Ahora deja verse lo suficiente para no perder la ambientación, igual
+     que el chat, que siempre flota sobre el fondo en vez de taparlo. */
+  background: rgba(20, 17, 13, 0.55);
+  backdrop-filter: blur(2px);
   display: none;
   align-items: center;
   justify-content: center;

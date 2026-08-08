@@ -76,6 +76,10 @@ const els = {
   bitacoraPistas: document.getElementById("bitacora-pistas"),
   btnPedirPista: document.getElementById("btn-pedir-pista"),
   bitacoraPistasAgotadas: document.getElementById("bitacora-pistas-agotadas"),
+  bitacoraSinopsis: document.getElementById("bitacora-sinopsis"),
+  bitacoraEscenaNombre: document.getElementById("bitacora-escena-nombre"),
+  bitacoraEscenaNarracion: document.getElementById("bitacora-escena-narracion"),
+  bitacoraRegistro: document.getElementById("bitacora-registro"),
   btnMapa: document.getElementById("btn-mapa"),
   mapaModal: document.getElementById("mapa-modal"),
   btnCerrarMapa: document.getElementById("btn-cerrar-mapa"),
@@ -121,6 +125,7 @@ let escenaActualLocalId = null;
 let pnjsActual = [];
 let pistasActual = [];
 let mapaCrudo = null;
+let sinopsisActual = "";
 let ultimaEscenaMostrada = null;
 let combateActivoAnterior = false;
 
@@ -383,6 +388,7 @@ async function bootGame() {
     pnjsActual = data.pnjs || [];
     pistasActual = data.pistas || [];
     mapaCrudo = data.mapa || null;
+    sinopsisActual = data.sinopsis || "";
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
     const combateActivoAhora = !!data.combate?.activo;
@@ -450,6 +456,9 @@ async function bootGame() {
         // cada móvil conectado le pida su propia frase a la IA.
         if (evento.tipo === "flourish") {
           añadirMensajeChat({ tipo: "narracion", texto: `📖 ${evento.texto}` });
+        }
+        if (evento.tipo === "objeto_encontrado") {
+          añadirMensajeChat({ tipo: "narracion", texto: `🎒 ${evento.nombreJugador} encontró: ${evento.objeto}` });
         }
       }
     });
@@ -1026,14 +1035,47 @@ els.btnCerrarPrueba.addEventListener("click", () => {
   els.pruebaModal.classList.remove("visible");
 });
 
-// ---------- Bitácora: PNJs conocidos + pistas desbloqueables ----------
+// ---------- Bitácora: sinopsis, escena actual, PNJs, pistas y registro ----------
 els.btnBitacora.addEventListener("click", () => {
   renderBitacora();
   els.bitacoraModal.classList.add("visible");
 });
 els.btnCerrarBitacora.addEventListener("click", () => els.bitacoraModal.classList.remove("visible"));
 
+document.querySelectorAll(".bitacora-tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".bitacora-tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".bitacora-tab-panel").forEach((p) => (p.style.display = "none"));
+    btn.classList.add("active");
+    document.getElementById(`bitacora-tab-${btn.dataset.tab}`).style.display = "block";
+    if (btn.dataset.tab === "registro") renderRegistro();
+  });
+});
+
+function renderHistoriaBitacora() {
+  els.bitacoraSinopsis.textContent = sinopsisActual || "El master todavía no ha escrito una sinopsis para esta partida.";
+  const escena = encontrarEscena(guionActual, escenaActualLocalId);
+  els.bitacoraEscenaNombre.textContent = escena?.nombre || "—";
+  els.bitacoraEscenaNarracion.textContent = escena?.narracion || "";
+}
+
+function renderRegistro() {
+  if (historialRegistro.length === 0) {
+    els.bitacoraRegistro.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no ha pasado nada que registrar.</p>`;
+    return;
+  }
+  els.bitacoraRegistro.innerHTML = historialRegistro
+    .map(
+      (r) =>
+        `<div class="registro-linea"><span class="registro-autor" style="color:${r.color};">${r.autor}:</span> ${r.texto}</div>`
+    )
+    .join("");
+  els.bitacoraRegistro.scrollTop = els.bitacoraRegistro.scrollHeight;
+}
+
 function renderBitacora() {
+  renderHistoriaBitacora();
+
   // PNJs: visibles siempre que el master los haya escrito, como referencia
   // de la historia (no dependen de anuncios ni de desbloqueo).
   if (pnjsActual.length === 0) {
@@ -1876,6 +1918,13 @@ function colorClaroDesdeTexto(texto) {
   return `hsl(${hue}, 75%, 68%)`;
 }
 
+// Historial persistente para la Bitácora → Registro: a diferencia del chat
+// transparente (que se desvanece solo tras unos segundos), esto se
+// conserva mientras dura la sesión, para que el jugador pueda repasar todo
+// lo que ha ido pasando.
+let historialRegistro = [];
+const MAX_LINEAS_REGISTRO = 300;
+
 function añadirMensajeChat(evento) {
   let autor = "Jugador";
   let color = "var(--amber)";
@@ -1889,6 +1938,12 @@ function añadirMensajeChat(evento) {
   } else {
     autor = evento.nombrePersonaje || evento.nombreJugador || "Jugador";
     color = colorClaroDesdeTexto(autor);
+  }
+
+  historialRegistro.push({ autor, color, texto: evento.texto });
+  if (historialRegistro.length > MAX_LINEAS_REGISTRO) historialRegistro.shift();
+  if (els.bitacoraModal.classList.contains("visible") && document.querySelector('.bitacora-tab-btn[data-tab="registro"]')?.classList.contains("active")) {
+    renderRegistro();
   }
 
   const linea = document.createElement("div");

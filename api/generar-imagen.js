@@ -158,12 +158,15 @@ async function destilarNarracionParaImagen(narracion) {
   if (!GROQ_API_KEY) return null; // sin Groq configurado, seguimos sin este paso (ver fallback más abajo)
   const prompt = `
 Traduce y destila la siguiente narración de una escena de rol de mesa en una descripción VISUAL
-concreta en INGLÉS, pensada para un generador de imágenes de fondo de videojuego (sin personajes,
-sin texto). Describe solo lo que se vería en una imagen fija: el lugar, el clima, la luz, los
-elementos físicos concretos mencionados (puentes, ríos, hielo, montañas, edificios, vegetación...),
-la hora del día y el ambiente. Ignora las instrucciones de mecánica de juego (tiradas, dificultad,
-daño) y cualquier acción de los jugadores. Máximo 60 palabras, en inglés, sin explicaciones
-adicionales, sin comillas.
+concreta en INGLÉS, pensada para un generador de imágenes de fondo de videojuego. Describe lo que
+se vería en una imagen fija: el lugar, el clima, la luz, los elementos físicos concretos
+(puentes, ríos, hielo, montañas, edificios, vegetación...), la hora del día y el ambiente. Si la
+narración menciona explícitamente una criatura, monstruo o personaje presente en la escena (p.ej.
+un guerrero fantasma, un PNJ, un enemigo), inclúyelo tal cual se describe — qué es, qué lleva, qué
+hace. Si NO se menciona ninguna criatura o personaje, no inventes ninguno. Ignora las
+instrucciones de mecánica de juego (tiradas, dificultad, daño) y las acciones de LOS JUGADORES
+(a ellos no hay que dibujarlos: son quienes juegan, no lo que aparece en la imagen). Máximo 60
+palabras, en inglés, sin explicaciones adicionales, sin comillas.
 
 Narración: "${narracion}"
 `.trim();
@@ -226,9 +229,10 @@ async function construirPrompt(tipo, d) {
 
     return (
       `Cinematic fantasy game establishing-shot background art. Scene: ${descripcionVisual}. ` +
-      `${ESTILO_BASE}, wide environmental shot, empty landscape with NO people, NO human figures, ` +
-      `NO silhouettes, NO characters anywhere in the image, moody atmospheric depth, digital painting, ` +
-      `dramatic lighting matching the mood described, vertical mobile-screen composition.`
+      `${ESTILO_BASE}, atmospheric depth, digital painting, dramatic lighting matching the mood ` +
+      `described, vertical mobile-screen composition. Depict only what is explicitly described ` +
+      `above — do not add any extra generic human figures, adventurers, or bystanders that are ` +
+      `not part of the described scene.`
     );
   }
 

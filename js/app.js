@@ -64,6 +64,8 @@ const els = {
   pruebaModal: document.getElementById("acciones-modal"),
   accionesTitulo: document.getElementById("acciones-titulo"),
   accionesPnj: document.getElementById("acciones-pnj"),
+  accionesPnjBloque: document.getElementById("acciones-pnj-bloque"),
+  accionesPnjRetrato: document.getElementById("acciones-pnj-retrato"),
   accionesLista: document.getElementById("acciones-lista"),
   btnCerrarPrueba: document.getElementById("btn-cerrar-acciones"),
   btnBitacora: document.getElementById("btn-bitacora"),
@@ -829,10 +831,15 @@ function abrirModalAcciones() {
   if (!escena) return;
   els.accionesTitulo.textContent = escena.nombre || "Acciones";
   if (escena.pnj) {
+    const pnj = pnjsActual.find((p) => p.titulo === escena.pnj);
     els.accionesPnj.textContent = `🗣️ ${escena.pnj} está aquí.`;
-    els.accionesPnj.style.display = "block";
+    els.accionesPnjRetrato.innerHTML = pnj?.retratoUrl
+      ? `<img src="${pnj.retratoUrl}" style="width:100%; height:100%; object-fit:cover;" />`
+      : "🎭";
+    els.accionesPnjRetrato.style.cssText += "display:flex; align-items:center; justify-content:center; font-size:1.8rem;";
+    els.accionesPnjBloque.style.display = "flex";
   } else {
-    els.accionesPnj.style.display = "none";
+    els.accionesPnjBloque.style.display = "none";
   }
   renderAccionesModal();
   els.pruebaModal.classList.add("visible");

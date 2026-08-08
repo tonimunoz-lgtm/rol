@@ -22,6 +22,8 @@
 const { put } = require("@vercel/blob");
 
 const FIREBASE_API_KEY = "AIzaSyB86EI00VpSCPUGaa5qSLboyszS4o7Iskc";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = "openai/gpt-oss-120b";
 
 module.exports = async (req, res) => {
   try {
@@ -68,7 +70,7 @@ async function handler(req, res) {
   }
 
   const { tipo, datos } = req.body || {};
-  const prompt = construirPrompt(tipo, datos || {});
+  const prompt = await construirPrompt(tipo, datos || {});
   if (!prompt) {
     res.status(400).json({ error: "Tipo de imagen no reconocido o faltan datos" });
     return;
@@ -135,14 +137,60 @@ async function handler(req, res) {
 const DIMENSIONES = {
   mapa: { width: 1024, height: 1024 },
   personaje: { width: 768, height: 1024 },
-  escena: { width: 1280, height: 768 },
+  // Vertical, pensado para la pantalla del móvil (donde se ve de verdad
+  // esta imagen), no horizontal — antes salía recortada/deformada ahí.
+  escena: { width: 832, height: 1472 },
 };
 
 const ESTILO_BASE =
   "hand-painted digital fantasy game art, muted warm parchment color grading, atmospheric lighting, " +
   "no text, no watermark, no logo, no UI elements, no borders, no frame";
 
-function construirPrompt(tipo, d) {
+// Flux entiende bastante peor el español que el inglés: si le pasamos la
+// narración tal cual (en español, dentro de una instrucción en inglés),
+// se le escapan detalles concretos (qué hay, qué se ve, qué pasa) y a
+// veces mete elementos que no pedimos (como un personaje). Por eso primero
+// le pedimos a Groq (gratis, ya lo usamos en el resto del proyecto) que
+// destile la narración en una lista de elementos visuales concretos EN
+// INGLÉS, pensada específicamente para un generador de imágenes — no una
+// traducción literal, sino una descripción de lo que debería VERSE.
+async function destilarNarracionParaImagen(narracion) {
+  if (!GROQ_API_KEY) return null; // sin Groq configurado, seguimos sin este paso (ver fallback más abajo)
+  const prompt = `
+Traduce y destila la siguiente narración de una escena de rol de mesa en una descripción VISUAL
+concreta en INGLÉS, pensada para un generador de imágenes de fondo de videojuego (sin personajes,
+sin texto). Describe solo lo que se vería en una imagen fija: el lugar, el clima, la luz, los
+elementos físicos concretos mencionados (puentes, ríos, hielo, montañas, edificios, vegetación...),
+la hora del día y el ambiente. Ignora las instrucciones de mecánica de juego (tiradas, dificultad,
+daño) y cualquier acción de los jugadores. Máximo 60 palabras, en inglés, sin explicaciones
+adicionales, sin comillas.
+
+Narración: "${narracion}"
+`.trim();
+
+  try {
+    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+        temperature: 0.6,
+        reasoning_effort: "low",
+      }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const texto = (data?.choices?.[0]?.message?.content || "").trim().replace(/^["“]|["”]$/g, "");
+    return texto || null;
+  } catch (e) {
+    console.warn("No se pudo destilar la narración con Groq (seguimos sin este paso):", e.message);
+    return null;
+  }
+}
+
+async function construirPrompt(tipo, d) {
   if (tipo === "mapa") {
     // Solo terreno: nada de nombres, iconos ni fronteras — eso lo dibuja el
     // propio código encima, con precisión, a partir de los lugares reales.
@@ -170,12 +218,17 @@ function construirPrompt(tipo, d) {
   }
 
   if (tipo === "escena") {
-    const narracion = (d.narracion || "").slice(0, 500);
-    if (!narracion.trim()) return null;
+    const narracionOriginal = (d.narracion || "").trim();
+    if (!narracionOriginal) return null;
+
+    const destilada = await destilarNarracionParaImagen(narracionOriginal);
+    const descripcionVisual = destilada || narracionOriginal.slice(0, 400);
+
     return (
-      `Cinematic fantasy game establishing-shot background art depicting this scene: "${narracion}". ` +
-      `${ESTILO_BASE}, wide environmental shot, no characters in the foreground, moody atmospheric depth, ` +
-      `digital painting, dramatic lighting matching the mood described.`
+      `Cinematic fantasy game establishing-shot background art. Scene: ${descripcionVisual}. ` +
+      `${ESTILO_BASE}, wide environmental shot, empty landscape with NO people, NO human figures, ` +
+      `NO silhouettes, NO characters anywhere in the image, moody atmospheric depth, digital painting, ` +
+      `dramatic lighting matching the mood described, vertical mobile-screen composition.`
     );
   }
 

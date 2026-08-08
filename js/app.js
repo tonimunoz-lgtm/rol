@@ -374,6 +374,8 @@ async function bootGame() {
     if (els.inventarioModal.classList.contains("visible")) renderInventario(data);
     intentarMostrarPruebaEscenaActual();
     if (els.pruebaModal.classList.contains("visible")) renderAccionesModal();
+    const escenaAhora = encontrarEscena(guionActual, escenaActualLocalId);
+    if (escenaAhora?.pnj) marcarPnjConocido(escenaAhora.pnj);
   });
 
   // Estado general de la partida en tiempo real: narraciones puntuales ya se
@@ -412,6 +414,7 @@ async function bootGame() {
       ultimaEscenaMostrada = escenaActualId;
       const escena = encontrarEscena(guionActual, escenaActualId);
       if (escena?.narracion) mostrarNarracion(escena.narracion);
+      if (escena?.pnj) marcarPnjConocido(escena.pnj);
       if (escena?.fondoUrl) {
         mostrarFondoEspecifico(escena.fondoUrl);
       } else {
@@ -1073,15 +1076,29 @@ function renderRegistro() {
   els.bitacoraRegistro.scrollTop = els.bitacoraRegistro.scrollHeight;
 }
 
+// Marca un PNJ como "conocido" por este jugador en cuanto se activa la
+// escena a la que el master lo vinculó — así en la Bitácora solo aparecen
+// los personajes que ya se han cruzado en la partida, no todos desde el
+// principio.
+async function marcarPnjConocido(nombrePnj) {
+  if (!jugadorDataActual || !jugadorRefActual) return;
+  const actuales = jugadorDataActual.pnjsConocidos || [];
+  if (actuales.includes(nombrePnj)) return;
+  await updateDoc(jugadorRefActual, { pnjsConocidos: [...actuales, nombrePnj] });
+}
+
 function renderBitacora() {
   renderHistoriaBitacora();
 
-  // PNJs: visibles siempre que el master los haya escrito, como referencia
-  // de la historia (no dependen de anuncios ni de desbloqueo).
-  if (pnjsActual.length === 0) {
-    els.bitacoraPnjs.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no habéis conocido a nadie reseñable.</p>`;
+  // PNJs: solo se muestran los que el jugador ya "conoce" — se van
+  // revelando según avanza la partida (en cuanto se activa la escena a la
+  // que el master los vinculó), igual que las pistas.
+  const pnjsConocidos = jugadorDataActual?.pnjsConocidos || [];
+  const pnjsVisibles = pnjsActual.filter((p) => pnjsConocidos.includes(p.titulo));
+  if (pnjsVisibles.length === 0) {
+    els.bitacoraPnjs.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no habéis conocido a nadie reseñable. Los personajes irán apareciendo aquí según avance la partida, igual que las pistas.</p>`;
   } else {
-    els.bitacoraPnjs.innerHTML = pnjsActual
+    els.bitacoraPnjs.innerHTML = pnjsVisibles
       .map(
         (p) => `
       <div class="habilidad-card">

@@ -240,11 +240,25 @@ function dibujarTextura() {
   return `<g>${out}</g>`;
 }
 
+// Rejilla de coordenadas (0-100) — solo para el editor del master, nunca se
+// muestra al jugador. Sirve de referencia visual además de poder arrastrar
+// los lugares directamente sobre la vista previa.
+function dibujarCuadricula() {
+  let out = "";
+  for (let i = 10; i < 100; i += 10) {
+    out += `<line x1="${i}" y1="0" x2="${i}" y2="100" class="mapa-cuadricula" />`;
+    out += `<line x1="0" y1="${i}" x2="100" y2="${i}" class="mapa-cuadricula" />`;
+    out += `<text x="${i}" y="2.8" font-size="2" class="mapa-cuadricula-etiqueta">${i}</text>`;
+    out += `<text x="0.6" y="${i + 1}" font-size="2" class="mapa-cuadricula-etiqueta">${i}</text>`;
+  }
+  return `<g>${out}</g>`;
+}
+
 // Genera el SVG del mapa (viewBox 0-100, coincide con las coordenadas x/y en
 // porcentaje de cada lugar). Se usa tanto en la vista previa del master como
 // en el mapa interactivo del jugador, para que ambos se vean exactamente
 // igual. lugarActivoId marca "estás aquí" con una banderita, si se pasa.
-export function renderizarMapaSVG(mapa, lugarActivoId) {
+export function renderizarMapaSVG(mapa, lugarActivoId, opciones = {}) {
   const lugares = mapa?.lugares || [];
   const conexiones = mapa?.conexiones || [];
   const porId = Object.fromEntries(lugares.map((l) => [l.id, l]));
@@ -341,6 +355,7 @@ export function renderizarMapaSVG(mapa, lugarActivoId) {
       ${mares}
       ${lineas}
       ${relieve}
+      ${opciones.cuadricula ? dibujarCuadricula() : ""}
       ${marcadores}
       ${dibujarBrujula()}
       ${dibujarMarco()}

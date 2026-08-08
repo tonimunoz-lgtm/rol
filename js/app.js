@@ -693,7 +693,7 @@ let mapaEscala = 1;
 let mapaTx = 0;
 let mapaTy = 0;
 const MAPA_ESCALA_MIN = 0.6;
-const MAPA_ESCALA_MAX = 3.5;
+const MAPA_ESCALA_MAX = 5.5; // más margen ahora que el mapa se genera con más resolución
 
 function aplicarTransformMapa() {
   els.mapaLienzo.style.transform = `translate(${mapaTx}px, ${mapaTy}px) scale(${mapaEscala})`;

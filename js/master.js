@@ -1706,7 +1706,12 @@ $("btn-generar-fondo-mapa").addEventListener("click", async () => {
   boton.disabled = true;
   status.textContent = "Generando fondo con IA (puede tardar unos segundos)...";
   try {
-    const url = await generarImagenIA("mapa", { descripcion: $("mapa-descripcion").value.trim() });
+    const lugares = leerMapa().lugares.map((l) => ({ nombre: l.nombre, tipo: l.tipo }));
+    const url = await generarImagenIA("mapa", {
+      descripcion: $("mapa-descripcion").value.trim(),
+      sinopsis: $("h-sinopsis").value.trim(),
+      lugares,
+    });
     mapaFondoUrlActual = url;
     await updateDoc(doc(db, "partidas", currentPartidaId), { "mapa.fondoUrl": url });
     actualizarStatusFondoMapa();
@@ -1834,7 +1839,61 @@ function leerMapa() {
 }
 
 function refrescarPreviewMapa() {
-  $("mapa-preview").innerHTML = renderizarMapaSVG(leerMapa(), null);
+  $("mapa-preview").innerHTML = renderizarMapaSVG(leerMapa(), null, { cuadricula: true });
+  habilitarArrastreLugares();
+}
+
+// Arrastrar un lugar directamente sobre la vista previa, en vez de solo
+// escribir X/Y a ciegas. Mientras se arrastra, movemos el propio icono en
+// el SVG sin volver a dibujar nada (para no perder el "agarre" del dedo/
+// ratón a mitad de gesto); solo al soltar se redibuja todo del todo
+// (reconecta caminos/ríos, etc.) y se vuelve a enganchar el arrastre.
+function habilitarArrastreLugares() {
+  const svgEl = document.querySelector("#mapa-preview svg");
+  if (!svgEl) return;
+  let arrastrando = null;
+
+  function posicionDesdeEvento(e) {
+    const pt = svgEl.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const loc = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+    return {
+      x: Math.max(0, Math.min(100, Math.round(loc.x))),
+      y: Math.max(0, Math.min(100, Math.round(loc.y))),
+    };
+  }
+
+  svgEl.querySelectorAll(".mapa-lugar").forEach((grupo) => {
+    grupo.style.cursor = "grab";
+    grupo.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      arrastrando = grupo;
+      grupo.setPointerCapture(e.pointerId);
+      grupo.style.cursor = "grabbing";
+    });
+  });
+
+  svgEl.addEventListener("pointermove", (e) => {
+    if (!arrastrando) return;
+    const { x, y } = posicionDesdeEvento(e);
+    arrastrando.setAttribute("transform", `translate(${x}, ${y})`);
+    const id = arrastrando.dataset.id;
+    const row = document.querySelector(`#lista-lugares .lug-id[value="${id}"]`)?.closest(".lugar-row");
+    if (row) {
+      row.querySelector(".lug-x").value = x;
+      row.querySelector(".lug-y").value = y;
+    }
+  });
+
+  const soltar = () => {
+    if (!arrastrando) return;
+    arrastrando = null;
+    refrescarPreviewMapa(); // redibuja del todo y vuelve a enganchar el arrastre
+  };
+  svgEl.addEventListener("pointerup", soltar);
+  svgEl.addEventListener("pointercancel", soltar);
+  svgEl.addEventListener("pointerleave", soltar);
 }
 
 $("btn-nuevo-lugar").addEventListener("click", () => {

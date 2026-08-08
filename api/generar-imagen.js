@@ -219,8 +219,10 @@ montañas, dilo), repartidos por distintas zonas del mapa, no todos amontonados 
 o localización. Incluye el ambiente general (clima, vegetación, época del año) que sugiere la
 sinopsis. IMPORTANTE: no describas ninguna composición circular, en forma de mandala, de anillo, ni
 de "árbol del mundo" — el terreno debe estar disperso de forma natural por un paisaje rectangular
-amplio, sin ninguna simetría radial. No menciones nombres propios ni texto que deba aparecer
-escrito en el mapa. Máximo 60 palabras, en inglés, sin explicaciones adicionales, sin comillas.
+amplio, sin ninguna simetría radial. Si hay mar o costa en la lista de lugares, descríbelo como un
+borde en UN lado del mapa, nunca rodeando toda la tierra como si fuera una isla. No menciones
+nombres propios ni texto que deba aparecer escrito en el mapa. Máximo 60 palabras, en inglés, sin
+explicaciones adicionales, sin comillas.
 
 Sinopsis: "${sinopsis || "(sin sinopsis)"}"
 Lugares del mapa: ${listaLugares || "(sin lugares definidos todavía)"}
@@ -255,18 +257,19 @@ async function construirPrompt(tipo, d) {
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
     return (
-      `Flat 2D top-down fantasy world map illustration, filling the entire rectangular canvas ` +
-      `edge to edge, orthographic bird's-eye view directly from above. A wide sprawling territory ` +
-      `covering many distinct regions, drawn in the style of a classic hand-illustrated old-world ` +
-      `atlas map on aged parchment, pen-and-ink linework, subtle watercolor terrain shading, ` +
-      `winding roads, rivers cutting across the land, scattered forests, distant mountain ranges, ` +
-      `muted warm parchment colors` +
+      `Black ink hand-drawn fantasy region map on aged sepia parchment, monochrome pen-and-ink ` +
+      `cartography style like a historical atlas — NO color wash, NO painted terrain, fine ` +
+      `linework only in dark brown/black ink. Mountains drawn as small clustered triangular peak ` +
+      `symbols, forests as clusters of small tree symbols, hills as hachure shading, rivers as ` +
+      `thin winding ink lines. A wide rectangular sprawling landmass filling the entire canvas ` +
+      `edge to edge, terrain features scattered naturally across different areas of the map` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
-      `. Absolutely NOT a 3D render, NOT an isometric perspective, NOT an aerial photo, NOT a ` +
-      `close-up of a single hill or castle, NOT a circular vignette, NOT a circular frame or ` +
-      `porthole/telescope view, NOT a mandala or radial symmetrical pattern, NOT a tree-of-life ` +
-      `or world-tree motif, NOT a green orb or sphere. No text, no labels, no icons, no borders, ` +
-      `no UI, no compass, no legend.`
+      `. If there is a coastline or sea, it runs along ONE edge of the image only — the landmass ` +
+      `must NOT be surrounded by water on all sides, NOT a circular island, NOT an island of any ` +
+      `shape. Absolutely NOT a circular vignette, NOT a circular frame or porthole view, NOT a ` +
+      `mandala, NOT a colored/painted illustration, NOT photorealistic, NOT a 3D render, NOT an ` +
+      `isometric perspective, NOT a close-up of a single hill. No text, no labels, no icons, no ` +
+      `borders, no UI, no compass, no legend.`
     );
   }
 

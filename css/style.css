@@ -810,3 +810,17 @@ h1.display::after, h2.display::after {
   font-size: .9rem;
   line-height: 1;
 }
+
+/* ---------- Pestañas de la Bitácora del jugador ---------- */
+.bitacora-tab-btn { padding: .4em .7em; }
+.bitacora-tab-btn.active {
+  background: var(--amber);
+  color: var(--ink);
+}
+.registro-linea {
+  padding: .4em 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: .85rem;
+  line-height: 1.4;
+}
+.registro-linea .registro-autor { font-weight: 600; }

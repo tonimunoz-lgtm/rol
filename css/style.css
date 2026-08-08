@@ -840,3 +840,8 @@ h1.display::after, h2.display::after {
   line-height: 1.4;
 }
 .registro-linea .registro-autor { font-weight: 600; }
+
+/* Rejilla de coordenadas del editor de mapa (solo master) */
+.mapa-cuadricula { stroke: #4a3d2a; stroke-width: 0.15; opacity: 0.3; }
+.mapa-cuadricula-etiqueta { fill: #4a3d2a; opacity: 0.55; font-family: var(--font-mono); }
+.mapa-lugar { touch-action: none; }

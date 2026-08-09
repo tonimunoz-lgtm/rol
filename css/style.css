@@ -859,3 +859,19 @@ h1.display::after, h2.display::after {
 .mapa-punto-asentamiento { fill: var(--amber); }
 .mapa-punto-tierra { fill: #7c6a52; }
 .mapa-punto-agua { fill: #5b93ab; }
+
+/* Sala de espera del jugador */
+#lobby-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--ink);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2em;
+  gap: 1em;
+}
+#lobby-overlay.visible { display: flex; }

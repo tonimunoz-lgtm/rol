@@ -1514,7 +1514,8 @@ async function subirMusicaEscena(file, escenaRow) {
   try {
     boton.disabled = true;
     boton.textContent = "Subiendo...";
-    const url = await subirArchivo(file, "audio");
+    const urlAnterior = escenaRow.querySelector(".es-musica-url").value.trim();
+    const url = await subirArchivo(file, "audio", urlAnterior);
     escenaRow.querySelector(".es-musica-url").value = url;
   } catch (err) {
     alert(err.message);

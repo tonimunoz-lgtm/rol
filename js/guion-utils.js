@@ -74,8 +74,16 @@ export function normalizarGuion(guionCrudo) {
 // antiguas, índice en el array), un string con el id de la escena (formato
 // nuevo), o no existir todavía (partida recién creada).
 export function normalizarEscenaActual(valorCrudo, guionNormalizado) {
-  if (typeof valorCrudo === "number") return `legacy-${valorCrudo}`;
-  if (typeof valorCrudo === "string" && valorCrudo) return valorCrudo;
+  let candidato = null;
+  if (typeof valorCrudo === "number") candidato = `legacy-${valorCrudo}`;
+  else if (typeof valorCrudo === "string" && valorCrudo) candidato = valorCrudo;
+
+  // El id guardado puede haber quedado obsoleto (p.ej. si el guion se
+  // reordenó o regeneró después de fijar ese valor) — en vez de devolver
+  // un id que ya no existe en ningún sitio (dejando al jugador sin
+  // narración/fondo/música porque no se encuentra ninguna escena), caemos
+  // a la primera escena del guion actual.
+  if (candidato && guionNormalizado.some((e) => e.id === candidato)) return candidato;
   return guionNormalizado[0]?.id ?? null;
 }
 

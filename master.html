@@ -933,10 +933,12 @@
       <div class="card" id="bloque-estado-partida" style="margin-bottom:1.2em;">
         <strong>Estado:</strong> <span id="estado-partida-texto" class="mono" style="color:var(--amber);">—</span>
         <p style="color:var(--parchment-dim); font-size:.85rem; margin:.4em 0;">
-          Mientras la partida esté "en espera", los jugadores que se unan ven una pantalla de
-          espera (y de paso, así el navegador les deja activar el sonido al pulsar "Acceder al
-          juego" — sin ese clic, ningún navegador permite reproducir música sola).
+          Mientras la partida esté "en espera", los jugadores que se unan (o entren) ven una
+          pantalla de espera hasta que pulses "Iniciar partida" — y de paso, así el navegador les
+          deja activar el sonido al pulsar "Acceder al juego", cosa que ningún navegador permite
+          hacer solo, sin que el jugador toque nada.
         </p>
+        <button id="btn-poner-en-espera">⏸️ Poner en espera</button>
         <button id="btn-iniciar-partida" class="primary">▶️ Iniciar partida para todos</button>
       </div>
 

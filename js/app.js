@@ -94,6 +94,10 @@ const els = {
   lobbyEstadoTexto: document.getElementById("lobby-estado-texto"),
   lobbyJugadores: document.getElementById("lobby-jugadores"),
   btnAccederJuego: document.getElementById("btn-acceder-juego"),
+  portadaOverlay: document.getElementById("portada-overlay"),
+  portadaFondo: document.getElementById("portada-fondo"),
+  portadaSinopsisTexto: document.getElementById("portada-sinopsis-texto"),
+  btnEmpezarAventura: document.getElementById("btn-empezar-aventura"),
 };
 
 const DIFICULTAD_ATAQUE_DEFECTO = 12;
@@ -130,7 +134,9 @@ let pnjsActual = [];
 let pistasActual = [];
 let mapaCrudo = null;
 let sinopsisActual = "";
+let portadaUrlActual = "";
 let dentroDelJuego = false; // se pone a true al pulsar "Acceder al juego" (una vez por sesión)
+let juegoVisibleParaJugador = false; // se pone a true al pulsar "Empezar aventura" — hasta entonces, narración/fondo/música de escena no se disparan
 let ultimaEscenaMostrada = null;
 let combateActivoAnterior = false;
 
@@ -377,9 +383,38 @@ function escucharJugadoresParaLobby(codigo) {
 els.btnAccederJuego.addEventListener("click", () => {
   dentroDelJuego = true;
   els.lobbyOverlay.classList.remove("visible");
+  mostrarPortada();
+});
+
+function mostrarPortada() {
+  els.portadaSinopsisTexto.textContent = sinopsisActual || "El master todavía no ha escrito una sinopsis para esta partida.";
+  els.portadaFondo.style.backgroundImage = portadaUrlActual ? `url("${portadaUrlActual}")` : "none";
+  els.portadaOverlay.classList.add("visible");
+}
+
+// Muestra narración + fondo + música de la escena activa AHORA MISMO, de
+// golpe (no espera a que "cambie" de escena, porque puede que ya estuviera
+// puesta desde antes de que el jugador llegase a ver nada, mientras la
+// sala de espera/portada tapaban la pantalla).
+function mostrarEscenaActualDeGolpe() {
+  const escena = encontrarEscena(guionActual, escenaActualLocalId);
+  if (escena?.narracion) mostrarNarracion(escena.narracion);
+  if (escena?.pnj) marcarPnjConocido(escena.pnj);
+  if (escena?.fondoUrl) {
+    mostrarFondoEspecifico(escena.fondoUrl);
+  } else {
+    volverARotacionFondo();
+  }
+  actualizarMusicaAmbiente();
+}
+
+els.btnEmpezarAventura.addEventListener("click", () => {
+  juegoVisibleParaJugador = true;
+  els.portadaOverlay.classList.remove("visible");
+  mostrarEscenaActualDeGolpe();
   // Genuina interacción del jugador: aquí SÍ deja el navegador reproducir
-  // audio. Si hay música configurada, la arrancamos ya, sin que haga falta
-  // que el jugador vaya a buscar el botón 🎵 a mano.
+  // audio, tanto si ya había música puesta en el <audio> como si acaba de
+  // fijarse ahora mismo en la llamada de arriba.
   if (els.musicaAmbiente.src && !musicaSonando) {
     els.musicaAmbiente.volume = 0.35;
     els.musicaAmbiente.play().then(() => {
@@ -438,6 +473,7 @@ async function bootGame() {
     pistasActual = data.pistas || [];
     mapaCrudo = data.mapa || null;
     sinopsisActual = data.sinopsis || "";
+    portadaUrlActual = data.portadaUrl || "";
     actualizarLobby(data.estado);
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
@@ -460,17 +496,19 @@ async function bootGame() {
     escenaActualLocalId = escenaActualId;
     if (escenaActualId !== ultimaEscenaMostrada) {
       ultimaEscenaMostrada = escenaActualId;
-      const escena = encontrarEscena(guionActual, escenaActualId);
-      if (escena?.narracion) mostrarNarracion(escena.narracion);
-      if (escena?.pnj) marcarPnjConocido(escena.pnj);
-      if (escena?.fondoUrl) {
-        mostrarFondoEspecifico(escena.fondoUrl);
-      } else {
-        volverARotacionFondo();
+      if (juegoVisibleParaJugador) {
+        const escena = encontrarEscena(guionActual, escenaActualId);
+        if (escena?.narracion) mostrarNarracion(escena.narracion);
+        if (escena?.pnj) marcarPnjConocido(escena.pnj);
+        if (escena?.fondoUrl) {
+          mostrarFondoEspecifico(escena.fondoUrl);
+        } else {
+          volverARotacionFondo();
+        }
       }
       intentarMostrarPruebaEscenaActual();
     }
-    actualizarMusicaAmbiente();
+    if (juegoVisibleParaJugador) actualizarMusicaAmbiente();
     if (els.bitacoraModal.classList.contains("visible")) renderBitacora();
     if (els.mapaModal.classList.contains("visible")) renderMapaModal();
   });

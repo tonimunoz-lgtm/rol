@@ -387,9 +387,11 @@ els.btnAccederJuego.addEventListener("click", () => {
 });
 
 function mostrarPortada() {
-  els.portadaSinopsisTexto.textContent = sinopsisActual || "El master todavía no ha escrito una sinopsis para esta partida.";
+  const texto = sinopsisActual || "El master todavía no ha escrito una sinopsis para esta partida.";
+  els.portadaSinopsisTexto.textContent = texto;
   els.portadaFondo.style.backgroundImage = portadaUrlActual ? `url("${portadaUrlActual}")` : "none";
   els.portadaOverlay.classList.add("visible");
+  hablar(texto);
 }
 
 // Muestra narración + fondo + música de la escena activa AHORA MISMO, de

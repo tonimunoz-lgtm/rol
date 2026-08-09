@@ -930,6 +930,16 @@
         <button id="btn-guardar-musica">Guardar música</button>
         <p id="musica-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
       </div>
+      <div class="card" id="bloque-estado-partida" style="margin-bottom:1.2em;">
+        <strong>Estado:</strong> <span id="estado-partida-texto" class="mono" style="color:var(--amber);">—</span>
+        <p style="color:var(--parchment-dim); font-size:.85rem; margin:.4em 0;">
+          Mientras la partida esté "en espera", los jugadores que se unan ven una pantalla de
+          espera (y de paso, así el navegador les deja activar el sonido al pulsar "Acceder al
+          juego" — sin ese clic, ningún navegador permite reproducir música sola).
+        </p>
+        <button id="btn-iniciar-partida" class="primary">▶️ Iniciar partida para todos</button>
+      </div>
+
       <h3>Jugadores conectados</h3>
       <div id="lista-jugadores-vivo" class="grid-2"></div>
 

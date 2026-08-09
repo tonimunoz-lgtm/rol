@@ -403,6 +403,7 @@ async function cargarPartidaExistente(codigo) {
 }
 
 // ---------- Historia: sinopsis + listas de PNJs / pistas / trampas + giro ----------
+let portadaUrlActual = "";
 function cargarHistoriaEnUI(data) {
   $("h-sinopsis").value = data.sinopsis || "";
   $("h-giro").value = data.giroFinal || "";
@@ -414,7 +415,43 @@ function cargarHistoriaEnUI(data) {
   renderListaEscenas(data.guion || []);
   cargarMapaEnUI(data.mapa);
   renderEnemigosSugeridos(data.enemigosSugeridos || []);
+
+  portadaUrlActual = data.portadaUrl || "";
+  actualizarPreviewPortada(portadaUrlActual);
+  $("portada-status").textContent = portadaUrlActual ? "Ya tienes una portada generada." : "";
 }
+
+function actualizarPreviewPortada(url) {
+  const cont = $("portada-preview");
+  if (url) {
+    cont.style.display = "block";
+    cont.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />`;
+  } else {
+    cont.style.display = "none";
+    cont.innerHTML = "";
+  }
+}
+
+$("btn-generar-portada").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  const sinopsis = $("h-sinopsis").value.trim();
+  if (!sinopsis) return alert("Escribe primero algo de sinopsis (aunque sea breve).");
+  const boton = $("btn-generar-portada");
+  const status = $("portada-status");
+  boton.disabled = true;
+  status.textContent = "Generando portada con IA (puede tardar unos segundos)...";
+  try {
+    const url = await generarImagenIA("portada", { narracion: sinopsis });
+    portadaUrlActual = url;
+    await updateDoc(doc(db, "partidas", currentPartidaId), { portadaUrl: url });
+    actualizarPreviewPortada(url);
+    status.textContent = "Portada generada y guardada.";
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+  } finally {
+    boton.disabled = false;
+  }
+});
 
 function crearFilaListaItem(contenedorId, item = null) {
   const tpl = document.getElementById("tpl-lista-item");

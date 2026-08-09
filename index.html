@@ -26,6 +26,19 @@
   <button id="btn-acceder-juego" class="primary" style="display:none; width:100%; max-width:280px; font-size:1.05rem; padding:.8em;">▶️ Acceder al juego</button>
 </div>
 
+<!-- Portada de la partida: sinopsis + imagen generada por el master, antes
+     de entrar de verdad en la escena 1. El clic en "Empezar aventura" es la
+     interacción real que arranca narración, fondo y música de la escena 1
+     — no algo que intente pasar solo en segundo plano. -->
+<div id="portada-overlay">
+  <div id="portada-fondo"></div>
+  <div id="portada-contenido">
+    <h1 class="display">Rúnica</h1>
+    <p id="portada-sinopsis-texto"></p>
+    <button id="btn-empezar-aventura" class="primary">▶️ Empezar aventura</button>
+  </div>
+</div>
+
 <div id="player-view">
 
   <!-- Fondo ambiental: rota imágenes libres de derechos relacionadas con la

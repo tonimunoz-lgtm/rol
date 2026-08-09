@@ -463,6 +463,10 @@ async function bootGame() {
         if (evento.tipo === "objeto_encontrado") {
           añadirMensajeChat({ tipo: "narracion", texto: `🎒 ${evento.nombreJugador} encontró: ${evento.objeto}` });
         }
+        if (evento.tipo === "master_ia") {
+          mostrarToast(`🧙 ${evento.texto}`, 6000);
+          añadirMensajeChat({ tipo: "chat_master", texto: evento.texto });
+        }
       }
     });
   });
@@ -819,6 +823,7 @@ const ETIQUETAS_TIPO_DANIO = {
   fisico: "físico", fuego: "de fuego", hielo: "de hielo", veneno: "de veneno", mental: "mental",
 };
 let escenaAccionesActual = null; // la escena con acciones pendientes (si hay alguna)
+let accionesDinamicasActuales = []; // acciones que el Master IA propone al vuelo, no guardadas en el guion
 
 // Ya NO se abre el modal solo al cambiar de escena (tapaba la narración y
 // el chat). Solo actualizamos el aviso del botón de dado; el jugador decide
@@ -833,16 +838,19 @@ function accionPendiente(accion) {
   return !jugadorDataActual?.accionesCompletadas?.[accion.id]?.superada;
 }
 
+function listaAccionesVisibles() {
+  return [...(escenaAccionesActual?.acciones || []), ...accionesDinamicasActuales];
+}
+
 function actualizarAvisoDado() {
-  const hayPendientes = !!escenaAccionesActual?.acciones?.some(accionPendiente);
+  const hayPendientes = !!escenaAccionesActual?.acciones?.some(accionPendiente) || accionesDinamicasActuales.length > 0;
   els.btnDice.classList.toggle("con-aviso", hayPendientes);
 }
 
 function abrirModalAcciones() {
   const escena = escenaAccionesActual;
-  if (!escena) return;
-  els.accionesTitulo.textContent = escena.nombre || "Acciones";
-  if (escena.pnj) {
+  els.accionesTitulo.textContent = escena?.nombre || "Acciones";
+  if (escena?.pnj) {
     const pnj = pnjsActual.find((p) => p.titulo === escena.pnj);
     els.accionesPnj.textContent = `🗣️ ${escena.pnj} está aquí.`;
     els.accionesPnjRetrato.innerHTML = pnj?.retratoUrl
@@ -853,17 +861,21 @@ function abrirModalAcciones() {
   } else {
     els.accionesPnjBloque.style.display = "none";
   }
+  if (listaAccionesVisibles().length === 0) return;
   renderAccionesModal();
   els.pruebaModal.classList.add("visible");
 }
 
 function renderAccionesModal() {
-  const escena = escenaAccionesActual;
-  if (!escena) return;
+  const acciones = listaAccionesVisibles();
+  if (acciones.length === 0) {
+    els.pruebaModal.classList.remove("visible");
+    return;
+  }
   const completadas = jugadorDataActual?.accionesCompletadas || {};
   const intentos = jugadorDataActual?.intentosAccion || {};
 
-  els.accionesLista.innerHTML = escena.acciones
+  els.accionesLista.innerHTML = acciones
     .map((a) => {
       const hecha = completadas[a.id];
       const fallosPrevios = intentos[a.id] || 0;
@@ -884,7 +896,7 @@ function renderAccionesModal() {
       return `
         <div class="habilidad-card" style="margin-bottom:.6em;">
           <div class="h-info">
-            <div class="h-nombre">${a.etiqueta}</div>
+            <div class="h-nombre">${a.etiqueta} ${a.dinamica ? `<span class="mono" style="color:var(--amber); font-size:.7rem;">✨ Master IA</span>` : ""}</div>
             <p class="h-desc">${descripcion}</p>
             ${fallosPrevios > 0 && !hecha ? `<p class="h-desc mono" style="color:var(--rust);">Último intento: fallo.</p>` : ""}
             ${hecha ? `<p class="h-desc mono" style="color:var(--amber);">${hecha.texto || ""}</p>` : ""}
@@ -904,9 +916,23 @@ function renderAccionesModal() {
 }
 
 async function ejecutarAccionEscena(accionId) {
+  if (!jugadorDataActual || !jugadorRefActual) return;
+
+  // Acción propuesta por el Master IA al vuelo (no forma parte del guion):
+  // se resuelve con el mismo motor de tiradas, pero no depende de que la
+  // escena siga activa ni se guarda en ningún sitio del guion.
+  const dinamica = accionesDinamicasActuales.find((a) => a.id === accionId);
+  if (dinamica) {
+    els.pruebaModal.classList.remove("visible");
+    const escenaContexto = encontrarEscena(guionActual, escenaActualLocalId) || { id: "sin-escena", nombre: "" };
+    await ejecutarAccionPrueba(escenaContexto, dinamica);
+    accionesDinamicasActuales = accionesDinamicasActuales.filter((a) => a.id !== accionId);
+    actualizarAvisoDado();
+    return;
+  }
+
   const escena = escenaAccionesActual;
-  if (!escena || !jugadorDataActual || !jugadorRefActual) return;
-  if (escena.id !== escenaActualLocalId) {
+  if (!escena || escena.id !== escenaActualLocalId) {
     alert("Esta escena ya no está activa.");
     return;
   }
@@ -1706,8 +1732,8 @@ els.btnDice.addEventListener("click", async () => {
   // cacheada: así, aunque el modal se haya cerrado y reabra, o la escena
   // no haya cambiado, siempre refleja el estado real de las acciones.
   const escena = encontrarEscena(guionActual, escenaActualLocalId);
-  if (escena?.acciones?.some(accionPendiente)) {
-    escenaAccionesActual = escena;
+  if (escena?.acciones?.some(accionPendiente) || accionesDinamicasActuales.length > 0) {
+    escenaAccionesActual = escena || escenaAccionesActual;
     abrirModalAcciones();
     return;
   }
@@ -1733,9 +1759,60 @@ els.btnLogout.addEventListener("click", () => {
 els.btnAccion.addEventListener("click", () => els.accionModal.classList.add("visible"));
 els.btnCerrarAccion.addEventListener("click", () => els.accionModal.classList.remove("visible"));
 
+// El Master IA responde con el contexto real de la partida (sinopsis,
+// escena activa, ficha del personaje) — nunca inventa trama nueva, y si lo
+// que el jugador quiere hacer necesita una tirada, lo indica en la propia
+// respuesta y devuelve los datos para montarla con el mismo motor que ya
+// usan las acciones del guion.
+async function consultarMasterIA(modo, mensaje) {
+  const escena = encontrarEscena(guionActual, escenaActualLocalId);
+  const contexto = {
+    sinopsis: sinopsisActual,
+    escenaNombre: escena?.nombre || "",
+    escenaNarracion: escena?.narracion || "",
+    escenaObjetivo: escena?.objetivo || "",
+    personajeNombre: jugadorDataActual?.nombrePersonaje || jugadorDataActual?.nombre || "",
+    personajeRaza: jugadorDataActual?.raza || "",
+    personajeClase: jugadorDataActual?.clase || "",
+    atributos: jugadorDataActual?.atributos || {},
+    habilidades: jugadorDataActual?.habilidades || [],
+  };
+  const idToken = await auth.currentUser.getIdToken();
+  const resp = await fetch("/api/master-ia", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ modo, mensaje, contexto }),
+  });
+  if (!resp.ok) throw new Error(`Master IA no disponible (${resp.status})`);
+  return resp.json();
+}
+
+// Añade una acción "al vuelo" propuesta por el Master IA (no forma parte
+// del guion, solo vive en este cliente hasta que se usa o cambia de
+// escena) y abre el modal para que el jugador la tire enseguida.
+function añadirAccionDinamica(resultado) {
+  accionesDinamicasActuales.push({
+    id: `din-${Date.now()}`,
+    etiqueta: resultado.etiqueta || "Intentarlo",
+    tipo: "prueba",
+    atributo: resultado.atributo,
+    dificultad: resultado.dificultad,
+    tipoDanio: resultado.tipoDanio,
+    danioDados: resultado.danioDados,
+    danioCaras: resultado.danioCaras,
+    textoExito: "",
+    textoFallo: "",
+    dinamica: true,
+  });
+  actualizarAvisoDado();
+  escenaAccionesActual = escenaAccionesActual || encontrarEscena(guionActual, escenaActualLocalId);
+  abrirModalAcciones();
+}
+
 els.btnEnviarAccion.addEventListener("click", async () => {
   const texto = els.accionTexto.value.trim();
   if (!texto) return;
+  registrarActividad();
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "accion",
     jugadorId: currentJugadorId,
@@ -1746,7 +1823,44 @@ els.btnEnviarAccion.addEventListener("click", async () => {
   });
   els.accionTexto.value = "";
   els.accionModal.classList.remove("visible");
+
+  // El Master IA responde a lo que el jugador acaba de decir/hacer,
+  // visible para toda la mesa, igual que respondería un master de verdad.
+  try {
+    const resultado = await consultarMasterIA("pregunta", texto);
+    await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+      tipo: "master_ia",
+      texto: resultado.respuesta,
+      timestamp: serverTimestamp(),
+    });
+    if (resultado.requiereTirada) añadirAccionDinamica(resultado);
+  } catch (e) {
+    console.warn("El Master IA no ha podido responder:", e.message);
+  }
 });
+
+// ---------- 5b-2. Aviso por inactividad: el Master IA anima si nadie hace nada ----------
+let ultimaActividadTs = Date.now();
+let avisoInactividadEnviado = false;
+function registrarActividad() {
+  ultimaActividadTs = Date.now();
+  avisoInactividadEnviado = false;
+}
+document.addEventListener("pointerdown", registrarActividad);
+document.addEventListener("keydown", registrarActividad);
+
+setInterval(async () => {
+  if (avisoInactividadEnviado) return;
+  if (!jugadorDataActual || !currentPartidaId) return;
+  if (Date.now() - ultimaActividadTs < 30000) return;
+  avisoInactividadEnviado = true;
+  try {
+    const resultado = await consultarMasterIA("idle", null);
+    if (resultado.respuesta) mostrarToast(`🧙 ${resultado.respuesta}`, 7000);
+  } catch (e) {
+    console.warn("No se pudo pedir el aviso de inactividad:", e.message);
+  }
+}, 5000);
 
 // ---------- 5c. Imprimir ficha ----------
 els.btnImprimirFicha.addEventListener("click", () => window.print());

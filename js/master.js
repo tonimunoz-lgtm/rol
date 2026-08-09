@@ -300,6 +300,7 @@ $("btn-generar").addEventListener("click", async () => {
       escenaActual: guionBorrador[0]?.id ?? null,
       mapa: mapaGenerado,
       enemigosSugeridos,
+      estado: "esperando",
       creadaEn: serverTimestamp(),
       masterUid: auth.currentUser.uid,
     });
@@ -2033,8 +2034,27 @@ function escucharCombate(codigo) {
     refrescarSelectsGuionAbiertos();
     guionActual = normalizarGuion(data.guion || []);
     renderEscenaActual(data.guion || [], data.escenaActual);
+    renderEstadoPartida(data.estado);
   });
 }
+
+function renderEstadoPartida(estadoCrudo) {
+  const el = $("estado-partida-texto");
+  const boton = $("btn-iniciar-partida");
+  if (!el || !boton) return;
+  if (estadoCrudo === "esperando") {
+    el.textContent = "En espera — los jugadores nuevos ven la pantalla de espera";
+    boton.style.display = "inline-block";
+  } else {
+    el.textContent = "En curso";
+    boton.style.display = "none";
+  }
+}
+
+$("btn-iniciar-partida").addEventListener("click", async () => {
+  if (!currentPartidaId) return;
+  await updateDoc(doc(db, "partidas", currentPartidaId), { estado: "en_curso" });
+});
 
 function renderEnemigos() {
   const cont = $("lista-enemigos");

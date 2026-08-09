@@ -169,6 +169,17 @@
           <textarea id="h-sinopsis" rows="10"></textarea>
         </div>
         <button id="btn-guardar-sinopsis" class="primary">Guardar sinopsis</button>
+
+        <h4 style="margin:1.2em 0 .4em; color:var(--parchment-dim); font-size:.85rem;">
+          Portada de la partida
+        </h4>
+        <p style="color:var(--parchment-dim); font-size:.8rem;">
+          Los jugadores ven esta imagen junto a la sinopsis nada más acceder al juego, antes de
+          pasar a la escena 1 — es la "portada" con la que arranca la aventura.
+        </p>
+        <button id="btn-generar-portada" type="button">✨ Generar imagen de portada con IA</button>
+        <p id="portada-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
+        <div id="portada-preview" style="display:none; width:140px; height:248px; margin-top:.5em; border:1px solid #3a3226; border-radius:var(--radius); overflow:hidden; background:var(--ink);"></div>
       </div>
 
       <div id="historia-subtab-pnjs" class="historia-subtab" style="display:none;">

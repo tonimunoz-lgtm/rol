@@ -2040,20 +2040,24 @@ function escucharCombate(codigo) {
 
 function renderEstadoPartida(estadoCrudo) {
   const el = $("estado-partida-texto");
-  const boton = $("btn-iniciar-partida");
-  if (!el || !boton) return;
-  if (estadoCrudo === "esperando") {
-    el.textContent = "En espera — los jugadores nuevos ven la pantalla de espera";
-    boton.style.display = "inline-block";
-  } else {
-    el.textContent = "En curso";
-    boton.style.display = "none";
-  }
+  if (!el) return;
+  el.textContent =
+    estadoCrudo === "esperando"
+      ? "En espera — los jugadores ven la pantalla de espera hasta que inicies"
+      : estadoCrudo === "en_curso"
+        ? "En curso"
+        : "En curso (partida sin este control activado todavía — pulsa \"Poner en espera\" si quieres usarlo)";
 }
 
 $("btn-iniciar-partida").addEventListener("click", async () => {
   if (!currentPartidaId) return;
   await updateDoc(doc(db, "partidas", currentPartidaId), { estado: "en_curso" });
+});
+
+$("btn-poner-en-espera").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  if (!confirm("Los jugadores que tengan la app abierta verán la pantalla de espera hasta que vuelvas a iniciar. ¿Continuar?")) return;
+  await updateDoc(doc(db, "partidas", currentPartidaId), { estado: "esperando" });
 });
 
 function renderEnemigos() {

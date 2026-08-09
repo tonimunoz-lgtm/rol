@@ -15,6 +15,17 @@
 </head>
 <body>
 
+<!-- Sala de espera: se ve nada más elegir personaje, hasta que el jugador
+     pulsa "Acceder al juego". Ese clic es justo lo que necesita el
+     navegador para permitir reproducir música después — sin una
+     interacción real, ningún navegador deja sonar audio solo. -->
+<div id="lobby-overlay">
+  <h1 class="display">Rúnica</h1>
+  <p id="lobby-estado-texto" style="color:var(--parchment-dim); max-width:320px;">Esperando a que el master inicie la partida...</p>
+  <p id="lobby-jugadores" style="color:var(--parchment-dim); font-size:.85rem;"></p>
+  <button id="btn-acceder-juego" class="primary" style="display:none; width:100%; max-width:280px; font-size:1.05rem; padding:.8em;">▶️ Acceder al juego</button>
+</div>
+
 <div id="player-view">
 
   <!-- Fondo ambiental: rota imágenes libres de derechos relacionadas con la

@@ -1425,12 +1425,25 @@ async function hablarConIA(texto) {
   }
 }
 
+// Los eventos de acciones/tiradas llevan una cabecera fija pensada para
+// leerse por escrito (🗣️ "etiqueta" (Nombre): mensaje, o 🎲 "etiqueta"
+// (Nombre) → 14 (dificultad 12). mensaje) — pero en voz alta solo interesa
+// el mensaje final, no repetir la etiqueta ni el nombre entre paréntesis.
+function extraerTextoParaVoz(texto) {
+  let m = texto.match(/^🗣️\s*".*?"\s*\([^)]*\):\s*(.+)$/s);
+  if (m) return m[1];
+  m = texto.match(/^🎲\s*".*?"\s*\([^)]*\)\s*→[^.]*\.\s*(.+)$/s);
+  if (m) return m[1];
+  return texto;
+}
+
 function hablar(texto) {
   if (!texto) return;
+  const textoLimpio = extraerTextoParaVoz(texto);
   if (modoVoz === "ia") {
-    hablarConIA(texto);
+    hablarConIA(textoLimpio);
   } else {
-    hablarConDispositivo(texto);
+    hablarConDispositivo(textoLimpio);
   }
 }
 

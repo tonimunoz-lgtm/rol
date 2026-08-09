@@ -90,6 +90,10 @@ const els = {
   btnMapaZoomMas: document.getElementById("btn-mapa-zoom-mas"),
   btnMapaZoomMenos: document.getElementById("btn-mapa-zoom-menos"),
   btnMapaCentrar: document.getElementById("btn-mapa-centrar"),
+  lobbyOverlay: document.getElementById("lobby-overlay"),
+  lobbyEstadoTexto: document.getElementById("lobby-estado-texto"),
+  lobbyJugadores: document.getElementById("lobby-jugadores"),
+  btnAccederJuego: document.getElementById("btn-acceder-juego"),
 };
 
 const DIFICULTAD_ATAQUE_DEFECTO = 12;
@@ -126,6 +130,7 @@ let pnjsActual = [];
 let pistasActual = [];
 let mapaCrudo = null;
 let sinopsisActual = "";
+let dentroDelJuego = false; // se pone a true al pulsar "Acceder al juego" (una vez por sesión)
 let ultimaEscenaMostrada = null;
 let combateActivoAnterior = false;
 
@@ -344,6 +349,46 @@ async function mostrarSeleccionPersonaje(overlay, code, nombreJugador) {
 
 // ---------- 3. Arrancar la partida: ficha, marcadores AR, eventos en vivo ----------
 let juegoYaIniciado = false;
+// ---------- Sala de espera: hasta pulsar "Acceder al juego" no se ve el
+// juego de verdad. Este clic es justo la interacción que el navegador
+// necesita para permitir después reproducir música sin bloquearla. ----------
+function actualizarLobby(estadoCrudo) {
+  if (dentroDelJuego) return; // ya ha entrado esta sesión, no se vuelve a mostrar
+  els.lobbyOverlay.classList.add("visible");
+  if (estadoCrudo === "esperando") {
+    els.lobbyEstadoTexto.textContent = "Esperando a que el master inicie la partida...";
+    els.btnAccederJuego.style.display = "none";
+  } else {
+    // Sin campo "estado" (partidas creadas antes de esto) se trata como ya
+    // iniciada — solo hace falta el clic de acceso, no esperar al master.
+    els.lobbyEstadoTexto.textContent = "¡La partida está lista!";
+    els.btnAccederJuego.style.display = "inline-block";
+  }
+}
+
+function escucharJugadoresParaLobby(codigo) {
+  onSnapshot(collection(db, "partidas", codigo, "jugadores"), (snap) => {
+    if (dentroDelJuego) return;
+    const nombres = snap.docs.map((d) => d.data().nombrePersonaje || d.data().nombre).filter(Boolean);
+    els.lobbyJugadores.textContent = nombres.length > 0 ? `Ya están aquí: ${nombres.join(", ")}` : "";
+  });
+}
+
+els.btnAccederJuego.addEventListener("click", () => {
+  dentroDelJuego = true;
+  els.lobbyOverlay.classList.remove("visible");
+  // Genuina interacción del jugador: aquí SÍ deja el navegador reproducir
+  // audio. Si hay música configurada, la arrancamos ya, sin que haga falta
+  // que el jugador vaya a buscar el botón 🎵 a mano.
+  if (els.musicaAmbiente.src && !musicaSonando) {
+    els.musicaAmbiente.volume = 0.35;
+    els.musicaAmbiente.play().then(() => {
+      musicaSonando = true;
+      els.btnToggleMusica.textContent = "🔇";
+    }).catch(() => {});
+  }
+});
+
 async function bootGame() {
   // Si algo llega a llamar a bootGame() más de una vez en la misma sesión
   // (p.ej. unirse con código y que justo después se refresque el estado de
@@ -351,9 +396,11 @@ async function bootGame() {
   // por duplicado, y cada narración/mensaje aparecería repetido.
   if (juegoYaIniciado) return;
   juegoYaIniciado = true;
+  els.lobbyOverlay.classList.add("visible"); // se ve ya, antes de que llegue el primer dato de Firestore
 
   const jugadorRef = doc(db, "partidas", currentPartidaId, "jugadores", currentJugadorId);
   jugadorRefActual = jugadorRef;
+  escucharJugadoresParaLobby(currentPartidaId);
 
   // Ficha del jugador en tiempo real
   onSnapshot(jugadorRef, (snap) => {
@@ -391,6 +438,7 @@ async function bootGame() {
     pistasActual = data.pistas || [];
     mapaCrudo = data.mapa || null;
     sinopsisActual = data.sinopsis || "";
+    actualizarLobby(data.estado);
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
     const combateActivoAhora = !!data.combate?.activo;

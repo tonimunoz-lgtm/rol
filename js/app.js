@@ -765,7 +765,10 @@ function actualizarMusicaAmbiente() {
   if (musicaSonando) els.musicaAmbiente.play().catch(() => {});
 }
 
+let narracionTokenActual = 0;
+
 function mostrarNarracion(texto) {
+  narracionTokenActual++;
   els.narrationText.textContent = texto;
   els.narrationBox.classList.add("visible");
   hablar(texto);
@@ -1388,19 +1391,26 @@ function mejorVozEspanola() {
   );
 }
 
-function hablarConDispositivo(texto) {
-  if (!texto || !("speechSynthesis" in window)) return;
+function hablarConDispositivo(texto, alTerminar) {
+  if (!texto || !("speechSynthesis" in window)) {
+    if (alTerminar) alTerminar();
+    return;
+  }
   const utter = new SpeechSynthesisUtterance(texto);
   const voz = mejorVozEspanola();
   if (voz) utter.voice = voz;
   utter.lang = voz?.lang || "es-ES";
   utter.rate = 0.95;
+  if (alTerminar) {
+    utter.onend = alTerminar;
+    utter.onerror = alTerminar;
+  }
   speechSynthesis.cancel();
   speechSynthesis.speak(utter);
 }
 
 let audioIAActual = null;
-async function hablarConIA(texto) {
+async function hablarConIA(texto, alTerminar) {
   try {
     const resp = await fetch("/api/narrar-voz", {
       method: "POST",
@@ -1418,10 +1428,14 @@ async function hablarConIA(texto) {
     const url = URL.createObjectURL(blob);
     if (audioIAActual) audioIAActual.pause();
     audioIAActual = new Audio(url);
+    if (alTerminar) {
+      audioIAActual.onended = alTerminar;
+      audioIAActual.onerror = alTerminar;
+    }
     audioIAActual.play();
   } catch (e) {
     console.warn("Voz IA falló, uso la del dispositivo:", e.message);
-    hablarConDispositivo(texto);
+    hablarConDispositivo(texto, alTerminar);
   }
 }
 
@@ -1449,10 +1463,16 @@ function extraerTextoParaVoz(texto) {
 function hablar(texto) {
   if (!texto) return;
   const textoLimpio = extraerTextoParaVoz(texto);
+  const miToken = narracionTokenActual;
+  const alTerminar = () => {
+    if (miToken === narracionTokenActual) {
+      els.narrationBox.classList.remove("visible");
+    }
+  };
   if (modoVoz === "ia") {
-    hablarConIA(textoLimpio);
+    hablarConIA(textoLimpio, alTerminar);
   } else {
-    hablarConDispositivo(textoLimpio);
+    hablarConDispositivo(textoLimpio, alTerminar);
   }
 }
 
@@ -2150,7 +2170,7 @@ function reanudarRotacionFondo() {
 
 // ---------- 5g. Chat transparente superpuesto (estilo overlay de stream) ----------
 const MAX_LINEAS_CHAT = 6;
-const DURACION_LINEA_MS = 11000;
+const DURACION_LINEA_MS = 22000; // el doble que antes — se quedaban muy poco tiempo en pantalla
 
 function colorClaroDesdeTexto(texto) {
   let hash = 0;

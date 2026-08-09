@@ -150,6 +150,7 @@ const DIMENSIONES = {
   // Vertical, pensado para la pantalla del móvil (donde se ve de verdad
   // esta imagen), no horizontal — antes salía recortada/deformada ahí.
   escena: { width: 832, height: 1472 },
+  portada: { width: 832, height: 1472 },
 };
 
 const ESTILO_BASE =
@@ -269,21 +270,20 @@ async function construirPrompt(tipo, d) {
     const destilado = await destilarAmbientacionMapa(d.sinopsis, d.lugares);
     const ambientacion = destilado || (d.descripcion || "").trim();
     const prompt =
-      `Fantasy RPG world map poster, flat 2D game map illustration seen from a high elevated ` +
-      `vantage point. Several clearly SEPARATE regions spread across a wide landscape with open ` +
-      `space between them: a mountain range confined to one area, a forest in another area, a ` +
-      `river winding through the land, a lake, ancient ruins, a stone bridge, a village, a ` +
-      `coastline along one edge. Hand-drawn ink linework on aged parchment paper, flat ` +
-      `cartographic illustration style, like a tabletop RPG game map handout` +
+      `Fantasy RPG world map poster, flat 2D top-down game map illustration. Several clearly ` +
+      `SEPARATE regions spread across a wide landscape with open space between them: a mountain ` +
+      `range confined to one area, a forest in another area, a river cutting through the land, a ` +
+      `lake, ancient ruins, a stone bridge, a village. Hand-drawn ink linework and light ` +
+      `watercolor wash on aged parchment background, filling the entire canvas edge to edge, ` +
+      `old-world fantasy game map style` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
       `.`;
     const negativo =
-      `satellite view, planet, globe view, directly overhead view, drone photo, ` +
       `circular composition, circle, disc, medallion, globe, round border, circular border, ` +
       `mappa mundi, manuscript, vignette, circular frame, porthole, mandala, radial symmetry, ` +
-      `tree of life, island surrounded by water on all sides, sea surrounding the land, ` +
-      `photorealistic painted landscape, nature photograph, scenic vista painting, photographic, ` +
-      `single continuous mountain range filling the whole frame, detailed photorealistic terrain, ` +
+      `tree of life, island surrounded by water on all sides, realistic landscape painting, ` +
+      `photographic, 3D depth, atmospheric perspective, dramatic scenic vista, single continuous ` +
+      `mountain range filling the whole frame, detailed photorealistic terrain, drone photo, ` +
       `portrait photo, close-up, single building close-up, 3D render, isometric view, aerial ` +
       `photograph, photorealistic, icons, symbols, compass rose, map legend, border frame, ` +
       `${NEGATIVO_COMUN}`;
@@ -301,15 +301,15 @@ async function construirPrompt(tipo, d) {
     return { prompt, negativo: `multiple people, extra limbs, disfigured, ${NEGATIVO_COMUN}` };
   }
 
-  if (tipo === "escena") {
-    const narracionOriginal = (d.narracion || "").trim();
-    if (!narracionOriginal) return { prompt: null };
+  if (tipo === "escena" || tipo === "portada") {
+    const textoOriginal = (d.narracion || "").trim();
+    if (!textoOriginal) return { prompt: null };
 
-    const destilada = await destilarNarracionParaImagen(narracionOriginal);
-    const descripcionVisual = destilada || narracionOriginal.slice(0, 400);
+    const destilada = await destilarNarracionParaImagen(textoOriginal);
+    const descripcionVisual = destilada || textoOriginal.slice(0, 400);
 
     const prompt =
-      `Cinematic fantasy game establishing-shot background art. Scene: ${descripcionVisual}. ` +
+      `Cinematic fantasy game ${tipo === "portada" ? "cover art / title screen" : "establishing-shot"} background art. Scene: ${descripcionVisual}. ` +
       `${ESTILO_BASE}, atmospheric depth, digital painting, dramatic lighting matching the mood ` +
       `described, vertical mobile-screen composition. Depict only what is explicitly described ` +
       `above.`;

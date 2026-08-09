@@ -1429,12 +1429,21 @@ async function hablarConIA(texto) {
 // leerse por escrito (🗣️ "etiqueta" (Nombre): mensaje, o 🎲 "etiqueta"
 // (Nombre) → 14 (dificultad 12). mensaje) — pero en voz alta solo interesa
 // el mensaje final, no repetir la etiqueta ni el nombre entre paréntesis.
+// Además, cualquier acotación entre paréntesis (información para el
+// jugador, no algo que el personaje diga en voz alta) tampoco se lee.
 function extraerTextoParaVoz(texto) {
-  let m = texto.match(/^🗣️\s*".*?"\s*\([^)]*\):\s*(.+)$/s);
-  if (m) return m[1];
-  m = texto.match(/^🎲\s*".*?"\s*\([^)]*\)\s*→[^.]*\.\s*(.+)$/s);
-  if (m) return m[1];
-  return texto;
+  let resultado = texto;
+  const cabeceraChat = resultado.match(/^🗣️\s*".*?"\s*\([^)]*\):\s*(.+)$/s);
+  const cabeceraDado = resultado.match(/^🎲\s*".*?"\s*\([^)]*\)\s*→[^.]*\.\s*(.+)$/s);
+  if (cabeceraChat) resultado = cabeceraChat[1];
+  else if (cabeceraDado) resultado = cabeceraDado[1];
+
+  resultado = resultado
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return resultado || texto;
 }
 
 function hablar(texto) {

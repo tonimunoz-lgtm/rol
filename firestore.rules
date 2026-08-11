@@ -23,7 +23,7 @@ service cloud.firestore {
     // del guion. Cualquier otro campo en la misma escritura la rechaza.
     function esActualizacionDeJugadorPermitida() {
       return request.auth != null &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enemigos', 'escenaActual']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['enemigos', 'escenaActual', 'combate', 'votacion']);
     }
 
     match /partidas/{partidaId} {
@@ -36,7 +36,13 @@ service cloud.firestore {
         allow read: if request.auth != null;
         allow create: if request.auth != null; // cualquiera autenticado (anónimo) puede unirse
         allow update: if request.auth != null &&
-          (resource.data.uid == request.auth.uid || esElMasterDeEstaPartida(partidaId));
+          (resource.data.uid == request.auth.uid ||
+           esElMasterDeEstaPartida(partidaId) ||
+           // Los ataques automáticos de los enemigos en combate los puede
+           // resolver cualquier jugador conectado (no siempre el master
+           // está mirando la pantalla) — pero solo puede tocar la vida,
+           // nunca el resto de la ficha de otro jugador.
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vida']));
         allow delete: if esElMasterDeEstaPartida(partidaId);
       }
 
@@ -62,6 +68,21 @@ service cloud.firestore {
     // leerlo/escribirlo — nunca otro usuario.
     match /masters/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Progreso persistente del jugador (nivel, experiencia, logros), ligado
+    // a su propia sesión — anónima o registrada. Sobrevive entre partidas
+    // mientras no borre los datos del navegador ni cambie de dispositivo.
+    match /progreso/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Ranking de partidas completadas, visible para cualquiera autenticado
+    // (para poder comparar entre grupos), pero solo el master de esa
+    // partida puede añadir una entrada.
+    match /rankings/{entradaId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
     }
   }
 }

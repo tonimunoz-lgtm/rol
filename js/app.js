@@ -400,7 +400,7 @@ function mostrarPortada() {
 // sala de espera/portada tapaban la pantalla).
 function mostrarEscenaActualDeGolpe() {
   const escena = encontrarEscena(guionActual, escenaActualLocalId);
-  if (escena?.narracion) mostrarNarracion(escena.narracion);
+  if (escena?.narracion) encolarNarracion(escena.narracion);
   if (escena?.pnj) marcarPnjConocido(escena.pnj);
   if (escena?.fondoUrl) {
     mostrarFondoEspecifico(escena.fondoUrl);
@@ -500,7 +500,7 @@ async function bootGame() {
       ultimaEscenaMostrada = escenaActualId;
       if (juegoVisibleParaJugador) {
         const escena = encontrarEscena(guionActual, escenaActualId);
-        if (escena?.narracion) mostrarNarracion(escena.narracion);
+        if (escena?.narracion) encolarNarracion(escena.narracion);
         if (escena?.pnj) marcarPnjConocido(escena.pnj);
         if (escena?.fondoUrl) {
           mostrarFondoEspecifico(escena.fondoUrl);
@@ -522,7 +522,7 @@ async function bootGame() {
       if (change.type === "added") {
         const evento = change.doc.data();
         if (evento.tipo === "narracion") {
-          mostrarNarracion(evento.texto);
+          encolarNarracion(evento.texto);
         }
         if (["narracion", "chat_master", "accion"].includes(evento.tipo)) {
           añadirMensajeChat(evento);
@@ -766,12 +766,39 @@ function actualizarMusicaAmbiente() {
 }
 
 let narracionTokenActual = 0;
+let colaNarraciones = [];
+let narracionEnCurso = false;
 
-function mostrarNarracion(texto) {
+// Antes, cada narración que llegaba (éxito de la acción, texto de
+// transición, narración de la escena nueva...) sobrescribía a la anterior
+// al instante, así que solo se veía la última. Ahora se encolan: cada una
+// se queda en pantalla hasta que el jugador la cierra o termina de
+// escucharla, y solo entonces aparece la siguiente.
+function encolarNarracion(texto) {
+  if (!texto) return;
+  colaNarraciones.push(texto);
+  procesarColaNarraciones();
+}
+
+function procesarColaNarraciones() {
+  if (narracionEnCurso || colaNarraciones.length === 0) return;
+  narracionEnCurso = true;
+  const texto = colaNarraciones.shift();
   narracionTokenActual++;
+  const miToken = narracionTokenActual;
   els.narrationText.textContent = texto;
   els.narrationBox.classList.add("visible");
-  hablar(texto);
+  hablar(texto, () => {
+    if (miToken === narracionTokenActual) narracionTerminada();
+  });
+}
+
+// Se llama tanto si termina de hablar sola como si el jugador la cierra a
+// mano — en ambos casos, tras una pequeña pausa, pasamos a la siguiente.
+function narracionTerminada() {
+  narracionEnCurso = false;
+  els.narrationBox.classList.remove("visible");
+  setTimeout(procesarColaNarraciones, 700);
 }
 
 let toastTimeoutId = null;
@@ -1363,9 +1390,9 @@ async function enriquecerConNarracionIA(contexto) {
 }
 
 document.getElementById("btn-cerrar-narracion").addEventListener("click", () => {
-  els.narrationBox.classList.remove("visible");
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   if (audioIAActual) audioIAActual.pause();
+  narracionTerminada();
 });
 
 let vocesDisponibles = [];
@@ -1460,15 +1487,9 @@ function extraerTextoParaVoz(texto) {
   return resultado || texto;
 }
 
-function hablar(texto) {
+function hablar(texto, alTerminar) {
   if (!texto) return;
   const textoLimpio = extraerTextoParaVoz(texto);
-  const miToken = narracionTokenActual;
-  const alTerminar = () => {
-    if (miToken === narracionTokenActual) {
-      els.narrationBox.classList.remove("visible");
-    }
-  };
   if (modoVoz === "ia") {
     hablarConIA(textoLimpio, alTerminar);
   } else {
@@ -2325,7 +2346,7 @@ async function construirEscenaAR(targetsUrl, marcadores) {
 
 function manejarMarcadorEncontrado(marcador) {
   if (marcador.tipo === "narracion" && marcador.texto) {
-    mostrarNarracion(marcador.texto);
+    encolarNarracion(marcador.texto);
   } else if (marcador.tipo === "video") {
     const videoEl = document.getElementById(`asset-video-${marcador.targetIndex}`);
     if (videoEl) {
@@ -2365,7 +2386,7 @@ async function resolverTrampa(marcador) {
   const texto = supera
     ? `⚠️ ${nombrePersonaje} esquiva la trampa${descripcion ? ` (${descripcion})` : ""} — tirada ${tirada}.`
     : `⚠️ ${nombrePersonaje} cae en la trampa${descripcion ? ` (${descripcion})` : ""} — tirada ${tirada}, pierde ${danioFinal} de vida.`;
-  mostrarNarracion(texto);
+  encolarNarracion(texto);
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "trampa",
@@ -2387,7 +2408,7 @@ async function recogerObjeto(marcador) {
   const inventario = [...(jugadorDataActual.inventario || [])];
   const existente = inventario.findIndex((o) => o.nombre === marcador.objeto.nombre);
   if (existente < 0 && inventario.length >= LIMITE_INVENTARIO) {
-    mostrarNarracion(
+    encolarNarracion(
       `🎒 Ves "${marcador.objeto.nombre}", pero no te cabe en la mochila. Tira algo primero (Ficha → mochila) y vuelve a escanear.`
     );
     return;
@@ -2412,7 +2433,7 @@ async function recogerObjeto(marcador) {
     marcadoresRecogidos: [...yaRecogidos, marcador.id],
   });
 
-  mostrarNarracion(`🎒 Has encontrado: ${marcador.objeto.nombre}`);
+  encolarNarracion(`🎒 Has encontrado: ${marcador.objeto.nombre}`);
 
   await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
     tipo: "objeto_encontrado",

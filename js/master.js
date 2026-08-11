@@ -285,6 +285,8 @@ $("btn-generar").addEventListener("click", async () => {
       nombre: e.nombre || "Enemigo",
       vida: Number(e.vida) || 10,
       tipoDanio: ["fisico", "fuego", "hielo", "veneno", "mental"].includes(e.tipoDanio) ? e.tipoDanio : "fisico",
+      danioDados: Math.min(3, Math.max(1, Number(e.danioDados) || 1)),
+      danioCaras: [4, 6, 8, 10].includes(Number(e.danioCaras)) ? Number(e.danioCaras) : 6,
       descripcion: e.descripcion || "",
     }));
 
@@ -1982,7 +1984,7 @@ function renderEnemigosSugeridos(enemigos) {
   cont.querySelectorAll(".btn-add-enemigo-sugerido").forEach((btn) => {
     btn.addEventListener("click", () => {
       const e = enemigosSugeridosActuales[Number(btn.dataset.idx)];
-      if (e) añadirEnemigoActual(e.nombre, e.vida, e.tipoDanio, e.retratoUrl);
+      if (e) añadirEnemigoActual(e.nombre, e.vida, e.tipoDanio, e.retratoUrl, e.danioDados, e.danioCaras);
     });
   });
   cont.querySelectorAll(".btn-retrato-enemigo-sugerido").forEach((btn) => {
@@ -2034,19 +2036,26 @@ $("btn-iniciar-combate").addEventListener("click", async () => {
   const idsSeleccionados = Array.from(document.querySelectorAll(".chk-participante:checked")).map((c) => c.value);
   if (idsSeleccionados.length === 0) return alert("Selecciona al menos un jugador.");
 
-  const orden = idsSeleccionados
-    .map((id) => {
-      const j = jugadoresParaCombate.find((x) => x.id === id);
-      const destreza = j?.atributos?.destreza ?? 10;
-      const tirada = 1 + Math.floor(Math.random() * 20);
-      return {
-        jugadorId: id,
-        nombre: j?.nombre || "Jugador",
-        nombrePersonaje: j?.nombrePersonaje || "",
-        iniciativa: tirada + destreza,
-      };
-    })
-    .sort((a, b) => b.iniciativa - a.iniciativa);
+  const ordenJugadores = idsSeleccionados.map((id) => {
+    const j = jugadoresParaCombate.find((x) => x.id === id);
+    const destreza = j?.atributos?.destreza ?? 10;
+    const tirada = 1 + Math.floor(Math.random() * 20);
+    return {
+      jugadorId: id,
+      nombre: j?.nombre || "Jugador",
+      nombrePersonaje: j?.nombrePersonaje || "",
+      iniciativa: tirada + destreza,
+    };
+  });
+  // Los enemigos ya presentes en la partida entran también en el orden de
+  // turnos — así sus ataques se resuelven solos (ver intentarResolverTurnoEnemigo
+  // en app.js), en vez de que el master tenga que aplicarles el daño a mano.
+  const ordenEnemigos = enemigosActuales.map((en, idx) => ({
+    enemigoIdx: idx,
+    nombre: en.nombre,
+    iniciativa: 1 + Math.floor(Math.random() * 20),
+  }));
+  const orden = [...ordenJugadores, ...ordenEnemigos].sort((a, b) => b.iniciativa - a.iniciativa);
 
   await updateDoc(doc(db, "partidas", currentPartidaId), {
     combate: { activo: true, orden, turnoActual: 0, ronda: 1 },
@@ -2097,6 +2106,32 @@ $("btn-poner-en-espera").addEventListener("click", async () => {
   await updateDoc(doc(db, "partidas", currentPartidaId), { estado: "esperando" });
 });
 
+$("btn-marcar-completada").addEventListener("click", async () => {
+  if (!currentPartidaId) return alert("Primero crea o carga una partida.");
+  if (!confirm("Esto avisa a todos los jugadores conectados de que la partida ha terminado, les da un bonus de experiencia y queda registrada en el ranking. ¿Continuar?")) return;
+
+  const snap = await getDoc(doc(db, "partidas", currentPartidaId));
+  const partida = snap.data();
+  const creadaEnMs = partida?.creadaEn?.toMillis?.() ?? Date.now();
+  const minutos = Math.max(1, Math.round((Date.now() - creadaEnMs) / 60000));
+
+  await addDoc(collection(db, "rankings"), {
+    partidaId: currentPartidaId,
+    nombre: partida?.nombre || "Partida sin nombre",
+    minutos,
+    fecha: serverTimestamp(),
+  });
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "partida_completada",
+    nombrePartida: partida?.nombre || "esta aventura",
+    minutos,
+    timestamp: serverTimestamp(),
+  });
+
+  alert(`¡Registrado! Tiempo: ${minutos} min. Cada jugador conectado recibirá su bonus de experiencia y logro.`);
+});
+
 function renderEnemigos() {
   const cont = $("lista-enemigos");
   if (enemigosActuales.length === 0) {
@@ -2139,12 +2174,20 @@ function renderEnemigos() {
   );
 }
 
-async function añadirEnemigoActual(nombre, vida, tipoDanio, retratoUrl) {
+async function añadirEnemigoActual(nombre, vida, tipoDanio, retratoUrl, danioDados, danioCaras) {
   if (!currentPartidaId) return alert("Primero crea o carga una partida.");
   if (!nombre) return;
   const nuevos = [
     ...enemigosActuales,
-    { nombre, vida, vidaMax: vida, tipoDanio: tipoDanio || "fisico", retratoUrl: retratoUrl || "" },
+    {
+      nombre,
+      vida,
+      vidaMax: vida,
+      tipoDanio: tipoDanio || "fisico",
+      retratoUrl: retratoUrl || "",
+      danioDados: danioDados || 1,
+      danioCaras: danioCaras || 6,
+    },
   ];
   await updateDoc(doc(db, "partidas", currentPartidaId), { enemigos: nuevos });
 }

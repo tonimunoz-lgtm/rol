@@ -8,14 +8,12 @@
 // montar esa tirada con el mismo sistema que ya usan las acciones del
 // guion (mismo botón "Tirar", mismas resistencias, mismo daño).
 //
-// No da pistas de la trama que el master humano no haya escrito — solo
-// responde con lo que ya existe en la escena/sinopsis, o con negativas/
-// afirmaciones razonables ("no ves nada de eso aquí") cuando el jugador
-// pregunta por algo que no está descrito.
-//
-// Vale cualquier sesión válida (incluida anónima: son jugadores en
-// partida), solo comprobamos que el token sea real — igual que
-// narrar-accion.js y enriquecer-narracion.js.
+// MODO IMPROVISACIÓN: cuando el cliente indica que la escena activa ya no
+// tiene más salidas escritas por el master (fin del guion), se le permite
+// además inventar una continuación breve, coherente con la sinopsis y el
+// tono — e incluso desencadenar un combate con enemigos nuevos si encaja.
+// Fuera de ese caso, sigue con la norma de siempre: nunca inventa trama
+// nueva que el master humano no haya escrito.
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = "openai/gpt-oss-120b";
@@ -75,8 +73,8 @@ async function handler(req, res) {
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 500,
-        temperature: 0.8,
+        max_tokens: 650,
+        temperature: 0.85,
         reasoning_effort: "low",
         response_format: { type: "json_object" },
       }),
@@ -95,12 +93,10 @@ async function handler(req, res) {
     try {
       json = JSON.parse(bruto);
     } catch (e) {
-      // Si el modelo no devolvió JSON válido, al menos no rompemos la
-      // partida: lo tratamos como una respuesta narrativa simple.
       json = { respuesta: bruto || "El master no ha sabido qué responder a eso." };
     }
 
-    res.status(200).json({
+    const salida = {
       respuesta: String(json.respuesta || "").slice(0, 500),
       requiereTirada: !!json.requiereTirada,
       atributo: ["fuerza", "destreza", "vigor", "inteligencia", "carisma"].includes(json.atributo) ? json.atributo : "destreza",
@@ -109,7 +105,24 @@ async function handler(req, res) {
       danioDados: Math.min(4, Math.max(1, Number(json.danioDados) || 1)),
       danioCaras: [4, 6, 8, 10, 12, 20].includes(Number(json.danioCaras)) ? Number(json.danioCaras) : 6,
       etiqueta: String(json.etiqueta || "Intentarlo").slice(0, 40),
-    });
+    };
+
+    // Solo relevante en modo improvisación (fin del guion escrito).
+    if (json.continuacion) salida.continuacion = String(json.continuacion).slice(0, 500);
+    if (json.combate && Array.isArray(json.combate.enemigos) && json.combate.enemigos.length > 0) {
+      salida.combate = {
+        razon: String(json.combate.razon || "").slice(0, 200),
+        enemigos: json.combate.enemigos.slice(0, 4).map((e) => ({
+          nombre: String(e.nombre || "Enemigo").slice(0, 40),
+          vida: Math.min(60, Math.max(4, Number(e.vida) || 12)),
+          tipoDanio: ["fisico", "fuego", "hielo", "veneno", "mental"].includes(e.tipoDanio) ? e.tipoDanio : "fisico",
+          danioDados: Math.min(3, Math.max(1, Number(e.danioDados) || 1)),
+          danioCaras: [4, 6, 8, 10].includes(Number(e.danioCaras)) ? Number(e.danioCaras) : 6,
+        })),
+      };
+    }
+
+    res.status(200).json(salida);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: `Error consultando al master IA: ${err.message}` });
@@ -119,9 +132,9 @@ async function handler(req, res) {
 function construirPrompt(modo, mensaje, c) {
   const base = `
 Eres el Master de una partida de rol de mesa con realidad aumentada, actuando como suplente del
-master humano mientras juega. Tienes esta información real de la partida (no inventes nada fuera
-de esto, y si te preguntan por algo que no está aquí descrito, responde con naturalidad que no ves
-o no hay nada de eso, sin inventar contenido nuevo de la trama):
+master humano mientras juega. Tono: cercano, con chispa y algo de humor cuando el jugador dice
+algo ocurrente o gracioso — sin dejar de ser un buen narrador. Tienes esta información real de la
+partida:
 
 Sinopsis de la historia: "${c.sinopsis || "(sin sinopsis)"}"
 Escena activa: "${c.escenaNombre || "(sin escena)"}"
@@ -132,31 +145,46 @@ Atributos: fuerza ${c.atributos?.fuerza ?? 10}, destreza ${c.atributos?.destreza
 Habilidades del personaje: ${(c.habilidades || []).map((h) => h.nombre).join(", ") || "ninguna"}.
 `.trim();
 
+  const reglasImprovisacion = c.finGuion
+    ? `
+IMPORTANTE — MODO IMPROVISACIÓN: el master humano no ha escrito más escenas después de esta (el
+jugador ha llegado al final de lo que preparó, o quiere ir por un camino que no estaba previsto).
+Tienes permiso, EXCEPCIONALMENTE, para inventar una continuación breve y coherente con la
+sinopsis y el tono de la historia — como haría un master humano improvisando en mesa. Usa el
+campo "continuacion" (2-4 frases) para narrar qué pasa a continuación. Si narrativamente encaja
+que aparezca una amenaza (un depredador, unos bandidos, una criatura...), puedes desencadenar un
+combate: rellena "combate" con 1-3 enemigos razonables para el tono de la historia (nombre, vida
+entre 8 y 25, tipoDanio, danioDados 1-2, danioCaras entre 4 y 10) y una "razon" breve de por qué
+aparecen. No abuses del combate — solo si tiene sentido dramático, no en cada respuesta.
+`.trim()
+    : `
+No inventes contenido nuevo de la trama que el master humano no haya escrito: si preguntan por
+algo que no está descrito en la narración/objetivo de arriba, responde con naturalidad que no ves
+o no hay nada de eso. No rellenes "continuacion" ni "combate" — déjalos vacíos/ausentes.
+`.trim();
+
   if (modo === "pregunta") {
     return `
 ${base}
 
+${reglasImprovisacion}
+
 El jugador te dice o te pregunta lo siguiente: "${mensaje}"
 
-Responde EN ESPAÑOL, en tono de master de rol de mesa: cercano, breve (2-4 frases), inmersivo,
-sin salir del personaje de narrador. Reglas importantes:
+Responde EN ESPAÑOL, breve (2-4 frases), inmersivo, sin salir del personaje de narrador. Reglas:
 - Si es una pregunta sobre el entorno (¿hay X cerca?, ¿veo Y?), respóndela con naturalidad
-  basándote SOLO en la narración/objetivo de la escena que tienes arriba — si no se menciona,
-  contesta que no, sin inventar pistas nuevas de la trama.
+  basándote en la narración/objetivo de la escena.
 - Si el jugador describe una ACCIÓN que tendría sentido resolver con una tirada (buscar, forzar,
   trepar, convencer, esconderse, pelear, etc.), NO se la resuelvas tú narrando el resultado —
-  en vez de eso, indica en tu respuesta que hace falta una tirada (di de qué atributo, de forma
-  natural, p.ej. "eso requeriría algo de destreza") y marca "requiereTirada": true con los campos
-  de la tirada rellenos. Si el atributo relevante del personaje es muy bajo (5 o menos) o la
-  acción no encaja con ninguna habilidad razonable para este personaje, puedes sugerir en el
-  texto que quizá otro compañero con más maña para eso lo intente, pero aun así deja
-  "requiereTirada": true por si el jugador insiste.
+  indica que hace falta una tirada (di de qué atributo, de forma natural) y marca
+  "requiereTirada": true con los campos de la tirada rellenos. Si el atributo relevante del
+  personaje es muy bajo (5 o menos), puedes sugerir que otro compañero lo intente, pero deja
+  igualmente "requiereTirada": true por si insiste.
 - Si la acción no necesita tirada (hablar, mirar, moverse, algo trivial), respóndela
   narrativamente sin más, "requiereTirada": false.
-- Nunca reveles secretos de la trama que no estén ya en la narración/objetivo de la escena.
 
 Responde ÚNICAMENTE con un JSON con esta forma exacta, sin texto fuera del JSON:
-{"respuesta": "...", "requiereTirada": true|false, "atributo": "destreza|fuerza|vigor|inteligencia|carisma", "dificultad": 12, "tipoDanio": "fisico|fuego|hielo|veneno|mental", "danioDados": 1, "danioCaras": 6, "etiqueta": "Buscar entre los matorrales"}
+{"respuesta": "...", "requiereTirada": true|false, "atributo": "destreza|fuerza|vigor|inteligencia|carisma", "dificultad": 12, "tipoDanio": "fisico|fuego|hielo|veneno|mental", "danioDados": 1, "danioCaras": 6, "etiqueta": "Buscar entre los matorrales", "continuacion": "" , "combate": null}
 `.trim();
   }
 
@@ -164,12 +192,14 @@ Responde ÚNICAMENTE con un JSON con esta forma exacta, sin texto fuera del JSON
     return `
 ${base}
 
-El jugador lleva un rato sin hacer nada ni decir nada. Anímale con una frase breve (1-2 frases),
-en tono cercano de master de mesa, sugiriéndole algo concreto que podría intentar dado el
-contexto de la escena actual (sin resolvérselo, solo animarle a probar). No hace falta tirada
-para esto: "requiereTirada" siempre false aquí.
+${reglasImprovisacion}
 
-Responde ÚNICAMENTE con un JSON: {"respuesta": "...", "requiereTirada": false}
+El jugador lleva un rato sin hacer nada ni decir nada. Anímale con una frase breve (1-2 frases),
+en tono cercano y con chispa, sugiriéndole algo concreto que podría intentar dado el contexto de
+la escena actual. No hace falta tirada para esto: "requiereTirada" siempre false. Solo usa
+"continuacion"/"combate" si de verdad encaja animar con algo que ocurre, no lo fuerces.
+
+Responde ÚNICAMENTE con un JSON: {"respuesta": "...", "requiereTirada": false, "continuacion": "", "combate": null}
 `.trim();
   }
 

@@ -26,6 +26,30 @@
   <button id="btn-acceder-juego" class="primary" style="display:none; width:100%; max-width:280px; font-size:1.05rem; padding:.8em;">▶️ Acceder al juego</button>
 </div>
 
+<!-- Votación en grupo: cualquier jugador puede proponer una decisión con
+     hasta 3 opciones, y ver en vivo cómo va votando el resto. -->
+<div id="votacion-modal" class="modal-overlay">
+  <div class="card" style="max-width:420px; width:90%;">
+    <button id="btn-cerrar-votacion-modal" style="float:right; font-size:.75rem;">✕ Cerrar</button>
+    <h2 class="display" style="font-size:1.1rem;">🗳️ Votación en grupo</h2>
+
+    <div id="votacion-form">
+      <p style="color:var(--parchment-dim); font-size:.8rem;">Propón algo para que el grupo decida juntos qué hacer.</p>
+      <div class="field"><label>¿Qué proponéis votar?</label><input id="votacion-pregunta" placeholder="¿Cruzamos el puente o rodeamos por el bosque?" /></div>
+      <div class="field"><label>Opción 1</label><input id="votacion-opcion-1" /></div>
+      <div class="field"><label>Opción 2</label><input id="votacion-opcion-2" /></div>
+      <div class="field"><label>Opción 3 (opcional)</label><input id="votacion-opcion-3" /></div>
+      <button id="btn-lanzar-votacion" class="primary" style="width:100%;">Lanzar votación</button>
+    </div>
+
+    <div id="votacion-activa" style="display:none;">
+      <p id="votacion-activa-pregunta" style="color:var(--amber); font-weight:600;"></p>
+      <div id="votacion-opciones-lista"></div>
+      <button id="btn-cerrar-votacion" style="width:100%; margin-top:.6em;">✅ Cerrar votación y anunciar resultado</button>
+    </div>
+  </div>
+</div>
+
 <!-- Portada de la partida: sinopsis + imagen generada por el master, antes
      de entrar de verdad en la escena 1. El clic en "Empezar aventura" es la
      interacción real que arranca narración, fondo y música de la escena 1
@@ -104,6 +128,7 @@
     <button id="btn-dice">🎲 Dado</button>
     <button id="btn-bitacora">📖 Bitácora</button>
     <button id="btn-mapa">🗺️ Mapa</button>
+    <button id="btn-votar">🗳️ Votar</button>
     <button id="btn-ficha">📜 Ficha</button>
     <button class="stat-pill stat-pill-clickable" id="stat-inventory">🎒 Mochila --</button>
   </div>
@@ -152,6 +177,18 @@
       <div id="ficha-retrato"></div>
       <h2 class="display" id="ficha-nombre" style="font-size:1.2rem;"></h2>
       <p class="mono" id="ficha-raza-clase" style="color:var(--parchment-dim); font-size:.8rem;"></p>
+
+      <div id="ficha-progreso" style="margin:.7em 0; padding:.6em .8em; border:1px solid #3a3226; border-radius:var(--radius);">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:.3em;">
+          <strong id="ficha-nivel-texto" style="color:var(--amber);">Nivel 1</strong>
+          <span id="ficha-xp-texto" class="mono" style="font-size:.75rem; color:var(--parchment-dim);">0 XP</span>
+        </div>
+        <div style="background:var(--ink); border-radius:999px; height:8px; overflow:hidden;">
+          <div id="ficha-xp-barra" style="background:var(--amber); height:100%; width:0%; transition:width .4s;"></div>
+        </div>
+        <div id="ficha-logros" style="margin-top:.5em; display:flex; flex-wrap:wrap; gap:.3em;"></div>
+      </div>
+
       <div id="ficha-atributos" class="grid-3" style="margin:.8em 0;"></div>
       <h3 style="font-size:1rem;">Habilidades</h3>
       <div id="ficha-habilidades"></div>
@@ -182,6 +219,7 @@
         <button class="bitacora-tab-btn" data-tab="pnjs" style="font-size:.8rem;">PNJs</button>
         <button class="bitacora-tab-btn" data-tab="pistas" style="font-size:.8rem;">Pistas</button>
         <button class="bitacora-tab-btn" data-tab="registro" style="font-size:.8rem;">Registro</button>
+        <button class="bitacora-tab-btn" data-tab="ranking" style="font-size:.8rem;">🏆 Ranking</button>
       </div>
 
       <div id="bitacora-tab-historia" class="bitacora-tab-panel">
@@ -210,6 +248,11 @@
       <div id="bitacora-tab-registro" class="bitacora-tab-panel" style="display:none;">
         <p style="color:var(--parchment-dim); font-size:.8rem;">Todo lo que ha ido pasando, de más antiguo a más reciente.</p>
         <div id="bitacora-registro"></div>
+      </div>
+
+      <div id="bitacora-tab-ranking" class="bitacora-tab-panel" style="display:none;">
+        <p style="color:var(--parchment-dim); font-size:.8rem;">Partidas completadas más rápido, de cualquier grupo.</p>
+        <div id="bitacora-ranking"></div>
       </div>
     </div>
   </div>

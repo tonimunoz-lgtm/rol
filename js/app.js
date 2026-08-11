@@ -98,6 +98,20 @@ const els = {
   portadaFondo: document.getElementById("portada-fondo"),
   portadaSinopsisTexto: document.getElementById("portada-sinopsis-texto"),
   btnEmpezarAventura: document.getElementById("btn-empezar-aventura"),
+  fichaNivelTexto: document.getElementById("ficha-nivel-texto"),
+  fichaXpTexto: document.getElementById("ficha-xp-texto"),
+  fichaXpBarra: document.getElementById("ficha-xp-barra"),
+  fichaLogros: document.getElementById("ficha-logros"),
+  btnVotar: document.getElementById("btn-votar"),
+  votacionModal: document.getElementById("votacion-modal"),
+  btnCerrarVotacionModal: document.getElementById("btn-cerrar-votacion-modal"),
+  votacionForm: document.getElementById("votacion-form"),
+  votacionPregunta: document.getElementById("votacion-pregunta"),
+  btnLanzarVotacion: document.getElementById("btn-lanzar-votacion"),
+  votacionActivaBloque: document.getElementById("votacion-activa"),
+  votacionActivaPregunta: document.getElementById("votacion-activa-pregunta"),
+  votacionOpcionesLista: document.getElementById("votacion-opciones-lista"),
+  btnCerrarVotacion: document.getElementById("btn-cerrar-votacion"),
 };
 
 const DIFICULTAD_ATAQUE_DEFECTO = 12;
@@ -426,6 +440,64 @@ els.btnEmpezarAventura.addEventListener("click", () => {
   }
 });
 
+// ---------- Progreso persistente (nivel, XP, logros) ----------
+// Se guarda por sesión (uid anónimo, persistido por el propio navegador),
+// no por partida: sobrevive entre partidas distintas mientras se juegue
+// desde el mismo móvil/navegador sin borrar datos. Si cambian de
+// dispositivo o borran caché, empieza de cero — es la limitación real de
+// no pedir cuenta registrada a los jugadores.
+let progresoActual = { xp: 0, nivel: 1, logros: [] };
+const XP_POR_NIVEL = 100;
+function calcularNivel(xp) {
+  return Math.floor((xp || 0) / XP_POR_NIVEL) + 1;
+}
+
+function cargarProgreso() {
+  if (!auth.currentUser) return;
+  onSnapshot(doc(db, "progreso", auth.currentUser.uid), (snap) => {
+    progresoActual = snap.exists() ? { xp: 0, nivel: 1, logros: [], ...snap.data() } : { xp: 0, nivel: 1, logros: [] };
+    if (jugadorDataActual) renderFicha(jugadorDataActual);
+  });
+}
+
+async function otorgarXP(cantidad, motivo) {
+  if (!auth.currentUser) return;
+  const nivelAntes = calcularNivel(progresoActual.xp);
+  const nuevaXp = (progresoActual.xp || 0) + cantidad;
+  const nivelDespues = calcularNivel(nuevaXp);
+  await setDoc(
+    doc(db, "progreso", auth.currentUser.uid),
+    { xp: nuevaXp, nivel: nivelDespues, logros: progresoActual.logros || [] },
+    { merge: true }
+  );
+  mostrarToast(`✨ +${cantidad} XP (${motivo})`, 3500);
+  if (nivelDespues > nivelAntes) mostrarToast(`🎉 ¡Has subido a nivel ${nivelDespues}!`, 6000);
+}
+
+async function otorgarLogro(id, nombre) {
+  if (!auth.currentUser) return;
+  const logros = progresoActual.logros || [];
+  if (logros.some((l) => l.id === id)) return; // ya lo tiene, no se repite
+  const nuevos = [...logros, { id, nombre }];
+  await setDoc(doc(db, "progreso", auth.currentUser.uid), { logros: nuevos }, { merge: true });
+  mostrarToast(`🏆 Logro conseguido: ${nombre}`, 6000);
+}
+
+function renderProgresoEnFicha() {
+  const nivel = calcularNivel(progresoActual.xp);
+  const xpEnNivel = (progresoActual.xp || 0) % XP_POR_NIVEL;
+  els.fichaNivelTexto.textContent = `Nivel ${nivel}`;
+  els.fichaXpTexto.textContent = `${xpEnNivel}/${XP_POR_NIVEL} XP`;
+  els.fichaXpBarra.style.width = `${(xpEnNivel / XP_POR_NIVEL) * 100}%`;
+  const logros = progresoActual.logros || [];
+  els.fichaLogros.innerHTML =
+    logros.length === 0
+      ? `<span style="color:var(--parchment-dim); font-size:.75rem;">Todavía sin logros — ¡a por el primero!</span>`
+      : logros
+          .map((l) => `<span class="mono" style="font-size:.72rem; border:1px solid var(--amber); border-radius:999px; padding:.15em .6em;">🏆 ${l.nombre}</span>`)
+          .join("");
+}
+
 async function bootGame() {
   // Si algo llega a llamar a bootGame() más de una vez en la misma sesión
   // (p.ej. unirse con código y que justo después se refresque el estado de
@@ -438,6 +510,7 @@ async function bootGame() {
   const jugadorRef = doc(db, "partidas", currentPartidaId, "jugadores", currentJugadorId);
   jugadorRefActual = jugadorRef;
   escucharJugadoresParaLobby(currentPartidaId);
+  cargarProgreso();
 
   // Ficha del jugador en tiempo real
   onSnapshot(jugadorRef, (snap) => {
@@ -470,18 +543,26 @@ async function bootGame() {
     const data = snap.data();
     enemigosCombateActual = data.enemigos || [];
     renderCombateJugador(data.combate);
+    if (data.combate?.activo) intentarResolverTurnoEnemigo();
     musicaAmbienteBase = data.musicaAmbienteUrl || null;
     pnjsActual = data.pnjs || [];
     pistasActual = data.pistas || [];
     mapaCrudo = data.mapa || null;
     sinopsisActual = data.sinopsis || "";
     portadaUrlActual = data.portadaUrl || "";
+    votacionActual = data.votacion || null;
+    if (els.votacionModal.classList.contains("visible")) renderVotacionModal();
     actualizarLobby(data.estado);
 
     // Combate que acaba de terminar (estaba activo y ha dejado de estarlo)
     const combateActivoAhora = !!data.combate?.activo;
     if (combateActivoAnterior && !combateActivoAhora) {
       verificarAvanceGuion({ tipo: "combate_terminado" });
+      const enemigosDelCombate = data.enemigos || [];
+      if (enemigosDelCombate.length > 0 && enemigosDelCombate.every((en) => en.vida <= 0)) {
+        otorgarXP(15, "combate ganado");
+        otorgarLogro("primer_combate", "Primera victoria en combate");
+      }
     }
     combateActivoAnterior = combateActivoAhora;
 
@@ -555,6 +636,10 @@ async function bootGame() {
           mostrarToast(`🧙 ${evento.texto}`, 6000);
           añadirMensajeChat({ tipo: "chat_master", texto: evento.texto });
         }
+        if (evento.tipo === "partida_completada") {
+          otorgarXP(100, "partida completada");
+          otorgarLogro(`aventura_${currentPartidaId}`, `Completaste: ${evento.nombrePartida}`);
+        }
       }
     });
   });
@@ -575,7 +660,9 @@ async function bootGame() {
 }
 
 // ---------- 3b. Combate en pantalla ----------
+let combateActivoLocal = false;
 function renderCombateJugador(combate) {
+  combateActivoLocal = !!combate?.activo;
   if (!combate?.activo) {
     els.combateBar.classList.remove("visible", "mi-turno");
     els.combateDañoForm.style.display = "none";
@@ -605,6 +692,84 @@ function renderCombateJugador(combate) {
     els.combateDañoForm.style.display = "none";
   }
 }
+
+function calcularSiguienteTurno(combate) {
+  let siguiente = combate.turnoActual + 1;
+  let ronda = combate.ronda;
+  if (siguiente >= combate.orden.length) {
+    siguiente = 0;
+    ronda++;
+  }
+  return { "combate.turnoActual": siguiente, "combate.ronda": ronda };
+}
+
+// Los enemigos ya no se quedan quietos: en cuanto les toca turno, el
+// primer cliente que se entera lo resuelve por su cuenta (tirada de
+// ataque, daño con resistencias, y pasa turno) — todo dentro de una única
+// transacción, así que aunque varios jugadores estén mirando la pantalla a
+// la vez, el turno del enemigo solo se resuelve una vez.
+let resolviendoTurnoEnemigo = false;
+async function intentarResolverTurnoEnemigo() {
+  if (resolviendoTurnoEnemigo || !currentPartidaId) return;
+  resolviendoTurnoEnemigo = true;
+  try {
+    await runTransaction(db, async (tx) => {
+      const partidaRef = doc(db, "partidas", currentPartidaId);
+      const partidaSnap = await tx.get(partidaRef);
+      const data = partidaSnap.data();
+      const combate = data?.combate;
+      if (!combate?.activo) return;
+      const entradaActual = combate.orden[combate.turnoActual];
+      if (!entradaActual || entradaActual.jugadorId) return; // no es turno de un enemigo
+
+      const enemigos = data.enemigos || [];
+      const enemigo = enemigos[entradaActual.enemigoIdx];
+      const jugadoresEnCombate = combate.orden.filter((o) => o.jugadorId);
+      const siguienteTurno = calcularSiguienteTurno(combate);
+      const eventoRef = doc(collection(db, "partidas", currentPartidaId, "eventos"));
+
+      if (!enemigo || enemigo.vida <= 0 || jugadoresEnCombate.length === 0) {
+        tx.update(partidaRef, siguienteTurno);
+        return;
+      }
+
+      const objetivo = jugadoresEnCombate[Math.floor(Math.random() * jugadoresEnCombate.length)];
+      const jugadorRef = doc(db, "partidas", currentPartidaId, "jugadores", objetivo.jugadorId);
+      const jugadorSnap = await tx.get(jugadorRef);
+      const jugador = jugadorSnap.exists() ? jugadorSnap.data() : null;
+
+      let texto;
+      if (!jugador || jugador.vida <= 0) {
+        texto = `⚔️ ${enemigo.nombre} busca a alguien en pie a quien atacar, pero no encuentra a nadie.`;
+      } else {
+        const tirada = 1 + Math.floor(Math.random() * 20);
+        if (tirada < 11) {
+          texto = `⚔️ ${enemigo.nombre} ataca a ${jugador.nombrePersonaje || jugador.nombre} (tirada ${tirada}) y falla.`;
+        } else {
+          let danioBase = 0;
+          for (let i = 0; i < (enemigo.danioDados || 1); i++) danioBase += 1 + Math.floor(Math.random() * (enemigo.danioCaras || 6));
+          const danioFinal = aplicarResistencia(danioBase, enemigo.tipoDanio, jugador.resistencias);
+          tx.update(jugadorRef, { vida: Math.max(0, jugador.vida - danioFinal) });
+          texto = `⚔️ ${enemigo.nombre} ataca a ${jugador.nombrePersonaje || jugador.nombre} (tirada ${tirada}) y acierta — ${danioFinal} de daño ${ETIQUETAS_TIPO_DANIO[enemigo.tipoDanio] || ""}.`;
+        }
+      }
+
+      tx.set(eventoRef, { tipo: "narracion", texto, timestamp: serverTimestamp() });
+      tx.update(partidaRef, siguienteTurno);
+    });
+  } catch (e) {
+    console.warn("No se pudo resolver el turno del enemigo:", e.message);
+  } finally {
+    resolviendoTurnoEnemigo = false;
+  }
+}
+
+// Red de seguridad: por si ningún cliente recibe a tiempo el cambio de
+// turno vía onSnapshot, comprobamos cada pocos segundos si hay un combate
+// activo esperando a que actúe un enemigo.
+setInterval(() => {
+  if (combateActivoLocal) intentarResolverTurnoEnemigo();
+}, 4000);
 
 // ---------- 3c. Guion automático: comprueba si la escena actual debe avanzar ----------
 async function verificarAvanceGuion(contexto) {
@@ -1123,6 +1288,7 @@ async function ejecutarAccionPrueba(escena, accion) {
   });
 
   verificarAvanceGuion({ tipo: supera ? "accion_superada" : "accion_fallada", valor: accion.id });
+  if (supera) otorgarXP(10, "acción superada");
 }
 
 async function ejecutarAccionPnj(escena, accion) {
@@ -1196,6 +1362,7 @@ document.querySelectorAll(".bitacora-tab-btn").forEach((btn) => {
     btn.classList.add("active");
     document.getElementById(`bitacora-tab-${btn.dataset.tab}`).style.display = "block";
     if (btn.dataset.tab === "registro") renderRegistro();
+    if (btn.dataset.tab === "ranking") renderRanking();
   });
 });
 
@@ -1218,6 +1385,30 @@ function renderRegistro() {
     )
     .join("");
   els.bitacoraRegistro.scrollTop = els.bitacoraRegistro.scrollHeight;
+}
+
+async function renderRanking() {
+  const cont = document.getElementById("bitacora-ranking");
+  cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Cargando...</p>`;
+  try {
+    const snap = await getDocs(collection(db, "rankings"));
+    const entradas = snap.docs.map((d) => d.data()).sort((a, b) => a.minutos - b.minutos).slice(0, 10);
+    if (entradas.length === 0) {
+      cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no hay ninguna partida completada registrada.</p>`;
+      return;
+    }
+    const medallas = ["🥇", "🥈", "🥉"];
+    cont.innerHTML = entradas
+      .map((e, i) => {
+        const destacado = e.partidaId === currentPartidaId;
+        return `<div class="registro-linea" style="${destacado ? "color:var(--amber); font-weight:600;" : ""}">
+          ${medallas[i] || `${i + 1}.`} ${e.nombre} — ${e.minutos} min
+        </div>`;
+      })
+      .join("");
+  } catch (e) {
+    cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">No se pudo cargar el ranking.</p>`;
+  }
 }
 
 // Marca un PNJ como "conocido" por este jugador en cuanto se activa la
@@ -1524,6 +1715,7 @@ const NOMBRES_ATRIBUTOS = {
 };
 
 function renderFicha(data) {
+  renderProgresoEnFicha();
   els.fichaNombre.textContent = data.nombrePersonaje || data.nombre;
   els.fichaRazaClase.textContent = [data.raza, data.clase].filter(Boolean).join(" · ");
   els.fichaRetrato.innerHTML = data.retratoUrl
@@ -1917,6 +2109,7 @@ els.btnCerrarAccion.addEventListener("click", () => els.accionModal.classList.re
 // usan las acciones del guion.
 async function consultarMasterIA(modo, mensaje) {
   const escena = encontrarEscena(guionActual, escenaActualLocalId);
+  const finGuion = !escena || !escena.salidas || escena.salidas.length === 0;
   const contexto = {
     sinopsis: sinopsisActual,
     escenaNombre: escena?.nombre || "",
@@ -1927,6 +2120,7 @@ async function consultarMasterIA(modo, mensaje) {
     personajeClase: jugadorDataActual?.clase || "",
     atributos: jugadorDataActual?.atributos || {},
     habilidades: jugadorDataActual?.habilidades || [],
+    finGuion,
   };
   const idToken = await auth.currentUser.getIdToken();
   const resp = await fetch("/api/master-ia", {
@@ -1960,6 +2154,49 @@ function añadirAccionDinamica(resultado) {
   abrirModalAcciones();
 }
 
+// Modo improvisación: el Master IA ha decidido que, dado que ya no hay más
+// guion escrito, unos enemigos entran en escena. Los añadimos a la partida
+// y arrancamos combate con orden de iniciativa real (jugadores + enemigos
+// mezclados) — desde aquí en adelante, los turnos de los enemigos se
+// resuelven solos (ver "intentarResolverTurnoEnemigo").
+async function iniciarCombateImprovisado(enemigosNuevos, razon) {
+  if (!currentPartidaId || !enemigosNuevos?.length) return;
+  const enemigosConDados = enemigosNuevos.map((e) => ({
+    nombre: e.nombre,
+    vida: e.vida,
+    vidaMax: e.vida,
+    tipoDanio: e.tipoDanio,
+    danioDados: e.danioDados,
+    danioCaras: e.danioCaras,
+    retratoUrl: "",
+  }));
+
+  const ordenJugadores = [
+    {
+      jugadorId: currentJugadorId,
+      nombre: jugadorDataActual?.nombre || "Jugador",
+      nombrePersonaje: jugadorDataActual?.nombrePersonaje || "",
+      iniciativa: tirarDado(20) + modificadorDeAtributo("destreza", jugadorDataActual?.atributos),
+    },
+  ];
+  const ordenEnemigos = enemigosConDados.map((e, idx) => ({
+    enemigoIdx: idx,
+    nombre: e.nombre,
+    iniciativa: tirarDado(20),
+  }));
+  const orden = [...ordenJugadores, ...ordenEnemigos].sort((a, b) => b.iniciativa - a.iniciativa);
+
+  await updateDoc(doc(db, "partidas", currentPartidaId), {
+    enemigos: enemigosConDados,
+    combate: { activo: true, orden, turnoActual: 0, ronda: 1 },
+  });
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "narracion",
+    texto: `⚔️ ${razon || "¡Aparecen enemigos!"} — ¡Comienza el combate! (${enemigosConDados.map((e) => e.nombre).join(", ")})`,
+    timestamp: serverTimestamp(),
+  });
+}
+
 els.btnEnviarAccion.addEventListener("click", async () => {
   const texto = els.accionTexto.value.trim();
   if (!texto) return;
@@ -1985,9 +2222,85 @@ els.btnEnviarAccion.addEventListener("click", async () => {
       timestamp: serverTimestamp(),
     });
     if (resultado.requiereTirada) añadirAccionDinamica(resultado);
+    if (resultado.continuacion) {
+      await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+        tipo: "narracion",
+        texto: `📖 ${resultado.continuacion}`,
+        timestamp: serverTimestamp(),
+      });
+    }
+    if (resultado.combate) await iniciarCombateImprovisado(resultado.combate.enemigos, resultado.combate.razon);
   } catch (e) {
     console.warn("El Master IA no ha podido responder:", e.message);
   }
+});
+
+// ---------- Votación en grupo ----------
+let votacionActual = null;
+
+els.btnVotar.addEventListener("click", () => {
+  els.votacionModal.classList.add("visible");
+  renderVotacionModal();
+});
+els.btnCerrarVotacionModal.addEventListener("click", () => els.votacionModal.classList.remove("visible"));
+
+function renderVotacionModal() {
+  if (votacionActual?.activa) {
+    els.votacionForm.style.display = "none";
+    els.votacionActivaBloque.style.display = "block";
+    els.votacionActivaPregunta.textContent = votacionActual.pregunta;
+    const votos = votacionActual.votos || {};
+    const conteo = votacionActual.opciones.map((_, idx) => Object.values(votos).filter((v) => v === idx).length);
+    els.votacionOpcionesLista.innerHTML = votacionActual.opciones
+      .map(
+        (op, idx) => `
+        <button class="btn-votar-opcion" data-idx="${idx}" style="display:block; width:100%; margin-bottom:.4em; text-align:left;">
+          ${op} — ${conteo[idx]} voto${conteo[idx] !== 1 ? "s" : ""} ${votos[currentUid] === idx ? "✅" : ""}
+        </button>`
+      )
+      .join("");
+    els.votacionOpcionesLista.querySelectorAll(".btn-votar-opcion").forEach((btn) => {
+      btn.addEventListener("click", () => votarOpcion(Number(btn.dataset.idx)));
+    });
+  } else {
+    els.votacionForm.style.display = "block";
+    els.votacionActivaBloque.style.display = "none";
+  }
+}
+
+async function votarOpcion(idx) {
+  registrarActividad();
+  await updateDoc(doc(db, "partidas", currentPartidaId), { [`votacion.votos.${currentUid}`]: idx });
+}
+
+els.btnLanzarVotacion.addEventListener("click", async () => {
+  const pregunta = els.votacionPregunta.value.trim();
+  const opciones = [1, 2, 3]
+    .map((n) => document.getElementById(`votacion-opcion-${n}`).value.trim())
+    .filter(Boolean);
+  if (!pregunta || opciones.length < 2) return alert("Escribe la pregunta y al menos 2 opciones.");
+  await updateDoc(doc(db, "partidas", currentPartidaId), {
+    votacion: { activa: true, pregunta, opciones, votos: {}, creadoPor: currentUid },
+  });
+  els.votacionPregunta.value = "";
+  [1, 2, 3].forEach((n) => (document.getElementById(`votacion-opcion-${n}`).value = ""));
+});
+
+els.btnCerrarVotacion.addEventListener("click", async () => {
+  if (!votacionActual) return;
+  const votos = votacionActual.votos || {};
+  const conteo = votacionActual.opciones.map((_, idx) => Object.values(votos).filter((v) => v === idx).length);
+  const maxVotos = Math.max(...conteo, 0);
+  const ganadoras = votacionActual.opciones.filter((_, idx) => conteo[idx] === maxVotos);
+  const resultado = ganadoras.length === 1 ? ganadoras[0] : `empate entre: ${ganadoras.join(" y ")}`;
+
+  await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+    tipo: "narracion",
+    texto: `🗳️ Resultado de la votación "${votacionActual.pregunta}": ${resultado}.`,
+    timestamp: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "partidas", currentPartidaId), { votacion: { activa: false, opciones: [], votos: {} } });
+  els.votacionModal.classList.remove("visible");
 });
 
 // ---------- 5b-2. Aviso por inactividad: el Master IA anima si nadie hace nada ----------
@@ -2008,6 +2321,14 @@ setInterval(async () => {
   try {
     const resultado = await consultarMasterIA("idle", null);
     if (resultado.respuesta) mostrarToast(`🧙 ${resultado.respuesta}`, 7000);
+    if (resultado.continuacion) {
+      await addDoc(collection(db, "partidas", currentPartidaId, "eventos"), {
+        tipo: "narracion",
+        texto: `📖 ${resultado.continuacion}`,
+        timestamp: serverTimestamp(),
+      });
+    }
+    if (resultado.combate) await iniciarCombateImprovisado(resultado.combate.enemigos, resultado.combate.razon);
   } catch (e) {
     console.warn("No se pudo pedir el aviso de inactividad:", e.message);
   }

@@ -204,6 +204,8 @@ con exactamente esta forma:
       "nombre": "Nombre del enemigo",
       "vida": 20,
       "tipoDanio": "fisico",
+      "danioDados": 1,
+      "danioCaras": 6,
       "descripcion": "1 frase: qué es y cómo ataca"
     }
   ],
@@ -233,7 +235,9 @@ con exactamente esta forma:
 }
 
 Genera entre 2 y 4 "enemigosSugeridos" coherentes con la ambientación (tipo de amenaza acorde a
-la dificultad pedida), con vida proporcional a la dificultad general.
+la dificultad pedida), con vida proporcional a la dificultad general. "danioDados" (1-2) y
+"danioCaras" (4, 6, 8 o 10) definen cuánto daño hace su ataque — más alto para enemigos más
+peligrosos.
 
 Para "mapa": genera entre 6 y 9 "lugares" que reflejen una geografía real y variada (no los
 pongas en línea recta ni repartidos de forma uniforme). Incluye idealmente: 1-2 asentamientos

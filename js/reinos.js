@@ -138,26 +138,22 @@ $("btn-unirse-mundo").addEventListener("click", async () => {
 
 // Busca una casilla libre razonable para el castillo nuevo, crea el
 // documento de reino con los valores iniciales, y arranca el juego.
-async function crearReinoEnMundo(codigo, nombreReino) {
+async function buscarPosicionLibre(codigo) {
   const reinosSnap = await getDocs(collection(db, "mundos", codigo, "reinos"));
   const ocupadas = new Set();
   reinosSnap.forEach((d) => (d.data().territorios || []).forEach((t) => ocupadas.add(`${t.f},${t.c}`)));
 
-  let posicion = null;
   for (let intento = 0; intento < 200; intento++) {
     const f = Math.floor(Math.random() * FILAS);
     const c = Math.floor(Math.random() * COLUMNAS);
-    if (!ocupadas.has(`${f},${c}`)) {
-      posicion = { f, c };
-      break;
-    }
+    if (!ocupadas.has(`${f},${c}`)) return { posicion: { f, c }, totalReinos: reinosSnap.size };
   }
-  if (!posicion) throw new Error("El mundo está completamente ocupado, no hay hueco para un castillo nuevo.");
+  throw new Error("El mundo está completamente ocupado, no hay hueco para un castillo nuevo.");
+}
 
-  const colorAsignado = PALETA_COLORES[reinosSnap.size % PALETA_COLORES.length];
+function valoresIniciales(nombreReino, colorAsignado, posicion) {
   const edificiosIniciales = Object.fromEntries(ORDEN_EDIFICIOS.map((k) => [k, { nivel: 0 }]));
-
-  await setDoc(doc(db, "mundos", codigo, "reinos", auth.currentUser.uid), {
+  return {
     nombreReino,
     color: colorAsignado,
     posicion,
@@ -173,9 +169,18 @@ async function crearReinoEnMundo(codigo, nombreReino) {
     entrenando: null,
     entrenandoCaballeria: null,
     vivo: true,
+  };
+}
+
+async function crearReinoEnMundo(codigo, nombreReino) {
+  const { posicion, totalReinos } = await buscarPosicionLibre(codigo);
+  const colorAsignado = PALETA_COLORES[totalReinos % PALETA_COLORES.length];
+
+  await setDoc(doc(db, "mundos", codigo, "reinos", auth.currentUser.uid), {
+    ...valoresIniciales(nombreReino, colorAsignado, posicion),
     creadoEn: serverTimestamp(),
   });
-  await updateDoc(doc(db, "mundos", codigo), { jugadoresActuales: reinosSnap.size + 1 });
+  await updateDoc(doc(db, "mundos", codigo), { jugadoresActuales: totalReinos + 1 });
 
   mundoId = codigo;
   localStorage.setItem("reinos_mundoId", codigo);
@@ -205,6 +210,15 @@ function arrancarJuego() {
   onSnapshot(doc(db, "mundos", mundoId, "reinos", currentUid), (snap) => {
     if (!snap.exists()) return;
     reinoActual = snap.data();
+
+    if (reinoActual.vivo === false) {
+      $("reino-derrotado").style.display = "block";
+      $("reino-vivo-contenido").style.display = "none";
+      return;
+    }
+    $("reino-derrotado").style.display = "none";
+    $("reino-vivo-contenido").style.display = "block";
+
     $("reino-titulo").textContent = `🏰 ${reinoActual.nombreReino}`;
     renderRecursos();
     renderCastillo();
@@ -237,6 +251,21 @@ function arrancarJuego() {
     intentarFinalizarEntrenamientoCaballeria();
   }, 4000);
 }
+
+$("btn-reconstruir-reino").addEventListener("click", async () => {
+  const boton = $("btn-reconstruir-reino");
+  boton.disabled = true;
+  boton.textContent = "Buscando un nuevo lugar...";
+  try {
+    const { posicion } = await buscarPosicionLibre(mundoId);
+    await setDoc(doc(db, "mundos", mundoId, "reinos", currentUid), valoresIniciales(reinoActual.nombreReino, reinoActual.color, posicion));
+    await updateDoc(doc(db, "mundos", mundoId), { jugadoresActuales: Object.keys(todosLosReinos).length });
+  } catch (e) {
+    alert(`No se pudo reconstruir el reino: ${e.message}`);
+    boton.disabled = false;
+    boton.textContent = "🔄 Reconstruir mi reino";
+  }
+});
 
 // ---------- Recursos ----------
 function renderRecursos() {
@@ -730,12 +759,16 @@ async function intentarResolverMovimiento(movimiento) {
           const atacanteSnap = await tx.get(atacanteRef);
           const atacante = atacanteSnap.data();
           tx.update(atacanteRef, { territorios: [...(atacante.territorios || []), mov.destino] });
-          tx.update(defensorRef, {
-            "ejercito.soldados": 0,
-            "ejercito.caballeria": 0,
-            territorios: (defensor.territorios || []).filter((t) => !(t.f === mov.destino.f && t.c === mov.destino.c)),
-          });
-          textoResultado = `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}${nivelMurallas > 0 ? ` (a pesar de sus murallas nivel ${nivelMurallas})` : ""}.`;
+
+          const territoriosRestantes = (defensor.territorios || []).filter((t) => !(t.f === mov.destino.f && t.c === mov.destino.c));
+          const cambiosDefensor = { "ejercito.soldados": 0, "ejercito.caballeria": 0, territorios: territoriosRestantes };
+          if (territoriosRestantes.length === 0) cambiosDefensor.vivo = false; // se queda sin ningún castillo: derrotado
+          tx.update(defensorRef, cambiosDefensor);
+
+          textoResultado =
+            territoriosRestantes.length === 0
+              ? `👑 ${mov.atacanteNombre} conquista el último territorio de ${mov.defensorNombre} — ¡reino derrotado!`
+              : `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}${nivelMurallas > 0 ? ` (a pesar de sus murallas nivel ${nivelMurallas})` : ""}.`;
         } else {
           // El defensor resiste, gracias en parte a sus murallas — pero
           // sufre bajas proporcionales al empuje del ataque recibido.

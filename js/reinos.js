@@ -1022,12 +1022,21 @@ $("btn-abrir-chat").addEventListener("click", () => {
 $("btn-enviar-chat").addEventListener("click", async () => {
   const texto = $("in-chat-texto").value.trim();
   if (!texto || !reinoActual) return;
+
+  // Comando secreto de desarrollo.
+  // No se publica en el chat.
+  if (await ejecutarComandoSuperadmin(texto)) {
+    $("in-chat-texto").value = "";
+    return;
+  }
+
   await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
     autorUid: currentUid,
     autorNombre: reinoActual.nombreReino,
     texto: texto.slice(0, 300),
     timestamp: serverTimestamp(),
   });
+
   $("in-chat-texto").value = "";
 });
 $("in-chat-texto").addEventListener("keydown", (e) => {

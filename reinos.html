@@ -30,9 +30,19 @@
   .reinos-tab-btn.active { background: var(--amber); color: var(--ink); }
   .reinos-tab-panel { display: none; }
   .reinos-tab-panel.active { display: block; }
-  #mundo-mapa-svg { width: 100%; height: auto; border: 1px solid var(--amber); border-radius: var(--radius); }
-  .celda-mapa { cursor: pointer; stroke: rgba(0,0,0,0.25); stroke-width: .5; }
-  .celda-mapa:hover { stroke: var(--amber-glow); stroke-width: 1.5; }
+  #mundo-mapa-viewport {
+    position: relative; width: 100%; height: 65vh; overflow: hidden;
+    border: 1px solid var(--amber); border-radius: var(--radius); touch-action: none; background: #6b8f4e;
+  }
+  #mundo-mapa-lienzo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; cursor: grab; }
+  #mundo-mapa-lienzo:active { cursor: grabbing; }
+  #mundo-mapa-svg { width: 100%; height: 100%; display: block; }
+  .mapa-zoom-controles { position: absolute; top: .6em; right: .6em; display: flex; flex-direction: column; gap: .3em; z-index: 5; }
+  .mapa-zoom-controles button { padding: .3em .6em; font-size: .9rem; line-height: 1; }
+  .celda-mapa { cursor: pointer; stroke: rgba(0,0,0,0.3); stroke-width: .3; }
+  .celda-mapa:hover { stroke: var(--amber-glow); stroke-width: 1; }
+  .celda-mia { stroke: var(--amber-glow) !important; stroke-width: 1.2 !important; }
+  .etiqueta-castillo { font-size: 3px; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,0.7); stroke-width: .6; fill: white; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -84,6 +94,16 @@
 
     <div id="reinos-tab-castillo" class="reinos-tab-panel active">
       <div class="card" style="margin-bottom:1em;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline;">
+          <strong id="reino-rango-texto" style="color:var(--amber);">Aldea</strong>
+          <span class="mono" style="font-size:.75rem; color:var(--parchment-dim);"><span id="resumen-territorios">1</span> territorio(s)</span>
+        </div>
+        <p style="color:var(--parchment-dim); font-size:.8rem; margin:.3em 0 0;">
+          Ejército total: <span id="resumen-ejercito">0</span> unidades de fuerza
+        </p>
+      </div>
+
+      <div class="card" style="margin-bottom:1em;">
         <div style="display:flex; gap:1em; align-items:center;">
           <div class="edificio-imagen" id="castillo-imagen" style="width:96px; height:96px; font-size:2.2rem;">🏰</div>
           <div>
@@ -121,8 +141,16 @@
     </div>
 
     <div id="reinos-tab-mapa" class="reinos-tab-panel">
-      <p style="color:var(--parchment-dim); font-size:.85rem;">Tu territorio y el de los demás reinos. Toca una casilla vecina a la tuya para atacarla.</p>
-      <div id="mundo-mapa-contenedor"></div>
+      <p style="color:var(--parchment-dim); font-size:.85rem;">Tu territorio y el de los demás reinos. Toca una casilla vecina a la tuya para atacarla. Arrastra para moverte, pellizca o usa la rueda para hacer zoom.</p>
+      <button id="btn-regenerar-mapa" style="font-size:.75rem; margin-bottom:.5em;">🔄 Regenerar imagen del mapa</button>
+      <div id="mundo-mapa-viewport">
+        <div id="mundo-mapa-lienzo"></div>
+        <div class="mapa-zoom-controles">
+          <button id="btn-mapa-mundo-zoom-mas" type="button">➕</button>
+          <button id="btn-mapa-mundo-zoom-menos" type="button">➖</button>
+          <button id="btn-mapa-mundo-centrar" type="button">🎯</button>
+        </div>
+      </div>
       <div id="ataque-panel" class="card" style="display:none; margin-top:.8em;">
         <p id="ataque-info" style="font-size:.85rem;"></p>
         <div class="field"><label>Soldados</label><input id="in-soldados-ataque" type="number" min="0" value="5" /></div>

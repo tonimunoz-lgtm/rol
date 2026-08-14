@@ -74,6 +74,7 @@
       <span class="recurso-pill">🪨 <span id="rec-piedra">0</span></span>
       <span class="recurso-pill">🪙 <span id="rec-oro">0</span></span>
       <span class="recurso-pill">⚔️ <span id="rec-soldados">0</span></span>
+      <span class="recurso-pill">🐎 <span id="rec-caballeria">0</span></span>
     </div>
 
     <div class="reinos-tabs">
@@ -105,6 +106,18 @@
         </div>
         <p id="entrenar-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
       </div>
+
+      <div class="card" style="margin-top:.6em;">
+        <p style="color:var(--parchment-dim); font-size:.85rem;">
+          Entrena caballería en tus cuadras (nivel <span id="cuadras-nivel-texto">0</span>) — cuenta doble en
+          combate y viaja el doble de rápido, pero cuesta más.
+        </p>
+        <div style="display:flex; gap:.5em; align-items:center;">
+          <input id="in-num-caballeria" type="number" min="1" value="3" style="width:80px;" />
+          <button id="btn-entrenar-caballeria" class="primary">Entrenar</button>
+        </div>
+        <p id="entrenar-caballeria-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
+      </div>
     </div>
 
     <div id="reinos-tab-mapa" class="reinos-tab-panel">
@@ -112,8 +125,9 @@
       <div id="mundo-mapa-contenedor"></div>
       <div id="ataque-panel" class="card" style="display:none; margin-top:.8em;">
         <p id="ataque-info" style="font-size:.85rem;"></p>
-        <div style="display:flex; gap:.5em; align-items:center;">
-          <input id="in-soldados-ataque" type="number" min="1" value="5" style="width:80px;" />
+        <div class="field"><label>Soldados</label><input id="in-soldados-ataque" type="number" min="0" value="5" /></div>
+        <div class="field"><label>Caballería (cuenta doble, viaja más rápido)</label><input id="in-caballeria-ataque" type="number" min="0" value="0" /></div>
+        <div style="display:flex; gap:.5em;">
           <button id="btn-enviar-ataque" class="primary">⚔️ Enviar ataque</button>
           <button id="btn-cancelar-ataque">Cancelar</button>
         </div>

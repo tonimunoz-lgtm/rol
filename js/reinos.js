@@ -877,7 +877,7 @@ async function intentarResolverMovimiento(movimiento) {
 }
 
 // ---------- Chat del mundo (flotante, estilo Twitch, se desvanece solo) ----------
-const MAX_LINEAS_CHAT = 6;
+const MAX_LINEAS_CHAT = 4; // la franja fija de arriba es más pequeña que en Rúnica, no caben tantas líneas a la vez
 const DURACION_LINEA_CHAT_MS = 20000;
 
 function colorParaUid(uid) {

@@ -9,7 +9,7 @@ import {
 import {
   EDIFICIOS_DEF, ORDEN_EDIFICIOS, costeMejora, calcularProduccionTotal,
   recursosActuales, puedeCostear, generarCodigoMundo,
-  fuerzaEjercito, defensaConMurallas, COSTE_SOLDADO, COSTE_CABALLERIA,
+  fuerzaEjercito, defensaConMurallas, COSTE_SOLDADO, COSTE_CABALLERIA, calcularRango,
 } from "./reinos-utils.js";
 
 const $ = (id) => document.getElementById(id);
@@ -264,6 +264,11 @@ async function sincronizarRecursos() {
 
 // ---------- Castillo ----------
 function renderCastillo() {
+  const numTerritorios = (reinoActual.territorios || []).length;
+  $("reino-rango-texto").textContent = calcularRango(numTerritorios);
+  $("resumen-territorios").textContent = numTerritorios;
+  $("resumen-ejercito").textContent = fuerzaEjercito(reinoActual.ejercito);
+
   $("castillo-nivel").textContent = reinoActual.castilloNivel || 1;
   $("castillo-imagen").innerHTML = reinoActual.castilloImagenUrl
     ? `<img src="${reinoActual.castilloImagenUrl}" />`
@@ -461,13 +466,15 @@ document.querySelectorAll(".reinos-tab-btn").forEach((btn) => {
 // ---------- Mapa del mundo ----------
 function renderMapaMundo() {
   if (!mundoActual) return;
-  const cont = $("mundo-mapa-contenedor");
+  const cont = $("mundo-mapa-lienzo");
   const anchoCelda = 100 / COLUMNAS;
   const altoCelda = 100 / FILAS;
 
   const propietarioPorCasilla = {};
+  const capitalPorUid = {};
   Object.entries(todosLosReinos).forEach(([uid, reino]) => {
     (reino.territorios || []).forEach((t) => (propietarioPorCasilla[`${t.f},${t.c}`] = { uid, color: reino.color, nombre: reino.nombreReino }));
+    if (reino.territorios?.[0]) capitalPorUid[uid] = reino.territorios[0];
   });
 
   let celdas = "";
@@ -476,20 +483,126 @@ function renderMapaMundo() {
       const propietario = propietarioPorCasilla[`${f},${c}`];
       const esPropia = propietario?.uid === currentUid;
       const color = propietario ? propietario.color : "transparent";
-      const opacidad = propietario ? (esPropia ? 0.85 : 0.55) : 0;
-      celdas += `<rect class="celda-mapa" data-f="${f}" data-c="${c}" x="${c * anchoCelda}" y="${f * altoCelda}" width="${anchoCelda}" height="${altoCelda}" fill="${color}" fill-opacity="${opacidad}" />`;
+      const opacidad = propietario ? (esPropia ? 0.6 : 0.42) : 0;
+      celdas += `<rect class="celda-mapa${esPropia ? " celda-mia" : ""}" data-f="${f}" data-c="${c}" x="${c * anchoCelda}" y="${f * altoCelda}" width="${anchoCelda}" height="${altoCelda}" fill="${color}" fill-opacity="${opacidad}" />`;
     }
   }
 
+  // Un castillo bien visible + el nombre del reino, en la casilla capital
+  // de cada jugador — así se ve claramente "aquí está el castillo de X",
+  // no solo un cuadrado de color sin más.
+  let castillos = "";
+  Object.entries(capitalPorUid).forEach(([uid, cap]) => {
+    const reino = todosLosReinos[uid];
+    const cx = cap.c * anchoCelda + anchoCelda / 2;
+    const cy = cap.f * altoCelda + altoCelda / 2;
+    castillos += `
+      <g transform="translate(${cx}, ${cy})" style="pointer-events:none;">
+        <circle r="2.6" fill="${reino.color}" stroke="#14110D" stroke-width="0.4" />
+        <text text-anchor="middle" dominant-baseline="central" font-size="3">🏰</text>
+        <text text-anchor="middle" y="4.2" class="etiqueta-castillo">${reino.nombreReino}</text>
+      </g>`;
+  });
+
   const fondo = mundoActual.mapaFondoUrl
     ? `<image href="${mundoActual.mapaFondoUrl}" x="0" y="0" width="100" height="100" preserveAspectRatio="none" />`
-    : `<rect x="0" y="0" width="100" height="100" fill="#c3a267" />`;
+    : `<rect x="0" y="0" width="100" height="100" fill="#6b8f4e" />`;
 
-  cont.innerHTML = `<svg id="mundo-mapa-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${fondo}${celdas}</svg>`;
+  cont.innerHTML = `<svg id="mundo-mapa-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${fondo}${celdas}${castillos}</svg>`;
   cont.querySelectorAll(".celda-mapa").forEach((el) => {
     el.addEventListener("click", () => seleccionarCasilla(Number(el.dataset.f), Number(el.dataset.c)));
   });
 }
+
+$("btn-regenerar-mapa").addEventListener("click", async () => {
+  const boton = $("btn-regenerar-mapa");
+  boton.disabled = true;
+  boton.textContent = "Generando...";
+  try {
+    const url = await generarImagenReino("mapa-mundo", { descripcion: mundoActual?.nombre || "" });
+    await updateDoc(doc(db, "mundos", mundoId), { mapaFondoUrl: url });
+  } catch (e) {
+    alert(`No se pudo regenerar el mapa: ${e.message}`);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "🔄 Regenerar imagen del mapa";
+  }
+});
+
+// ---------- Zoom y paneo del mapa (arrastrar, pellizcar, rueda) ----------
+let zoomMapa = 1;
+let panXMapa = 0;
+let panYMapa = 0;
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 6;
+
+function aplicarTransformMapaMundo() {
+  $("mundo-mapa-lienzo").style.transform = `translate(${panXMapa}px, ${panYMapa}px) scale(${zoomMapa})`;
+}
+
+function centrarMapaMundo() {
+  zoomMapa = 1;
+  panXMapa = 0;
+  panYMapa = 0;
+  aplicarTransformMapaMundo();
+}
+
+$("btn-mapa-mundo-zoom-mas").addEventListener("click", () => {
+  zoomMapa = Math.min(ZOOM_MAX, zoomMapa * 1.3);
+  aplicarTransformMapaMundo();
+});
+$("btn-mapa-mundo-zoom-menos").addEventListener("click", () => {
+  zoomMapa = Math.max(ZOOM_MIN, zoomMapa / 1.3);
+  aplicarTransformMapaMundo();
+});
+$("btn-mapa-mundo-centrar").addEventListener("click", centrarMapaMundo);
+
+const punterosMapaMundo = new Map();
+let distanciaPinchInicialMundo = null;
+let escalaPinchInicialMundo = 1;
+
+const viewportMundo = $("mundo-mapa-viewport");
+viewportMundo.addEventListener("pointerdown", (e) => {
+  viewportMundo.setPointerCapture(e.pointerId);
+  punterosMapaMundo.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (punterosMapaMundo.size === 2) {
+    const [p1, p2] = Array.from(punterosMapaMundo.values());
+    distanciaPinchInicialMundo = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    escalaPinchInicialMundo = zoomMapa;
+  }
+});
+viewportMundo.addEventListener("pointermove", (e) => {
+  if (!punterosMapaMundo.has(e.pointerId)) return;
+  const anterior = punterosMapaMundo.get(e.pointerId);
+  punterosMapaMundo.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (punterosMapaMundo.size === 2 && distanciaPinchInicialMundo) {
+    const [p1, p2] = Array.from(punterosMapaMundo.values());
+    const distancia = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    zoomMapa = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, escalaPinchInicialMundo * (distancia / distanciaPinchInicialMundo)));
+    aplicarTransformMapaMundo();
+  } else if (punterosMapaMundo.size === 1) {
+    panXMapa += e.clientX - anterior.x;
+    panYMapa += e.clientY - anterior.y;
+    aplicarTransformMapaMundo();
+  }
+});
+function soltarPunteroMapaMundo(e) {
+  punterosMapaMundo.delete(e.pointerId);
+  if (punterosMapaMundo.size < 2) distanciaPinchInicialMundo = null;
+}
+viewportMundo.addEventListener("pointerup", soltarPunteroMapaMundo);
+viewportMundo.addEventListener("pointercancel", soltarPunteroMapaMundo);
+viewportMundo.addEventListener("pointerleave", soltarPunteroMapaMundo);
+viewportMundo.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    zoomMapa = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomMapa * (e.deltaY < 0 ? 1.15 : 0.87)));
+    aplicarTransformMapaMundo();
+  },
+  { passive: false }
+);
 
 function sonVecinas(a, b) {
   return Math.abs(a.f - b.f) + Math.abs(a.c - b.c) === 1;

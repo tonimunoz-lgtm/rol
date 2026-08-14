@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Reinos — Estrategia medieval</title>
+<link rel="manifest" href="/manifest-reinos.json" />
+<meta name="theme-color" content="#14110D" />
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  html, body { overflow: auto !important; height: auto !important; min-height: 100%; }
+  #reinos-app { max-width: 720px; margin: 0 auto; padding: 1em; padding-bottom: 4em; }
+  .recurso-pill {
+    display: inline-flex; align-items: center; gap: .3em;
+    font-family: var(--font-mono); font-size: .85rem;
+    border: 1px solid var(--moss); border-radius: 999px; padding: .3em .8em;
+  }
+  .edificio-card {
+    display: flex; gap: .8em; align-items: center;
+    border: 1px solid #3a3226; border-radius: var(--radius);
+    padding: .7em; margin-bottom: .6em; background: var(--ink-soft);
+  }
+  .edificio-imagen {
+    width: 64px; height: 64px; flex-shrink: 0; border-radius: var(--radius);
+    overflow: hidden; background: var(--ink); display: flex; align-items: center; justify-content: center; font-size: 1.6rem;
+  }
+  .edificio-imagen img { width: 100%; height: 100%; object-fit: cover; }
+  .reinos-tabs { display: flex; gap: .4em; margin: 1em 0; flex-wrap: wrap; }
+  .reinos-tab-btn { padding: .5em .9em; }
+  .reinos-tab-btn.active { background: var(--amber); color: var(--ink); }
+  .reinos-tab-panel { display: none; }
+  .reinos-tab-panel.active { display: block; }
+  #mundo-mapa-svg { width: 100%; height: auto; border: 1px solid var(--amber); border-radius: var(--radius); }
+  .celda-mapa { cursor: pointer; stroke: rgba(0,0,0,0.25); stroke-width: .5; }
+  .celda-mapa:hover { stroke: var(--amber-glow); stroke-width: 1.5; }
+</style>
+</head>
+<body>
+
+<div id="reinos-app">
+
+  <!-- Pantalla de entrada: crear un mundo nuevo o unirse a uno existente -->
+  <div id="reinos-entrada">
+    <h1 class="display">🏰 Reinos</h1>
+    <p style="color:var(--parchment-dim);">Gestiona tu castillo, haz crecer tu reino y conquista el mundo. Sin master — cada jugador se las apaña solo.</p>
+
+    <div class="card" style="margin-top:1em;">
+      <h3 style="font-size:1rem;">Unirse a un mundo con código</h3>
+      <div class="field"><label>Código del mundo</label><input id="in-codigo-mundo" placeholder="ABCDE" style="text-transform:uppercase;" /></div>
+      <div class="field"><label>Nombre de tu reino</label><input id="in-nombre-reino" placeholder="Reino de Eldenmark" /></div>
+      <button id="btn-unirse-mundo" class="primary" style="width:100%;">Unirse</button>
+      <p id="unirse-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
+    </div>
+
+    <div class="card" style="margin-top:1em;">
+      <h3 style="font-size:1rem;">Crear un mundo nuevo</h3>
+      <p style="color:var(--parchment-dim); font-size:.85rem;">Hasta 10 jugadores por mundo. Se genera un mapa nuevo con IA.</p>
+      <div class="field"><label>Nombre del mundo</label><input id="in-nombre-mundo" placeholder="Los Reinos del Norte" /></div>
+      <div class="field"><label>Nombre de tu reino</label><input id="in-nombre-reino-crear" placeholder="Reino de Eldenmark" /></div>
+      <button id="btn-crear-mundo" class="primary" style="width:100%;">✨ Crear mundo</button>
+      <p id="crear-status" style="color:var(--parchment-dim); font-size:.85rem;"></p>
+    </div>
+  </div>
+
+  <!-- Juego principal (oculto hasta unirse/crear) -->
+  <div id="reinos-juego" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h1 class="display" id="reino-titulo" style="font-size:1.3rem;"></h1>
+      <span class="mono" id="mundo-codigo-texto" style="color:var(--parchment-dim); font-size:.75rem;"></span>
+    </div>
+
+    <div style="display:flex; gap:.5em; flex-wrap:wrap; margin:.6em 0;">
+      <span class="recurso-pill">🌾 <span id="rec-comida">0</span></span>
+      <span class="recurso-pill">🪨 <span id="rec-piedra">0</span></span>
+      <span class="recurso-pill">🪙 <span id="rec-oro">0</span></span>
+      <span class="recurso-pill">⚔️ <span id="rec-soldados">0</span></span>
+    </div>
+
+    <div class="reinos-tabs">
+      <button class="reinos-tab-btn active" data-tab="castillo">🏰 Castillo</button>
+      <button class="reinos-tab-btn" data-tab="mapa">🗺️ Mapa del mundo</button>
+    </div>
+
+    <div id="reinos-tab-castillo" class="reinos-tab-panel active">
+      <div class="card" style="margin-bottom:1em;">
+        <div style="display:flex; gap:1em; align-items:center;">
+          <div class="edificio-imagen" id="castillo-imagen" style="width:96px; height:96px; font-size:2.2rem;">🏰</div>
+          <div>
+            <strong>Castillo — Nivel <span id="castillo-nivel">1</span></strong>
+            <p style="color:var(--parchment-dim); font-size:.8rem; margin:.2em 0;">El corazón de tu reino.</p>
+            <button id="btn-mejorar-castillo" style="font-size:.8rem;">Mejorar</button>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="font-size:1rem;">Edificios</h3>
+      <div id="lista-edificios"></div>
+
+      <h3 style="font-size:1rem; margin-top:1em;">Ejército</h3>
+      <div class="card">
+        <p style="color:var(--parchment-dim); font-size:.85rem;">Entrena soldados en tus barracones (nivel <span id="barracones-nivel-texto">0</span>).</p>
+        <div style="display:flex; gap:.5em; align-items:center;">
+          <input id="in-num-soldados" type="number" min="1" value="5" style="width:80px;" />
+          <button id="btn-entrenar-soldados" class="primary">Entrenar</button>
+        </div>
+        <p id="entrenar-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
+      </div>
+    </div>
+
+    <div id="reinos-tab-mapa" class="reinos-tab-panel">
+      <p style="color:var(--parchment-dim); font-size:.85rem;">Tu territorio y el de los demás reinos. Toca una casilla vecina a la tuya para atacarla.</p>
+      <div id="mundo-mapa-contenedor"></div>
+      <div id="ataque-panel" class="card" style="display:none; margin-top:.8em;">
+        <p id="ataque-info" style="font-size:.85rem;"></p>
+        <div style="display:flex; gap:.5em; align-items:center;">
+          <input id="in-soldados-ataque" type="number" min="1" value="5" style="width:80px;" />
+          <button id="btn-enviar-ataque" class="primary">⚔️ Enviar ataque</button>
+          <button id="btn-cancelar-ataque">Cancelar</button>
+        </div>
+      </div>
+      <div id="lista-movimientos" style="margin-top:1em;"></div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module" src="/js/reinos.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js').catch(console.warn);
+    });
+  }
+</script>
+</body>
+</html>

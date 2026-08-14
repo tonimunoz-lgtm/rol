@@ -1,0 +1,569 @@
+// js/reinos.js
+import {
+  auth, db,
+  signInAnonymously, onAuthStateChanged,
+  doc, getDoc, setDoc, updateDoc, onSnapshot,
+  collection, addDoc, serverTimestamp,
+  query, where, getDocs, runTransaction,
+} from "./firebase-config.js";
+import {
+  EDIFICIOS_DEF, ORDEN_EDIFICIOS, costeMejora, calcularProduccionTotal,
+  recursosActuales, puedeCostear, generarCodigoMundo,
+} from "./reinos-utils.js";
+
+const $ = (id) => document.getElementById(id);
+const PALETA_COLORES = ["#c0392b", "#2980b9", "#27ae60", "#f39c12", "#8e44ad", "#16a085", "#d35400", "#2c3e50", "#e91e8c", "#7f8c8d"];
+const FILAS = 8;
+const COLUMNAS = 12;
+const SEGUNDOS_POR_CASILLA_VIAJE = 25;
+
+let currentUid = null;
+let mundoId = localStorage.getItem("reinos_mundoId") || null;
+let mundoActual = null;
+let reinoActual = null;
+let todosLosReinos = {}; // uid -> reino, de TODOS los jugadores del mundo (para el mapa)
+let casillaSeleccionada = null;
+
+// ---------- Arranque / sesión ----------
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    await signInAnonymously(auth);
+    return;
+  }
+  currentUid = user.uid;
+  if (mundoId) {
+    const reinoSnap = await getDoc(doc(db, "mundos", mundoId, "reinos", currentUid));
+    if (reinoSnap.exists()) {
+      arrancarJuego();
+      return;
+    }
+  }
+  // Sin mundo guardado (o el reino ya no existe): mostramos la entrada.
+  $("reinos-entrada").style.display = "block";
+});
+
+async function generarImagenReino(tipo, datos) {
+  const idToken = await auth.currentUser.getIdToken();
+  const resp = await fetch("/api/generar-imagen-reino", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ tipo, datos }),
+  });
+  if (!resp.ok) {
+    let detalle = "";
+    try { detalle = (await resp.json()).error || ""; } catch (_) {}
+    throw new Error(detalle || `Error ${resp.status} generando la imagen.`);
+  }
+  return (await resp.json()).url;
+}
+
+// ---------- Crear mundo ----------
+$("btn-crear-mundo").addEventListener("click", async () => {
+  const nombreMundo = $("in-nombre-mundo").value.trim();
+  const nombreReino = $("in-nombre-reino-crear").value.trim();
+  if (!nombreMundo || !nombreReino) return alert("Ponle nombre al mundo y a tu reino.");
+  const boton = $("btn-crear-mundo");
+  const status = $("crear-status");
+  boton.disabled = true;
+  status.textContent = "Generando el mapa del mundo con IA (puede tardar unos segundos)...";
+  try {
+    if (!auth.currentUser) await new Promise((r) => { const u = onAuthStateChanged(auth, () => { u(); r(); }); });
+    const codigo = generarCodigoMundo();
+
+    let mapaFondoUrl = "";
+    try {
+      mapaFondoUrl = await generarImagenReino("mapa-mundo", { descripcion: nombreMundo });
+    } catch (e) {
+      console.warn("No se pudo generar el mapa del mundo, seguimos sin él:", e.message);
+    }
+
+    await setDoc(doc(db, "mundos", codigo), {
+      nombre: nombreMundo,
+      codigo,
+      filas: FILAS,
+      columnas: COLUMNAS,
+      mapaFondoUrl,
+      jugadoresActuales: 0,
+      maxJugadores: 10,
+      creadoEn: serverTimestamp(),
+      creadoPor: auth.currentUser.uid,
+    });
+
+    status.textContent = "Fundando tu reino...";
+    await crearReinoEnMundo(codigo, nombreReino);
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+    boton.disabled = false;
+  }
+});
+
+// ---------- Unirse a un mundo existente ----------
+$("btn-unirse-mundo").addEventListener("click", async () => {
+  const codigo = $("in-codigo-mundo").value.trim().toUpperCase();
+  const nombreReino = $("in-nombre-reino").value.trim();
+  if (!codigo || !nombreReino) return alert("Pon el código del mundo y el nombre de tu reino.");
+  const boton = $("btn-unirse-mundo");
+  const status = $("unirse-status");
+  boton.disabled = true;
+  status.textContent = "Buscando el mundo...";
+  try {
+    if (!auth.currentUser) await new Promise((r) => { const u = onAuthStateChanged(auth, () => { u(); r(); }); });
+    const snap = await getDoc(doc(db, "mundos", codigo));
+    if (!snap.exists()) {
+      status.textContent = "No existe ningún mundo con ese código.";
+      boton.disabled = false;
+      return;
+    }
+    const mundo = snap.data();
+    if ((mundo.jugadoresActuales || 0) >= (mundo.maxJugadores || 10)) {
+      status.textContent = "Ese mundo ya está completo (máximo 10 jugadores).";
+      boton.disabled = false;
+      return;
+    }
+    const reinoYaExiste = await getDoc(doc(db, "mundos", codigo, "reinos", auth.currentUser.uid));
+    if (reinoYaExiste.exists()) {
+      mundoId = codigo;
+      localStorage.setItem("reinos_mundoId", codigo);
+      arrancarJuego();
+      return;
+    }
+    status.textContent = "Fundando tu reino...";
+    await crearReinoEnMundo(codigo, nombreReino);
+  } catch (err) {
+    status.textContent = `Error: ${err.message}`;
+    boton.disabled = false;
+  }
+});
+
+// Busca una casilla libre razonable para el castillo nuevo, crea el
+// documento de reino con los valores iniciales, y arranca el juego.
+async function crearReinoEnMundo(codigo, nombreReino) {
+  const reinosSnap = await getDocs(collection(db, "mundos", codigo, "reinos"));
+  const ocupadas = new Set();
+  reinosSnap.forEach((d) => (d.data().territorios || []).forEach((t) => ocupadas.add(`${t.f},${t.c}`)));
+
+  let posicion = null;
+  for (let intento = 0; intento < 200; intento++) {
+    const f = Math.floor(Math.random() * FILAS);
+    const c = Math.floor(Math.random() * COLUMNAS);
+    if (!ocupadas.has(`${f},${c}`)) {
+      posicion = { f, c };
+      break;
+    }
+  }
+  if (!posicion) throw new Error("El mundo está completamente ocupado, no hay hueco para un castillo nuevo.");
+
+  const colorAsignado = PALETA_COLORES[reinosSnap.size % PALETA_COLORES.length];
+  const edificiosIniciales = Object.fromEntries(ORDEN_EDIFICIOS.map((k) => [k, { nivel: 0 }]));
+
+  await setDoc(doc(db, "mundos", codigo, "reinos", auth.currentUser.uid), {
+    nombreReino,
+    color: colorAsignado,
+    posicion,
+    territorios: [posicion],
+    castilloNivel: 1,
+    castilloImagenUrl: "",
+    edificios: edificiosIniciales,
+    recursos: { comida: 150, piedra: 150, oro: 100 },
+    produccionPorHora: calcularProduccionTotal(edificiosIniciales),
+    ultimaActualizacionRecursos: serverTimestamp(),
+    construyendo: null,
+    ejercito: { soldados: 5 },
+    entrenando: null,
+    vivo: true,
+    creadoEn: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "mundos", codigo), { jugadoresActuales: reinosSnap.size + 1 });
+
+  mundoId = codigo;
+  localStorage.setItem("reinos_mundoId", codigo);
+  arrancarJuego();
+
+  // El castillo genera su primera imagen ya con el juego arrancado (no
+  // hace falta que el jugador espere aquí, se ve aparecer sola).
+  generarImagenReino("castillo", { nivel: 1 }).then((url) => {
+    updateDoc(doc(db, "mundos", codigo, "reinos", auth.currentUser.uid), { castilloImagenUrl: url }).catch(() => {});
+  }).catch((e) => console.warn("No se pudo generar la imagen del castillo:", e.message));
+}
+
+// ---------- Arrancar el juego (una vez tenemos mundo + reino) ----------
+let juegoYaArrancado = false;
+function arrancarJuego() {
+  if (juegoYaArrancado) return;
+  juegoYaArrancado = true;
+  $("reinos-entrada").style.display = "none";
+  $("reinos-juego").style.display = "block";
+  $("mundo-codigo-texto").textContent = `Mundo: ${mundoId}`;
+
+  onSnapshot(doc(db, "mundos", mundoId), (snap) => {
+    mundoActual = snap.data();
+    renderMapaMundo();
+  });
+
+  onSnapshot(doc(db, "mundos", mundoId, "reinos", currentUid), (snap) => {
+    if (!snap.exists()) return;
+    reinoActual = snap.data();
+    $("reino-titulo").textContent = `🏰 ${reinoActual.nombreReino}`;
+    renderRecursos();
+    renderCastillo();
+    renderEdificios();
+    renderMapaMundo();
+    intentarFinalizarConstruccion();
+    intentarFinalizarEntrenamiento();
+  });
+
+  // El resto de reinos del mundo, para poder pintar el mapa entero.
+  onSnapshot(collection(db, "mundos", mundoId, "reinos"), (snap) => {
+    todosLosReinos = {};
+    snap.forEach((d) => (todosLosReinos[d.id] = d.data()));
+    renderMapaMundo();
+  });
+
+  onSnapshot(query(collection(db, "mundos", mundoId, "movimientos"), where("resuelto", "==", false)), (snap) => {
+    const movimientos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderMovimientos(movimientos);
+    movimientos.forEach((m) => intentarResolverMovimiento(m));
+  });
+
+  setInterval(() => {
+    if (reinoActual) renderRecursos();
+  }, 3000);
+  setInterval(() => {
+    intentarFinalizarConstruccion();
+    intentarFinalizarEntrenamiento();
+  }, 4000);
+}
+
+// ---------- Recursos ----------
+function renderRecursos() {
+  const r = recursosActuales(reinoActual);
+  $("rec-comida").textContent = r.comida;
+  $("rec-piedra").textContent = r.piedra;
+  $("rec-oro").textContent = r.oro;
+  $("rec-soldados").textContent = reinoActual.ejercito?.soldados || 0;
+}
+
+// Antes de gastar recursos en cualquier acción, "cerramos" el cálculo:
+// guardamos en Firestore lo que hay AHORA MISMO (ya con lo producido desde
+// la última vez) para no perder producción por el camino.
+async function sincronizarRecursos() {
+  const r = recursosActuales(reinoActual);
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    recursos: r,
+    ultimaActualizacionRecursos: serverTimestamp(),
+  });
+  reinoActual.recursos = r;
+  reinoActual.ultimaActualizacionRecursos = { toMillis: () => Date.now() };
+  return r;
+}
+
+// ---------- Castillo ----------
+function renderCastillo() {
+  $("castillo-nivel").textContent = reinoActual.castilloNivel || 1;
+  $("castillo-imagen").innerHTML = reinoActual.castilloImagenUrl
+    ? `<img src="${reinoActual.castilloImagenUrl}" />`
+    : "🏰";
+  const boton = $("btn-mejorar-castillo");
+  if (reinoActual.construyendo) {
+    boton.disabled = true;
+    boton.textContent = `Construyendo "${reinoActual.construyendo.nombre}"...`;
+  } else {
+    boton.disabled = false;
+    const coste = costeMejora(reinoActual.castilloNivel || 1);
+    boton.textContent = `Mejorar (🌾${coste.comida} 🪨${coste.piedra} 🪙${coste.oro}, ${coste.segundos}s)`;
+  }
+}
+
+$("btn-mejorar-castillo").addEventListener("click", () => iniciarConstruccion("castillo"));
+
+// ---------- Edificios ----------
+function renderEdificios() {
+  const cont = $("lista-edificios");
+  cont.innerHTML = ORDEN_EDIFICIOS.map((clave) => {
+    const def = EDIFICIOS_DEF[clave];
+    const nivel = reinoActual.edificios?.[clave]?.nivel || 0;
+    const coste = costeMejora(nivel);
+    const enConstruccion = reinoActual.construyendo?.clave === clave;
+    return `
+      <div class="edificio-card">
+        <div class="edificio-imagen">${reinoActual.edificios?.[clave]?.imagenUrl ? `<img src="${reinoActual.edificios[clave].imagenUrl}" />` : def.icono}</div>
+        <div style="flex:1;">
+          <strong>${def.nombre} — Nivel ${nivel}</strong>
+          <p style="color:var(--parchment-dim); font-size:.78rem; margin:.2em 0;">${def.descripcion}</p>
+          <button class="btn-mejorar-edificio" data-clave="${clave}" ${enConstruccion || reinoActual.construyendo ? "disabled" : ""} style="font-size:.75rem;">
+            ${enConstruccion ? "Construyendo..." : reinoActual.construyendo ? "Espera a que termine lo actual" : `Mejorar (🌾${coste.comida} 🪨${coste.piedra} 🪙${coste.oro}, ${coste.segundos}s)`}
+          </button>
+        </div>
+      </div>`;
+  }).join("");
+  cont.querySelectorAll(".btn-mejorar-edificio").forEach((btn) => {
+    btn.addEventListener("click", () => iniciarConstruccion(btn.dataset.clave));
+  });
+  $("barracones-nivel-texto").textContent = reinoActual.edificios?.barracones?.nivel || 0;
+}
+
+async function iniciarConstruccion(clave) {
+  if (reinoActual.construyendo) return alert("Ya tienes una construcción en marcha. Espera a que termine.");
+  const nivelActual = clave === "castillo" ? reinoActual.castilloNivel || 1 : reinoActual.edificios?.[clave]?.nivel || 0;
+  const coste = costeMejora(nivelActual);
+  const recursos = await sincronizarRecursos();
+  if (!puedeCostear(recursos, coste)) return alert("No tienes recursos suficientes todavía.");
+
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    recursos: { comida: recursos.comida - coste.comida, piedra: recursos.piedra - coste.piedra, oro: recursos.oro - coste.oro },
+    construyendo: {
+      clave,
+      nombre: clave === "castillo" ? "Castillo" : EDIFICIOS_DEF[clave].nombre,
+      nivelObjetivo: nivelActual + 1,
+      finalizaEn: Date.now() + coste.segundos * 1000,
+    },
+  });
+}
+
+// Si ya ha pasado el tiempo de construcción, cualquier cliente (el propio
+// jugador, normalmente) puede darlo por terminado: sube el nivel, y de
+// paso genera la imagen nueva del edificio en ese nivel.
+async function intentarFinalizarConstruccion() {
+  if (!reinoActual?.construyendo) return;
+  if (Date.now() < reinoActual.construyendo.finalizaEn) return;
+  const { clave, nivelObjetivo } = reinoActual.construyendo;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "mundos", mundoId, "reinos", currentUid);
+      const snap = await tx.get(ref);
+      const data = snap.data();
+      if (!data.construyendo || data.construyendo.clave !== clave) return; // ya se resolvió
+      const cambios = { construyendo: null };
+      if (clave === "castillo") cambios.castilloNivel = nivelObjetivo;
+      else cambios[`edificios.${clave}.nivel`] = nivelObjetivo;
+      const nuevosEdificios = { ...data.edificios };
+      if (clave !== "castillo") nuevosEdificios[clave] = { ...nuevosEdificios[clave], nivel: nivelObjetivo };
+      cambios.produccionPorHora = calcularProduccionTotal(clave === "castillo" ? data.edificios : nuevosEdificios);
+      tx.update(ref, cambios);
+    });
+
+    // Imagen nueva para el nivel alcanzado (fuera de la transacción, no es crítico).
+    try {
+      const url = await generarImagenReino(
+        clave === "castillo" ? "castillo" : "edificio",
+        clave === "castillo" ? { nivel: nivelObjetivo } : { nombre: EDIFICIOS_DEF[clave].nombre, nivel: nivelObjetivo }
+      );
+      if (clave === "castillo") await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), { castilloImagenUrl: url });
+      else await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), { [`edificios.${clave}.imagenUrl`]: url });
+    } catch (e) {
+      console.warn("No se pudo generar la imagen del edificio mejorado:", e.message);
+    }
+  } catch (e) {
+    console.warn("No se pudo finalizar la construcción:", e.message);
+  }
+}
+
+// ---------- Ejército: entrenar soldados ----------
+const COSTE_SOLDADO = { comida: 8, piedra: 2, oro: 6, segundos: 6 };
+
+$("btn-entrenar-soldados").addEventListener("click", async () => {
+  const cantidad = Math.max(1, Number($("in-num-soldados").value) || 1);
+  if ((reinoActual.edificios?.barracones?.nivel || 0) < 1) {
+    return ($("entrenar-status").textContent = "Necesitas al menos nivel 1 en tus barracones.");
+  }
+  if (reinoActual.entrenando) return ($("entrenar-status").textContent = "Ya hay una tanda de soldados entrenándose.");
+  const coste = {
+    comida: COSTE_SOLDADO.comida * cantidad,
+    piedra: COSTE_SOLDADO.piedra * cantidad,
+    oro: COSTE_SOLDADO.oro * cantidad,
+  };
+  const recursos = await sincronizarRecursos();
+  if (!puedeCostear(recursos, coste)) return ($("entrenar-status").textContent = "No tienes recursos suficientes.");
+
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    recursos: { comida: recursos.comida - coste.comida, piedra: recursos.piedra - coste.piedra, oro: recursos.oro - coste.oro },
+    entrenando: { cantidad, finalizaEn: Date.now() + COSTE_SOLDADO.segundos * cantidad * 1000 },
+  });
+  $("entrenar-status").textContent = `Entrenando ${cantidad} soldados...`;
+});
+
+async function intentarFinalizarEntrenamiento() {
+  if (!reinoActual?.entrenando) return;
+  if (Date.now() < reinoActual.entrenando.finalizaEn) return;
+  try {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "mundos", mundoId, "reinos", currentUid);
+      const snap = await tx.get(ref);
+      const data = snap.data();
+      if (!data.entrenando) return;
+      tx.update(ref, {
+        entrenando: null,
+        "ejercito.soldados": (data.ejercito?.soldados || 0) + data.entrenando.cantidad,
+      });
+    });
+    $("entrenar-status").textContent = "";
+  } catch (e) {
+    console.warn("No se pudo finalizar el entrenamiento:", e.message);
+  }
+}
+
+// ---------- Pestañas ----------
+document.querySelectorAll(".reinos-tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".reinos-tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".reinos-tab-panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    $(`reinos-tab-${btn.dataset.tab}`).classList.add("active");
+  });
+});
+
+// ---------- Mapa del mundo ----------
+function renderMapaMundo() {
+  if (!mundoActual) return;
+  const cont = $("mundo-mapa-contenedor");
+  const anchoCelda = 100 / COLUMNAS;
+  const altoCelda = 100 / FILAS;
+
+  const propietarioPorCasilla = {};
+  Object.entries(todosLosReinos).forEach(([uid, reino]) => {
+    (reino.territorios || []).forEach((t) => (propietarioPorCasilla[`${t.f},${t.c}`] = { uid, color: reino.color, nombre: reino.nombreReino }));
+  });
+
+  let celdas = "";
+  for (let f = 0; f < FILAS; f++) {
+    for (let c = 0; c < COLUMNAS; c++) {
+      const propietario = propietarioPorCasilla[`${f},${c}`];
+      const esPropia = propietario?.uid === currentUid;
+      const color = propietario ? propietario.color : "transparent";
+      const opacidad = propietario ? (esPropia ? 0.85 : 0.55) : 0;
+      celdas += `<rect class="celda-mapa" data-f="${f}" data-c="${c}" x="${c * anchoCelda}" y="${f * altoCelda}" width="${anchoCelda}" height="${altoCelda}" fill="${color}" fill-opacity="${opacidad}" />`;
+    }
+  }
+
+  const fondo = mundoActual.mapaFondoUrl
+    ? `<image href="${mundoActual.mapaFondoUrl}" x="0" y="0" width="100" height="100" preserveAspectRatio="none" />`
+    : `<rect x="0" y="0" width="100" height="100" fill="#c3a267" />`;
+
+  cont.innerHTML = `<svg id="mundo-mapa-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${fondo}${celdas}</svg>`;
+  cont.querySelectorAll(".celda-mapa").forEach((el) => {
+    el.addEventListener("click", () => seleccionarCasilla(Number(el.dataset.f), Number(el.dataset.c)));
+  });
+}
+
+function sonVecinas(a, b) {
+  return Math.abs(a.f - b.f) + Math.abs(a.c - b.c) === 1;
+}
+
+function seleccionarCasilla(f, c) {
+  if (!reinoActual) return;
+  const esVecinaDeAlgunaPropia = (reinoActual.territorios || []).some((t) => sonVecinas(t, { f, c }));
+  const yaEsMia = (reinoActual.territorios || []).some((t) => t.f === f && t.c === c);
+  if (yaEsMia) return;
+  if (!esVecinaDeAlgunaPropia) {
+    $("ataque-panel").style.display = "none";
+    return alert("Solo puedes atacar casillas justo al lado de tu territorio.");
+  }
+  casillaSeleccionada = { f, c };
+  const propietario = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === f && t.c === c));
+  $("ataque-info").textContent = propietario
+    ? `Atacar a "${propietario[1].nombreReino}" en (${f},${c}).`
+    : `Conquistar casilla libre (${f},${c}) — sin defensores, la ocupas directamente al llegar.`;
+  $("ataque-panel").style.display = "block";
+}
+
+$("btn-cancelar-ataque").addEventListener("click", () => {
+  casillaSeleccionada = null;
+  $("ataque-panel").style.display = "none";
+});
+
+$("btn-enviar-ataque").addEventListener("click", async () => {
+  if (!casillaSeleccionada) return;
+  const cantidad = Math.max(1, Number($("in-soldados-ataque").value) || 1);
+  if (cantidad > (reinoActual.ejercito?.soldados || 0)) return alert("No tienes tantos soldados disponibles.");
+
+  const origen = reinoActual.territorios[0]; // el castillo, punto de partida
+  const distancia = Math.abs(origen.f - casillaSeleccionada.f) + Math.abs(origen.c - casillaSeleccionada.c);
+  const propietarioDestino = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === casillaSeleccionada.f && t.c === casillaSeleccionada.c));
+
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    "ejercito.soldados": reinoActual.ejercito.soldados - cantidad,
+  });
+
+  await addDoc(collection(db, "mundos", mundoId, "movimientos"), {
+    atacanteUid: currentUid,
+    atacanteNombre: reinoActual.nombreReino,
+    defensorUid: propietarioDestino ? propietarioDestino[0] : null,
+    defensorNombre: propietarioDestino ? propietarioDestino[1].nombreReino : null,
+    destino: casillaSeleccionada,
+    soldadosEnviados: cantidad,
+    salida: Date.now(),
+    llegada: Date.now() + distancia * SEGUNDOS_POR_CASILLA_VIAJE * 1000,
+    resuelto: false,
+  });
+
+  casillaSeleccionada = null;
+  $("ataque-panel").style.display = "none";
+});
+
+function renderMovimientos(movimientos) {
+  const cont = $("lista-movimientos");
+  const relevantes = movimientos.filter((m) => m.atacanteUid === currentUid || m.defensorUid === currentUid);
+  if (relevantes.length === 0) {
+    cont.innerHTML = "";
+    return;
+  }
+  cont.innerHTML =
+    `<h3 style="font-size:1rem;">Ejércitos en marcha</h3>` +
+    relevantes
+      .map((m) => {
+        const restante = Math.max(0, Math.round((m.llegada - Date.now()) / 1000));
+        const esMio = m.atacanteUid === currentUid;
+        return `<div class="registro-linea">${esMio ? `Tu ejército (${m.soldadosEnviados}) marcha hacia (${m.destino.f},${m.destino.c})` : `⚠️ ${m.atacanteNombre} envía ${m.soldadosEnviados} soldados hacia tu casilla (${m.destino.f},${m.destino.c})`} — llega en ${restante}s</div>`;
+      })
+      .join("");
+}
+
+// Resuelve una batalla cuando ya ha llegado su hora — cualquier cliente
+// conectado puede hacerlo, transaccional para que no se duplique.
+async function intentarResolverMovimiento(movimiento) {
+  if (Date.now() < movimiento.llegada) return;
+  try {
+    await runTransaction(db, async (tx) => {
+      const movRef = doc(db, "mundos", mundoId, "movimientos", movimiento.id);
+      const movSnap = await tx.get(movRef);
+      const mov = movSnap.data();
+      if (!mov || mov.resuelto) return;
+
+      let textoResultado;
+      if (!mov.defensorUid) {
+        // Casilla libre: se ocupa directamente.
+        const atacanteRef = doc(db, "mundos", mundoId, "reinos", mov.atacanteUid);
+        const atacanteSnap = await tx.get(atacanteRef);
+        const atacante = atacanteSnap.data();
+        tx.update(atacanteRef, { territorios: [...(atacante.territorios || []), mov.destino] });
+        textoResultado = `${mov.atacanteNombre} ocupa una casilla libre.`;
+      } else {
+        const defensorRef = doc(db, "mundos", mundoId, "reinos", mov.defensorUid);
+        const defensorSnap = await tx.get(defensorRef);
+        const defensor = defensorSnap.data();
+        const soldadosDefensor = defensor.ejercito?.soldados || 0;
+
+        if (mov.soldadosEnviados > soldadosDefensor) {
+          // El atacante gana: se queda la casilla, el defensor pierde esos soldados.
+          const atacanteRef = doc(db, "mundos", mundoId, "reinos", mov.atacanteUid);
+          const atacanteSnap = await tx.get(atacanteRef);
+          const atacante = atacanteSnap.data();
+          tx.update(atacanteRef, { territorios: [...(atacante.territorios || []), mov.destino] });
+          tx.update(defensorRef, {
+            "ejercito.soldados": 0,
+            territorios: (defensor.territorios || []).filter((t) => !(t.f === mov.destino.f && t.c === mov.destino.c)),
+          });
+          textoResultado = `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}.`;
+        } else {
+          tx.update(defensorRef, { "ejercito.soldados": soldadosDefensor - mov.soldadosEnviados });
+          textoResultado = `🛡️ ${mov.defensorNombre} repele el ataque de ${mov.atacanteNombre}.`;
+        }
+      }
+
+      tx.update(movRef, { resuelto: true, resultado: textoResultado });
+    });
+  } catch (e) {
+    console.warn("No se pudo resolver el movimiento:", e.message);
+  }
+}

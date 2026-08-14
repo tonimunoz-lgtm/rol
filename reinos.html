@@ -49,9 +49,53 @@
     display: flex; justify-content: space-between; align-items: center;
     border: 1px solid #3a3226; border-radius: var(--radius); padding: .6em .8em; margin-bottom: .5em;
   }
+  #chat-input-flotante.visible { display: flex !important; }
 </style>
 </head>
 <body>
+
+<!-- Chat flotante estilo Twitch: siempre visible encima de cualquier
+     pestaña, se desvanece solo, igual que en Rúnica. -->
+<div id="chat-overlay"></div>
+<button id="btn-abrir-chat" style="position:fixed; bottom:1em; right:1em; z-index:20; border-radius:50%; width:3em; height:3em; padding:0;">💬</button>
+<div id="chat-input-flotante" style="display:none; position:fixed; left:1em; right:1em; bottom:1em; z-index:21; background:rgba(20,17,13,0.95); border:1px solid var(--amber); border-radius:var(--radius); padding:.6em; gap:.5em;">
+  <input id="in-chat-texto" placeholder="Escribe al resto del mundo..." style="flex:1;" />
+  <button id="btn-enviar-chat" class="primary">➤</button>
+</div>
+
+<!-- Alerta central: aparece sola cuando alguien te propone algo (alianza,
+     contraoferta) y necesita tu respuesta — no se puede pasar por alto. -->
+<div id="negociacion-modal" class="modal-overlay">
+  <div class="card" style="max-width:420px; width:90%;">
+    <h2 class="display" style="font-size:1.1rem;" id="negociacion-titulo">🤝 Propuesta diplomática</h2>
+    <p id="negociacion-texto" style="color:var(--parchment-dim);"></p>
+    <div id="negociacion-historial" style="max-height:20vh; overflow-y:auto; font-size:.8rem; color:var(--parchment-dim); margin:.5em 0; display:none;"></div>
+    <div style="display:flex; gap:.5em; flex-wrap:wrap; margin-top:.6em;">
+      <button id="btn-negociacion-aceptar" class="primary">✅ Aceptar</button>
+      <button id="btn-negociacion-contraofertar">🔄 Contraofertar</button>
+      <button id="btn-negociacion-rechazar" class="danger">❌ Rechazar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para proponer o contraofertar: tipo de pacto + mensaje -->
+<div id="proponer-pacto-modal" class="modal-overlay">
+  <div class="card" style="max-width:420px; width:90%;">
+    <h2 class="display" style="font-size:1.1rem;" id="proponer-pacto-titulo">Proponer alianza</h2>
+    <div class="field">
+      <label>Tipo de pacto</label>
+      <select id="sel-tipo-pacto">
+        <option value="no_agresion">🕊️ No agresión (no os podéis atacar ni robar)</option>
+        <option value="alianza_militar">⚔️ Alianza militar (no agresión + podéis atacar juntos)</option>
+      </select>
+    </div>
+    <div class="field"><label>Mensaje (opcional)</label><input id="in-mensaje-pacto" placeholder="Propongo que unamos fuerzas contra..." /></div>
+    <div style="display:flex; gap:.5em;">
+      <button id="btn-confirmar-pacto" class="primary">Enviar</button>
+      <button id="btn-cancelar-pacto">Cancelar</button>
+    </div>
+  </div>
+</div>
 
 <div id="reinos-app">
 
@@ -106,7 +150,6 @@
       <button class="reinos-tab-btn active" data-tab="castillo">🏰 Castillo</button>
       <button class="reinos-tab-btn" data-tab="mapa">🗺️ Mapa del mundo</button>
       <button class="reinos-tab-btn" data-tab="reinos">🤝 Reinos</button>
-      <button class="reinos-tab-btn" data-tab="chat">💬 Chat</button>
     </div>
 
     <div id="reinos-tab-castillo" class="reinos-tab-panel active">
@@ -116,7 +159,7 @@
           <span class="mono" style="font-size:.75rem; color:var(--parchment-dim);"><span id="resumen-territorios">1</span> territorio(s)</span>
         </div>
         <p style="color:var(--parchment-dim); font-size:.8rem; margin:.3em 0 0;">
-          Ejército total: <span id="resumen-ejercito">0</span> unidades de fuerza
+          Ejército total: <span id="resumen-ejercito">0</span> unidades de fuerza · Reputación: <span id="resumen-reputacion">100</span>
         </p>
       </div>
 
@@ -194,14 +237,6 @@
         <p id="ladron-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
       </div>
       <div id="lista-ladrones" style="margin-top:1em;"></div>
-    </div>
-
-    <div id="reinos-tab-chat" class="reinos-tab-panel">
-      <div id="chat-mensajes" style="height:50vh; overflow-y:auto; border:1px solid #3a3226; border-radius:var(--radius); padding:.6em; margin-bottom:.6em; display:flex; flex-direction:column; gap:.4em;"></div>
-      <div style="display:flex; gap:.5em;">
-        <input id="in-chat-texto" placeholder="Escribe al resto del mundo..." style="flex:1;" />
-        <button id="btn-enviar-chat" class="primary">Enviar</button>
-      </div>
     </div>
     </div>
   </div>

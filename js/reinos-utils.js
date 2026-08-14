@@ -13,9 +13,35 @@ export const EDIFICIOS_DEF = {
   cuadras: { nombre: "Cuadras", icono: "🐎", produce: null, descripcion: "Caballos para tropas montadas, más rápidas y más fuertes." },
   barracones: { nombre: "Barracones", icono: "⚔️", produce: null, descripcion: "Aquí se entrenan los soldados de tu ejército." },
   iglesia: { nombre: "Iglesia", icono: "⛪", produce: null, descripcion: "La fe sube la moral del pueblo — más producción en TODOS tus recursos." },
+  biblioteca: { nombre: "Biblioteca", icono: "📚", produce: null, descripcion: "Investigación: reduce el tiempo de construir y entrenar — y desde nivel 5, amplía tu alcance de ataque a 2 casillas." },
 };
 
-export const ORDEN_EDIFICIOS = ["granja", "cantera", "mina", "murallas", "cuadras", "barracones", "iglesia"];
+export const ORDEN_EDIFICIOS = ["granja", "cantera", "mina", "murallas", "cuadras", "barracones", "iglesia", "biblioteca"];
+
+// Cuanto más investigada tenga la biblioteca, más rápido se construye y se
+// entrena (hasta un 50% menos de tiempo), y desde nivel 5 puedes atacar
+// casillas a 2 de distancia, no solo las vecinas.
+export function reduccionTiempoBiblioteca(nivelBiblioteca) {
+  return Math.min(0.5, (nivelBiblioteca || 0) * 0.05);
+}
+export function alcanceAtaque(nivelBiblioteca) {
+  return (nivelBiblioteca || 0) >= 5 ? 2 : 1;
+}
+
+// ---------- Nobleza: nombras nobles y les cedes tierras a cambio de un
+// bonus de producción — más alto cuanto más rango tenga el noble. ----------
+export const TITULOS_NOBLES = [
+  { nombre: "Caballero", costeOro: 150, bonusProduccion: 0.03 },
+  { nombre: "Barón", costeOro: 350, bonusProduccion: 0.05 },
+  { nombre: "Conde", costeOro: 700, bonusProduccion: 0.08 },
+  { nombre: "Duque", costeOro: 1400, bonusProduccion: 0.12 },
+];
+
+export function bonusProduccionNobles(nobles) {
+  return (nobles || [])
+    .filter((n) => n.territorioAsignado)
+    .reduce((acc, n) => acc + (TITULOS_NOBLES.find((t) => t.nombre === n.titulo)?.bonusProduccion || 0), 0);
+}
 
 // El coste sube de forma moderada por nivel — asequible al principio,
 // cada vez más caro (y más lento) según creces.
@@ -49,7 +75,7 @@ export function defensaConMurallas(reino) {
 export const COSTE_SOLDADO = { comida: 8, piedra: 2, oro: 6, segundos: 6 };
 export const COSTE_CABALLERIA = { comida: 14, piedra: 4, oro: 14, segundos: 10 };
 
-export function calcularProduccionTotal(edificios) {
+export function calcularProduccionTotal(edificios, nobles) {
   const base = {
     // Antes esto era tan bajo que en una sesión de prueba de pocos minutos
     // no se apreciaba ningún cambio (el redondeo hacía el resto). Ahora la
@@ -59,13 +85,16 @@ export function calcularProduccionTotal(edificios) {
     piedra: 180 + produccionPorNivel(edificios?.cantera?.nivel) * 6,
     oro: 120 + produccionPorNivel(edificios?.mina?.nivel) * 6,
   };
-  // La iglesia no produce recursos directamente, sube la moral del pueblo:
-  // +6% a TODA la producción por cada nivel.
+  // La iglesia sube la moral (+6%/nivel) y los nobles con tierra gobiernan
+  // bien sus territorios (+3 a +12% cada uno, según su título) — los dos
+  // bonus se acumulan sobre la producción base.
   const bonusIglesia = 1 + (edificios?.iglesia?.nivel || 0) * 0.06;
+  const bonusNobles = 1 + bonusProduccionNobles(nobles);
+  const multiplicador = bonusIglesia * bonusNobles;
   return {
-    comida: Math.round(base.comida * bonusIglesia),
-    piedra: Math.round(base.piedra * bonusIglesia),
-    oro: Math.round(base.oro * bonusIglesia),
+    comida: Math.round(base.comida * multiplicador),
+    piedra: Math.round(base.piedra * multiplicador),
+    oro: Math.round(base.oro * multiplicador),
   };
 }
 

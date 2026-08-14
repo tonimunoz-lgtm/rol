@@ -9,12 +9,13 @@ export const EDIFICIOS_DEF = {
   granja: { nombre: "Granja", icono: "🌾", produce: "comida", descripcion: "Produce comida para alimentar a tu gente y tu ejército." },
   cantera: { nombre: "Cantera", icono: "🪨", produce: "piedra", descripcion: "Extrae piedra para construir y ampliar edificios." },
   mina: { nombre: "Mina de oro", icono: "🪙", produce: "oro", descripcion: "Oro para pagar mejoras y mantener tropas." },
-  murallas: { nombre: "Murallas", icono: "🧱", produce: null, descripcion: "Cuanto más altas, más difícil conquistar tu castillo." },
-  cuadras: { nombre: "Cuadras", icono: "🐎", produce: null, descripcion: "Caballos para tropas montadas, más rápidas." },
+  murallas: { nombre: "Murallas", icono: "🧱", produce: null, descripcion: "Cuanto más altas, más difícil conquistar tu castillo — y más difícil que te roben." },
+  cuadras: { nombre: "Cuadras", icono: "🐎", produce: null, descripcion: "Caballos para tropas montadas, más rápidas y más fuertes." },
   barracones: { nombre: "Barracones", icono: "⚔️", produce: null, descripcion: "Aquí se entrenan los soldados de tu ejército." },
+  iglesia: { nombre: "Iglesia", icono: "⛪", produce: null, descripcion: "La fe sube la moral del pueblo — más producción en TODOS tus recursos." },
 };
 
-export const ORDEN_EDIFICIOS = ["granja", "cantera", "mina", "murallas", "cuadras", "barracones"];
+export const ORDEN_EDIFICIOS = ["granja", "cantera", "mina", "murallas", "cuadras", "barracones", "iglesia"];
 
 // El coste sube de forma moderada por nivel — asequible al principio,
 // cada vez más caro (y más lento) según creces.
@@ -49,7 +50,7 @@ export const COSTE_SOLDADO = { comida: 8, piedra: 2, oro: 6, segundos: 6 };
 export const COSTE_CABALLERIA = { comida: 14, piedra: 4, oro: 14, segundos: 10 };
 
 export function calcularProduccionTotal(edificios) {
-  return {
+  const base = {
     // Antes esto era tan bajo que en una sesión de prueba de pocos minutos
     // no se apreciaba ningún cambio (el redondeo hacía el resto). Ahora la
     // base ya da un ritmo visible desde el primer minuto, y cada nivel de
@@ -57,6 +58,14 @@ export function calcularProduccionTotal(edificios) {
     comida: 240 + produccionPorNivel(edificios?.granja?.nivel) * 6,
     piedra: 180 + produccionPorNivel(edificios?.cantera?.nivel) * 6,
     oro: 120 + produccionPorNivel(edificios?.mina?.nivel) * 6,
+  };
+  // La iglesia no produce recursos directamente, sube la moral del pueblo:
+  // +6% a TODA la producción por cada nivel.
+  const bonusIglesia = 1 + (edificios?.iglesia?.nivel || 0) * 0.06;
+  return {
+    comida: Math.round(base.comida * bonusIglesia),
+    piedra: Math.round(base.piedra * bonusIglesia),
+    oro: Math.round(base.oro * bonusIglesia),
   };
 }
 

@@ -9,6 +9,20 @@
 <link rel="stylesheet" href="/css/style.css" />
 <style>
   html, body { overflow: auto !important; height: auto !important; min-height: 100%; }
+  /* El chat de Rúnica (style.css) está pensado para su cabecera fija; aquí
+     Reinos se desplaza como página normal, así que le damos su propia zona
+     fija arriba del todo, con fondo sólido — nunca se mezcla con el resto
+     del contenido, que empieza justo debajo (padding-top del contenedor). */
+  #chat-overlay {
+    position: fixed !important;
+    top: 0 !important; left: 0 !important; right: 0 !important; bottom: auto !important;
+    height: 6.5em !important;
+    z-index: 50 !important;
+    background: linear-gradient(to bottom, #14110D 75%, rgba(20,17,13,0)) !important;
+    padding: .5em 1em 0 !important;
+    pointer-events: none !important;
+  }
+  #reinos-app { padding-top: 6.5em; }
   #reinos-app { max-width: 720px; margin: 0 auto; padding: 1em; padding-bottom: 4em; }
   .recurso-pill {
     display: inline-flex; align-items: center; gap: .3em;

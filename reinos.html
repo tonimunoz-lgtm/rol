@@ -172,8 +172,9 @@
         <p id="ataque-info" style="font-size:.85rem;"></p>
         <div class="field"><label>Soldados</label><input id="in-soldados-ataque" type="number" min="0" value="5" /></div>
         <div class="field"><label>Caballería (cuenta doble, viaja más rápido)</label><input id="in-caballeria-ataque" type="number" min="0" value="0" /></div>
-        <div style="display:flex; gap:.5em;">
+        <div style="display:flex; gap:.5em; flex-wrap:wrap;">
           <button id="btn-enviar-ataque" class="primary">⚔️ Enviar ataque</button>
+          <button id="btn-proponer-ataque-conjunto" style="display:none;"></button>
           <button id="btn-cancelar-ataque">Cancelar</button>
         </div>
       </div>
@@ -183,6 +184,7 @@
     <div id="reinos-tab-reinos" class="reinos-tab-panel">
       <p style="color:var(--parchment-dim); font-size:.85rem;">El resto de reinos del mundo — propón alianzas o envía un ladrón a robar recursos.</p>
       <div id="lista-pactos-pendientes"></div>
+      <div id="lista-ataques-conjuntos"></div>
       <div id="lista-otros-reinos"></div>
 
       <div id="ladron-panel" class="card" style="display:none; margin-top:.8em;">

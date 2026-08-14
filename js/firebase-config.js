@@ -24,6 +24,7 @@ import {
   serverTimestamp,
   query,
   where,
+  orderBy,
   getDocs,
   runTransaction,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
@@ -67,6 +68,7 @@ export {
   serverTimestamp,
   query,
   where,
+  orderBy,
   getDocs,
   runTransaction,
   // storage

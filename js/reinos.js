@@ -25,6 +25,7 @@ let reinoActual = null;
 let todosLosReinos = {}; // uid -> reino, de TODOS los jugadores del mundo (para el mapa)
 let casillaSeleccionada = null;
 let pactosActuales = [];
+let ataquesConjuntosActuales = [];
 let ladronObjetivoSeleccionado = null;
 
 // ---------- Arranque / sesión ----------
@@ -252,6 +253,11 @@ function arrancarJuego() {
     pactosActuales = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderOtrosReinos();
     renderPactosPendientes();
+  });
+
+  onSnapshot(collection(db, "mundos", mundoId, "ataquesConjuntos"), (snap) => {
+    ataquesConjuntosActuales = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderAtaquesConjuntos();
   });
 
   onSnapshot(query(collection(db, "mundos", mundoId, "ladrones"), where("resuelto", "==", false)), (snap) => {
@@ -666,6 +672,12 @@ function seleccionarCasilla(f, c) {
   }
   casillaSeleccionada = { f, c };
   const propietario = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === f && t.c === c));
+
+  if (propietario && estadoPactoCon(propietario[0])?.estado === "aceptado") {
+    $("ataque-panel").style.display = "none";
+    return alert(`No puedes atacar a "${propietario[1].nombreReino}" — tenéis una alianza activa. Rómpela primero desde la pestaña "Reinos" si quieres atacarle.`);
+  }
+
   if (propietario) {
     const nivelMurallas = propietario[1].edificios?.murallas?.nivel || 0;
     const fuerza = Math.round(defensaConMurallas(propietario[1]));
@@ -675,12 +687,55 @@ function seleccionarCasilla(f, c) {
   } else {
     $("ataque-info").textContent = `Conquistar casilla libre (${f},${c}) — sin defensores, la ocupas directamente al llegar.`;
   }
+
+  const aliado = aliadoActivo();
+  $("btn-proponer-ataque-conjunto").style.display = aliado ? "inline-block" : "none";
+  if (aliado) $("btn-proponer-ataque-conjunto").textContent = `🤝 Proponer ataque conjunto con ${aliado.nombre}`;
+
   $("ataque-panel").style.display = "block";
 }
 
 $("btn-cancelar-ataque").addEventListener("click", () => {
   casillaSeleccionada = null;
   $("ataque-panel").style.display = "none";
+});
+
+$("btn-proponer-ataque-conjunto").addEventListener("click", async () => {
+  if (!casillaSeleccionada) return;
+  const aliado = aliadoActivo();
+  if (!aliado) return;
+  const soldadosEnviados = Math.max(0, Number($("in-soldados-ataque").value) || 0);
+  const caballeriaEnviada = Math.max(0, Number($("in-caballeria-ataque").value) || 0);
+  if (soldadosEnviados + caballeriaEnviada === 0) return alert("Aporta al menos una tropa tuya al ataque.");
+  if (soldadosEnviados > (reinoActual.ejercito?.soldados || 0)) return alert("No tienes tantos soldados disponibles.");
+  if (caballeriaEnviada > (reinoActual.ejercito?.caballeria || 0)) return alert("No tienes tanta caballería disponible.");
+
+  const propietarioDestino = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === casillaSeleccionada.f && t.c === casillaSeleccionada.c));
+
+  // Tus tropas quedan "reservadas" para este ataque conjunto ya mismo (se
+  // descuentan de tu ejército), igual que en un ataque normal.
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    "ejercito.soldados": (reinoActual.ejercito.soldados || 0) - soldadosEnviados,
+    "ejercito.caballeria": (reinoActual.ejercito.caballeria || 0) - caballeriaEnviada,
+  });
+
+  await addDoc(collection(db, "mundos", mundoId, "ataquesConjuntos"), {
+    destino: casillaSeleccionada,
+    destinoDefensorUid: propietarioDestino ? propietarioDestino[0] : null,
+    destinoDefensorNombre: propietarioDestino ? propietarioDestino[1].nombreReino : null,
+    iniciadorUid: currentUid,
+    iniciadorNombre: reinoActual.nombreReino,
+    aliadoUid: aliado.uid,
+    aliadoNombre: aliado.nombre,
+    tropasIniciador: { soldados: soldadosEnviados, caballeria: caballeriaEnviada },
+    tropasAliado: null,
+    estado: "esperando_aliado",
+    creadoEn: serverTimestamp(),
+  });
+
+  casillaSeleccionada = null;
+  $("ataque-panel").style.display = "none";
+  alert(`Propuesta enviada a ${aliado.nombre}. En cuanto aporte sus tropas, cualquiera de los dos podrá lanzar el ataque conjunto desde la pestaña "Reinos".`);
 });
 
 $("btn-enviar-ataque").addEventListener("click", async () => {
@@ -838,6 +893,17 @@ function estadoPactoCon(uidOtro) {
     (p) => p.estado !== "roto" && ((p.propuestoPor === currentUid && p.propuestoA === uidOtro) || (p.propuestoPor === uidOtro && p.propuestoA === currentUid))
   );
   return pacto || null;
+}
+
+// Devuelve tu aliado activo (si tienes uno) — { uid, nombre } — o null.
+// De momento el juego solo contempla una alianza activa a la vez por
+// simplicidad (puedes romperla y proponer otra distinta cuando quieras).
+function aliadoActivo() {
+  const pacto = pactosActuales.find((p) => p.estado === "aceptado" && (p.propuestoPor === currentUid || p.propuestoA === currentUid));
+  if (!pacto) return null;
+  const uidAliado = pacto.propuestoPor === currentUid ? pacto.propuestoA : pacto.propuestoPor;
+  const nombreAliado = todosLosReinos[uidAliado]?.nombreReino || (pacto.propuestoPor === currentUid ? "tu aliado" : pacto.propuestoPorNombre);
+  return { uid: uidAliado, nombre: nombreAliado };
 }
 
 function renderPactosPendientes() {
@@ -1052,5 +1118,147 @@ async function intentarResolverLadron(ladron) {
     });
   } catch (e) {
     console.warn("No se pudo resolver el ladrón:", e.message);
+  }
+}
+
+// ---------- Ataques conjuntos entre aliados ----------
+function renderAtaquesConjuntos() {
+  const cont = $("lista-ataques-conjuntos");
+  const relevantes = ataquesConjuntosActuales.filter(
+    (a) => (a.iniciadorUid === currentUid || a.aliadoUid === currentUid) && a.estado !== "lanzado" && a.estado !== "cancelado"
+  );
+  if (relevantes.length === 0) {
+    cont.innerHTML = "";
+    return;
+  }
+
+  cont.innerHTML =
+    `<h3 style="font-size:1rem;">Ataques conjuntos</h3>` +
+    relevantes
+      .map((a) => {
+        const destinoTexto = a.destinoDefensorNombre ? `territorio de ${a.destinoDefensorNombre}` : "casilla libre";
+        if (a.estado === "esperando_aliado" && a.aliadoUid === currentUid) {
+          return `
+            <div class="reino-card" style="flex-direction:column; align-items:stretch; gap:.4em;">
+              <span>${a.iniciadorNombre} te invita a un ataque conjunto contra ${destinoTexto} (${a.destino.f},${a.destino.c}). Aporta tus tropas:</span>
+              <div style="display:flex; gap:.4em; align-items:center;">
+                <input class="in-tropas-soldados-conjunto" type="number" min="0" value="5" placeholder="Soldados" style="width:90px;" data-id="${a.id}" />
+                <input class="in-tropas-caballeria-conjunto" type="number" min="0" value="0" placeholder="Caballería" style="width:90px;" data-id="${a.id}" />
+                <button class="btn-unirse-ataque-conjunto" data-id="${a.id}" style="font-size:.75rem;">Unirme</button>
+                <button class="btn-cancelar-ataque-conjunto" data-id="${a.id}" style="font-size:.75rem;">Rechazar</button>
+              </div>
+            </div>`;
+        }
+        if (a.estado === "esperando_aliado") {
+          return `<div class="reino-card"><span>Esperando a que ${a.aliadoNombre} aporte tropas para atacar ${destinoTexto}...</span>
+            <button class="btn-cancelar-ataque-conjunto" data-id="${a.id}" style="font-size:.75rem;">Cancelar</button></div>`;
+        }
+        if (a.estado === "listo") {
+          return `<div class="reino-card"><span>Listo para atacar ${destinoTexto} — ${a.iniciadorNombre} + ${a.aliadoNombre}.</span>
+            <div style="display:flex; gap:.4em;">
+              <button class="btn-lanzar-ataque-conjunto" data-id="${a.id}" style="font-size:.75rem;">🚀 Lanzar</button>
+              <button class="btn-cancelar-ataque-conjunto" data-id="${a.id}" style="font-size:.75rem;">Cancelar</button>
+            </div></div>`;
+        }
+        return "";
+      })
+      .join("");
+
+  cont.querySelectorAll(".btn-unirse-ataque-conjunto").forEach((btn) =>
+    btn.addEventListener("click", () => unirseAtaqueConjunto(btn.dataset.id))
+  );
+  cont.querySelectorAll(".btn-lanzar-ataque-conjunto").forEach((btn) =>
+    btn.addEventListener("click", () => lanzarAtaqueConjunto(btn.dataset.id))
+  );
+  cont.querySelectorAll(".btn-cancelar-ataque-conjunto").forEach((btn) =>
+    btn.addEventListener("click", () => cancelarAtaqueConjunto(btn.dataset.id))
+  );
+}
+
+async function unirseAtaqueConjunto(id) {
+  const soldados = Math.max(0, Number(document.querySelector(`.in-tropas-soldados-conjunto[data-id="${id}"]`).value) || 0);
+  const caballeria = Math.max(0, Number(document.querySelector(`.in-tropas-caballeria-conjunto[data-id="${id}"]`).value) || 0);
+  if (soldados + caballeria === 0) return alert("Aporta al menos una tropa.");
+  if (soldados > (reinoActual.ejercito?.soldados || 0)) return alert("No tienes tantos soldados.");
+  if (caballeria > (reinoActual.ejercito?.caballeria || 0)) return alert("No tienes tanta caballería.");
+
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    "ejercito.soldados": (reinoActual.ejercito.soldados || 0) - soldados,
+    "ejercito.caballeria": (reinoActual.ejercito.caballeria || 0) - caballeria,
+  });
+  await updateDoc(doc(db, "mundos", mundoId, "ataquesConjuntos", id), {
+    tropasAliado: { soldados, caballeria },
+    estado: "listo",
+  });
+}
+
+async function lanzarAtaqueConjunto(id) {
+  try {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "mundos", mundoId, "ataquesConjuntos", id);
+      const snap = await tx.get(ref);
+      const a = snap.data();
+      if (!a || a.estado !== "listo") return;
+
+      const iniciadorRef = doc(db, "mundos", mundoId, "reinos", a.iniciadorUid);
+      const iniciadorSnap = await tx.get(iniciadorRef);
+      const iniciador = iniciadorSnap.data();
+      const origen = iniciador.territorios[0];
+      const distancia = Math.abs(origen.f - a.destino.f) + Math.abs(origen.c - a.destino.c);
+
+      const soldadosTotales = (a.tropasIniciador?.soldados || 0) + (a.tropasAliado?.soldados || 0);
+      const caballeriaTotal = (a.tropasIniciador?.caballeria || 0) + (a.tropasAliado?.caballeria || 0);
+
+      const movRef = doc(collection(db, "mundos", mundoId, "movimientos"));
+      tx.set(movRef, {
+        atacanteUid: a.iniciadorUid,
+        atacanteNombre: `${a.iniciadorNombre} + ${a.aliadoNombre} (conjunto)`,
+        defensorUid: a.destinoDefensorUid,
+        defensorNombre: a.destinoDefensorNombre,
+        destino: a.destino,
+        soldadosEnviados: soldadosTotales,
+        caballeriaEnviada: caballeriaTotal,
+        salida: Date.now(),
+        llegada: Date.now() + distancia * SEGUNDOS_POR_CASILLA_VIAJE * 1000,
+        resuelto: false,
+      });
+      tx.update(ref, { estado: "lanzado" });
+    });
+  } catch (e) {
+    alert(`No se pudo lanzar el ataque conjunto: ${e.message}`);
+  }
+}
+
+async function cancelarAtaqueConjunto(id) {
+  try {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "mundos", mundoId, "ataquesConjuntos", id);
+      const snap = await tx.get(ref);
+      const a = snap.data();
+      if (!a || a.estado === "lanzado" || a.estado === "cancelado") return;
+
+      // Se devuelven las tropas ya comprometidas a quien las puso.
+      const iniciadorRef = doc(db, "mundos", mundoId, "reinos", a.iniciadorUid);
+      const iniciadorSnap = await tx.get(iniciadorRef);
+      const iniciador = iniciadorSnap.data();
+      tx.update(iniciadorRef, {
+        "ejercito.soldados": (iniciador.ejercito?.soldados || 0) + (a.tropasIniciador?.soldados || 0),
+        "ejercito.caballeria": (iniciador.ejercito?.caballeria || 0) + (a.tropasIniciador?.caballeria || 0),
+      });
+
+      if (a.tropasAliado) {
+        const aliadoRef = doc(db, "mundos", mundoId, "reinos", a.aliadoUid);
+        const aliadoSnap = await tx.get(aliadoRef);
+        const aliado = aliadoSnap.data();
+        tx.update(aliadoRef, {
+          "ejercito.soldados": (aliado.ejercito?.soldados || 0) + (a.tropasAliado?.soldados || 0),
+          "ejercito.caballeria": (aliado.ejercito?.caballeria || 0) + (a.tropasAliado?.caballeria || 0),
+        });
+      }
+
+      tx.update(ref, { estado: "cancelado" });
+    });
+  } catch (e) {
+    alert(`No se pudo cancelar: ${e.message}`);
   }
 }

@@ -12,6 +12,9 @@ const APP_SHELL = [
   "/manifest-reinos.json",
   "/js/reinos.js",
   "/js/reinos-utils.js",
+  "/icons-reinos/icon-192.png",
+  "/icons-reinos/icon-512.png",
+  "/icons-reinos/icon-maskable-512.png",
 ];
 
 self.addEventListener("install", (event) => {

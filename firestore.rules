@@ -84,5 +84,42 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
     }
+
+    // ---------------------------------------------------------------
+    // NUEVO JUEGO: Reinos (estrategia medieval, sin master, hasta 10
+    // jugadores por mundo, tiempo real, persistente). Independiente de
+    // todo lo de arriba (Rúnica se queda intacto).
+    // ---------------------------------------------------------------
+    match /mundos/{mundoId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      // Contador de jugadores/estado general del mundo — cualquiera
+      // conectado puede necesitar actualizarlo (p.ej. al unirse).
+      allow update: if request.auth != null;
+
+      match /reinos/{reinoId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && request.auth.uid == reinoId;
+        allow update: if request.auth != null &&
+          (request.auth.uid == reinoId ||
+           // Resolver una batalla (ataque o defensa) puede tocar el
+           // ejército/territorios de OTRO reino — nunca sus recursos,
+           // edificios ni nada más. Lo puede hacer cualquier jugador
+           // conectado, no hace falta que sea el propio dueño.
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ejercito', 'territorios', 'vivo']));
+        allow delete: if request.auth != null && request.auth.uid == reinoId;
+      }
+
+      match /movimientos/{movId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        // Resolver un movimiento (marcarlo como llegado/resuelto) lo
+        // puede hacer cualquier jugador conectado — igual que los turnos
+        // automáticos de enemigos en Rúnica, no depende de que un solo
+        // cliente concreto esté mirando en ese momento.
+        allow update: if request.auth != null;
+        allow delete: if request.auth != null;
+      }
+    }
   }
 }

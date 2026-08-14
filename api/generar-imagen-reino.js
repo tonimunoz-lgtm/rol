@@ -156,19 +156,19 @@ function construirPrompt(tipo, d) {
   if (tipo === "mapa-mundo") {
     const ambientacion = (d.descripcion || "").trim();
     const prompt =
-      `Fantasy medieval world map poster, flat 2D top-down game map illustration. A wide continent ` +
-      `spread across the canvas with open space between distinct regions: mountain ranges, forests, ` +
-      `rivers, plains, coastlines along the edges, scattered kingdoms and castles as small distant ` +
-      `landmarks. Hand-drawn ink linework and light watercolor wash on aged parchment, old-world ` +
-      `fantasy strategy-game map style` +
+      `Top-down flat illustrated board-game world map, in the style of a strategy board game like ` +
+      `Risk or Catan. A continent filling the entire rectangular canvas edge to edge, divided into ` +
+      `clearly visible distinct terrain regions: mountain ranges, forests, plains, rivers, ` +
+      `coastlines along the edges. Vivid, clean, colorful flat illustration style, small distant ` +
+      `castle and village landmarks scattered across the land` +
       (ambientacion ? `, thematically evoking: ${ambientacion}` : "") +
       `.`;
     const negativo =
       `circular composition, circle, disc, medallion, globe, round border, circular border, ` +
-      `vignette, circular frame, porthole, mandala, radial symmetry, island surrounded by water on ` +
-      `all sides, realistic landscape painting, photographic, 3D depth, single continuous mountain ` +
-      `range filling the whole frame, aerial photograph, photorealistic, icons, symbols, compass ` +
-      `rose, map legend, border frame, ${NEGATIVO_COMUN}`;
+      `vignette, circular frame, porthole, mandala, radial symmetry, parchment scroll, aged paper ` +
+      `texture, antique map, torn edges, mappa mundi, manuscript, island surrounded by water on ` +
+      `all sides, realistic photograph, photorealistic, 3D render, aerial photograph, icons, ` +
+      `symbols, compass rose, map legend, border frame, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 

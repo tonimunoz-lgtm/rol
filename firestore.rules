@@ -145,6 +145,15 @@ service cloud.firestore {
         allow create: if request.auth != null;
         allow update: if request.auth != null;
       }
+
+      // Ataques conjuntos entre aliados: el que propone lo crea en su
+      // propio nombre; el aliado invitado (o cualquiera de los dos, para
+      // lanzar/cancelar) puede actualizarlo después.
+      match /ataquesConjuntos/{id} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && request.resource.data.iniciadorUid == request.auth.uid;
+        allow update: if request.auth != null;
+      }
     }
   }
 }

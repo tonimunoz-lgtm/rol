@@ -74,6 +74,15 @@
 
   <!-- Juego principal (oculto hasta unirse/crear) -->
   <div id="reinos-juego" style="display:none;">
+
+    <!-- Se muestra en vez de todo lo demás si tu reino ha sido derrotado -->
+    <div id="reino-derrotado" class="card" style="display:none; text-align:center; padding:2em 1em;">
+      <h2 class="display" style="font-size:1.3rem;">👑 Tu reino ha caído</h2>
+      <p style="color:var(--parchment-dim);">Has perdido tu último territorio. Puedes reconstruir tu reino desde cero, en otro punto libre del mismo mundo, con un pack básico inicial.</p>
+      <button id="btn-reconstruir-reino" class="primary" style="width:100%; margin-top:.6em;">🔄 Reconstruir mi reino</button>
+    </div>
+
+    <div id="reino-vivo-contenido">
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <h1 class="display" id="reino-titulo" style="font-size:1.3rem;"></h1>
       <span class="mono" id="mundo-codigo-texto" style="color:var(--parchment-dim); font-size:.75rem;"></span>
@@ -161,6 +170,7 @@
         </div>
       </div>
       <div id="lista-movimientos" style="margin-top:1em;"></div>
+    </div>
     </div>
   </div>
 

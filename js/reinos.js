@@ -9,6 +9,7 @@ import {
 import {
   EDIFICIOS_DEF, ORDEN_EDIFICIOS, costeMejora, calcularProduccionTotal,
   recursosActuales, puedeCostear, generarCodigoMundo,
+  fuerzaEjercito, defensaConMurallas, COSTE_SOLDADO, COSTE_CABALLERIA,
 } from "./reinos-utils.js";
 
 const $ = (id) => document.getElementById(id);
@@ -168,8 +169,9 @@ async function crearReinoEnMundo(codigo, nombreReino) {
     produccionPorHora: calcularProduccionTotal(edificiosIniciales),
     ultimaActualizacionRecursos: serverTimestamp(),
     construyendo: null,
-    ejercito: { soldados: 5 },
+    ejercito: { soldados: 5, caballeria: 0 },
     entrenando: null,
+    entrenandoCaballeria: null,
     vivo: true,
     creadoEn: serverTimestamp(),
   });
@@ -210,6 +212,7 @@ function arrancarJuego() {
     renderMapaMundo();
     intentarFinalizarConstruccion();
     intentarFinalizarEntrenamiento();
+    intentarFinalizarEntrenamientoCaballeria();
   });
 
   // El resto de reinos del mundo, para poder pintar el mapa entero.
@@ -231,6 +234,7 @@ function arrancarJuego() {
   setInterval(() => {
     intentarFinalizarConstruccion();
     intentarFinalizarEntrenamiento();
+    intentarFinalizarEntrenamientoCaballeria();
   }, 4000);
 }
 
@@ -241,6 +245,7 @@ function renderRecursos() {
   $("rec-piedra").textContent = r.piedra;
   $("rec-oro").textContent = r.oro;
   $("rec-soldados").textContent = reinoActual.ejercito?.soldados || 0;
+  $("rec-caballeria").textContent = reinoActual.ejercito?.caballeria || 0;
 }
 
 // Antes de gastar recursos en cualquier acción, "cerramos" el cálculo:
@@ -300,6 +305,7 @@ function renderEdificios() {
     btn.addEventListener("click", () => iniciarConstruccion(btn.dataset.clave));
   });
   $("barracones-nivel-texto").textContent = reinoActual.edificios?.barracones?.nivel || 0;
+  $("cuadras-nivel-texto").textContent = reinoActual.edificios?.cuadras?.nivel || 0;
 }
 
 async function iniciarConstruccion(clave) {
@@ -359,9 +365,7 @@ async function intentarFinalizarConstruccion() {
   }
 }
 
-// ---------- Ejército: entrenar soldados ----------
-const COSTE_SOLDADO = { comida: 8, piedra: 2, oro: 6, segundos: 6 };
-
+// ---------- Ejército: entrenar soldados y caballería ----------
 $("btn-entrenar-soldados").addEventListener("click", async () => {
   const cantidad = Math.max(1, Number($("in-num-soldados").value) || 1);
   if ((reinoActual.edificios?.barracones?.nivel || 0) < 1) {
@@ -400,6 +404,47 @@ async function intentarFinalizarEntrenamiento() {
     $("entrenar-status").textContent = "";
   } catch (e) {
     console.warn("No se pudo finalizar el entrenamiento:", e.message);
+  }
+}
+
+$("btn-entrenar-caballeria").addEventListener("click", async () => {
+  const cantidad = Math.max(1, Number($("in-num-caballeria").value) || 1);
+  if ((reinoActual.edificios?.cuadras?.nivel || 0) < 1) {
+    return ($("entrenar-caballeria-status").textContent = "Necesitas al menos nivel 1 en tus cuadras.");
+  }
+  if (reinoActual.entrenandoCaballeria) return ($("entrenar-caballeria-status").textContent = "Ya hay una tanda de caballería entrenándose.");
+  const coste = {
+    comida: COSTE_CABALLERIA.comida * cantidad,
+    piedra: COSTE_CABALLERIA.piedra * cantidad,
+    oro: COSTE_CABALLERIA.oro * cantidad,
+  };
+  const recursos = await sincronizarRecursos();
+  if (!puedeCostear(recursos, coste)) return ($("entrenar-caballeria-status").textContent = "No tienes recursos suficientes.");
+
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    recursos: { comida: recursos.comida - coste.comida, piedra: recursos.piedra - coste.piedra, oro: recursos.oro - coste.oro },
+    entrenandoCaballeria: { cantidad, finalizaEn: Date.now() + COSTE_CABALLERIA.segundos * cantidad * 1000 },
+  });
+  $("entrenar-caballeria-status").textContent = `Entrenando ${cantidad} jinetes...`;
+});
+
+async function intentarFinalizarEntrenamientoCaballeria() {
+  if (!reinoActual?.entrenandoCaballeria) return;
+  if (Date.now() < reinoActual.entrenandoCaballeria.finalizaEn) return;
+  try {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "mundos", mundoId, "reinos", currentUid);
+      const snap = await tx.get(ref);
+      const data = snap.data();
+      if (!data.entrenandoCaballeria) return;
+      tx.update(ref, {
+        entrenandoCaballeria: null,
+        "ejercito.caballeria": (data.ejercito?.caballeria || 0) + data.entrenandoCaballeria.cantidad,
+      });
+    });
+    $("entrenar-caballeria-status").textContent = "";
+  } catch (e) {
+    console.warn("No se pudo finalizar el entrenamiento de caballería:", e.message);
   }
 }
 
@@ -461,9 +506,15 @@ function seleccionarCasilla(f, c) {
   }
   casillaSeleccionada = { f, c };
   const propietario = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === f && t.c === c));
-  $("ataque-info").textContent = propietario
-    ? `Atacar a "${propietario[1].nombreReino}" en (${f},${c}).`
-    : `Conquistar casilla libre (${f},${c}) — sin defensores, la ocupas directamente al llegar.`;
+  if (propietario) {
+    const nivelMurallas = propietario[1].edificios?.murallas?.nivel || 0;
+    const fuerza = Math.round(defensaConMurallas(propietario[1]));
+    $("ataque-info").textContent =
+      `Atacar a "${propietario[1].nombreReino}" en (${f},${c}). Fuerza defensiva estimada: ${fuerza}` +
+      (nivelMurallas > 0 ? ` (incluye el bonus de sus murallas nivel ${nivelMurallas}).` : ".");
+  } else {
+    $("ataque-info").textContent = `Conquistar casilla libre (${f},${c}) — sin defensores, la ocupas directamente al llegar.`;
+  }
   $("ataque-panel").style.display = "block";
 }
 
@@ -474,15 +525,23 @@ $("btn-cancelar-ataque").addEventListener("click", () => {
 
 $("btn-enviar-ataque").addEventListener("click", async () => {
   if (!casillaSeleccionada) return;
-  const cantidad = Math.max(1, Number($("in-soldados-ataque").value) || 1);
-  if (cantidad > (reinoActual.ejercito?.soldados || 0)) return alert("No tienes tantos soldados disponibles.");
+  const soldadosEnviados = Math.max(0, Number($("in-soldados-ataque").value) || 0);
+  const caballeriaEnviada = Math.max(0, Number($("in-caballeria-ataque").value) || 0);
+  if (soldadosEnviados + caballeriaEnviada === 0) return alert("Envía al menos una tropa.");
+  if (soldadosEnviados > (reinoActual.ejercito?.soldados || 0)) return alert("No tienes tantos soldados disponibles.");
+  if (caballeriaEnviada > (reinoActual.ejercito?.caballeria || 0)) return alert("No tienes tanta caballería disponible.");
 
   const origen = reinoActual.territorios[0]; // el castillo, punto de partida
   const distancia = Math.abs(origen.f - casillaSeleccionada.f) + Math.abs(origen.c - casillaSeleccionada.c);
+  // Una expedición compuesta solo de caballería viaja al doble de
+  // velocidad; en cuanto lleva algo de infantería, va al ritmo de a pie.
+  const soloCaballeria = caballeriaEnviada > 0 && soldadosEnviados === 0;
+  const segundosPorCasilla = soloCaballeria ? SEGUNDOS_POR_CASILLA_VIAJE / 2 : SEGUNDOS_POR_CASILLA_VIAJE;
   const propietarioDestino = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === casillaSeleccionada.f && t.c === casillaSeleccionada.c));
 
   await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
-    "ejercito.soldados": reinoActual.ejercito.soldados - cantidad,
+    "ejercito.soldados": (reinoActual.ejercito.soldados || 0) - soldadosEnviados,
+    "ejercito.caballeria": (reinoActual.ejercito.caballeria || 0) - caballeriaEnviada,
   });
 
   await addDoc(collection(db, "mundos", mundoId, "movimientos"), {
@@ -491,9 +550,10 @@ $("btn-enviar-ataque").addEventListener("click", async () => {
     defensorUid: propietarioDestino ? propietarioDestino[0] : null,
     defensorNombre: propietarioDestino ? propietarioDestino[1].nombreReino : null,
     destino: casillaSeleccionada,
-    soldadosEnviados: cantidad,
+    soldadosEnviados,
+    caballeriaEnviada,
     salida: Date.now(),
-    llegada: Date.now() + distancia * SEGUNDOS_POR_CASILLA_VIAJE * 1000,
+    llegada: Date.now() + distancia * segundosPorCasilla * 1000,
     resuelto: false,
   });
 
@@ -514,7 +574,10 @@ function renderMovimientos(movimientos) {
       .map((m) => {
         const restante = Math.max(0, Math.round((m.llegada - Date.now()) / 1000));
         const esMio = m.atacanteUid === currentUid;
-        return `<div class="registro-linea">${esMio ? `Tu ejército (${m.soldadosEnviados}) marcha hacia (${m.destino.f},${m.destino.c})` : `⚠️ ${m.atacanteNombre} envía ${m.soldadosEnviados} soldados hacia tu casilla (${m.destino.f},${m.destino.c})`} — llega en ${restante}s</div>`;
+        const composicion = [m.soldadosEnviados ? `${m.soldadosEnviados} soldados` : "", m.caballeriaEnviada ? `${m.caballeriaEnviada} jinetes` : ""]
+          .filter(Boolean)
+          .join(" + ");
+        return `<div class="registro-linea">${esMio ? `Tu ejército (${composicion}) marcha hacia (${m.destino.f},${m.destino.c})` : `⚠️ ${m.atacanteNombre} envía ${composicion} hacia tu casilla (${m.destino.f},${m.destino.c})`} — llega en ${restante}s</div>`;
       })
       .join("");
 }
@@ -542,22 +605,35 @@ async function intentarResolverMovimiento(movimiento) {
         const defensorRef = doc(db, "mundos", mundoId, "reinos", mov.defensorUid);
         const defensorSnap = await tx.get(defensorRef);
         const defensor = defensorSnap.data();
-        const soldadosDefensor = defensor.ejercito?.soldados || 0;
 
-        if (mov.soldadosEnviados > soldadosDefensor) {
-          // El atacante gana: se queda la casilla, el defensor pierde esos soldados.
+        const fuerzaAtacante = (mov.soldadosEnviados || 0) + (mov.caballeriaEnviada || 0) * 2;
+        const fuerzaDefensiva = defensaConMurallas(defensor);
+        const nivelMurallas = defensor.edificios?.murallas?.nivel || 0;
+
+        if (fuerzaAtacante > fuerzaDefensiva) {
+          // El atacante gana: se queda la casilla, el defensor pierde todo
+          // el ejército que tenía plantado ahí.
           const atacanteRef = doc(db, "mundos", mundoId, "reinos", mov.atacanteUid);
           const atacanteSnap = await tx.get(atacanteRef);
           const atacante = atacanteSnap.data();
           tx.update(atacanteRef, { territorios: [...(atacante.territorios || []), mov.destino] });
           tx.update(defensorRef, {
             "ejercito.soldados": 0,
+            "ejercito.caballeria": 0,
             territorios: (defensor.territorios || []).filter((t) => !(t.f === mov.destino.f && t.c === mov.destino.c)),
           });
-          textoResultado = `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}.`;
+          textoResultado = `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}${nivelMurallas > 0 ? ` (a pesar de sus murallas nivel ${nivelMurallas})` : ""}.`;
         } else {
-          tx.update(defensorRef, { "ejercito.soldados": soldadosDefensor - mov.soldadosEnviados });
-          textoResultado = `🛡️ ${mov.defensorNombre} repele el ataque de ${mov.atacanteNombre}.`;
+          // El defensor resiste, gracias en parte a sus murallas — pero
+          // sufre bajas proporcionales al empuje del ataque recibido.
+          const proporcionBajas = Math.min(1, fuerzaAtacante / Math.max(1, fuerzaDefensiva));
+          const soldadosRestantes = Math.round((defensor.ejercito?.soldados || 0) * (1 - proporcionBajas));
+          const caballeriaRestante = Math.round((defensor.ejercito?.caballeria || 0) * (1 - proporcionBajas));
+          tx.update(defensorRef, {
+            "ejercito.soldados": soldadosRestantes,
+            "ejercito.caballeria": caballeriaRestante,
+          });
+          textoResultado = `🛡️ ${mov.defensorNombre} repele el ataque de ${mov.atacanteNombre}${nivelMurallas > 0 ? ` gracias a sus murallas (nivel ${nivelMurallas})` : ""}.`;
         }
       }
 

@@ -1018,21 +1018,14 @@ const ETIQUETAS_TIPO_PACTO = { no_agresion: "🕊️ No agresión", alianza_mili
 // ---------- Alerta central: aparece sola cuando alguien espera tu respuesta ----------
 let pactoEnNegociacion = null;
 
-function comprobarNegociacionesPendientes() {
-  const pendiente = pactosActuales.find((p) => p.estado === "pendiente" && p.ultimaPropuestaPor !== currentUid && p.jugadores.includes(currentUid));
-  if (!pendiente) {
-    $("negociacion-modal").classList.remove("visible");
-    pactoEnNegociacion = null;
-    return;
-  }
-  if (pactoEnNegociacion?.id === pendiente.id && $("negociacion-modal").classList.contains("visible")) return; // ya mostrada
-  pactoEnNegociacion = pendiente;
-  const otroUid = pendiente.jugadores.find((u) => u !== currentUid);
-  const otroNombre = pendiente.nombres?.[otroUid] || "Un reino";
+function mostrarAlertaNegociacion(pacto) {
+  pactoEnNegociacion = pacto;
+  const otroUid = pacto.jugadores.find((u) => u !== currentUid);
+  const otroNombre = pacto.nombres?.[otroUid] || "Un reino";
   $("negociacion-titulo").textContent = "🤝 Propuesta diplomática";
   $("negociacion-texto").textContent =
-    `${otroNombre} propone: ${ETIQUETAS_TIPO_PACTO[pendiente.tipo] || pendiente.tipo}.` + (pendiente.mensaje ? ` "${pendiente.mensaje}"` : "");
-  const historial = pendiente.historial || [];
+    `${otroNombre} propone: ${ETIQUETAS_TIPO_PACTO[pacto.tipo] || pacto.tipo}.` + (pacto.mensaje ? ` "${pacto.mensaje}"` : "");
+  const historial = pacto.historial || [];
   if (historial.length > 1) {
     $("negociacion-historial").style.display = "block";
     $("negociacion-historial").innerHTML = historial
@@ -1042,6 +1035,17 @@ function comprobarNegociacionesPendientes() {
     $("negociacion-historial").style.display = "none";
   }
   $("negociacion-modal").classList.add("visible");
+}
+
+function comprobarNegociacionesPendientes() {
+  const pendiente = pactosActuales.find((p) => p.estado === "pendiente" && p.ultimaPropuestaPor !== currentUid && p.jugadores.includes(currentUid));
+  if (!pendiente) {
+    $("negociacion-modal").classList.remove("visible");
+    pactoEnNegociacion = null;
+    return;
+  }
+  if (pactoEnNegociacion?.id === pendiente.id && $("negociacion-modal").classList.contains("visible")) return; // ya mostrada, no la reabrimos sola
+  mostrarAlertaNegociacion(pendiente);
 }
 
 $("btn-negociacion-aceptar").addEventListener("click", async () => {
@@ -1148,7 +1152,10 @@ function renderOtrosReinos() {
       if (!pacto) {
         botonAlianza = `<button class="btn-proponer-pacto" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🤝 Proponer pacto</button>`;
       } else if (pacto.estado === "pendiente") {
-        botonAlianza = `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Negociación en curso</span>`;
+        botonAlianza =
+          pacto.ultimaPropuestaPor === currentUid
+            ? `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Esperando su respuesta...</span>`
+            : `<button class="btn-responder-pacto" data-id="${pacto.id}" style="font-size:.7rem;">💬 Responder</button>`;
       } else if (pacto.estado === "aceptado") {
         botonAlianza = `
           <button class="btn-romper-pacto" data-id="${pacto.id}" style="font-size:.7rem;">💔 Romper</button>
@@ -1177,6 +1184,12 @@ function renderOtrosReinos() {
     btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "roto" }))
   );
   cont.querySelectorAll(".btn-traicionar").forEach((btn) => btn.addEventListener("click", () => traicionar(btn.dataset.id, btn.dataset.uid, btn.dataset.nombre)));
+  cont.querySelectorAll(".btn-responder-pacto").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const pacto = pactosActuales.find((p) => p.id === btn.dataset.id);
+      if (pacto) mostrarAlertaNegociacion(pacto);
+    })
+  );
   cont.querySelectorAll(".btn-elegir-ladron").forEach((btn) =>
     btn.addEventListener("click", () => elegirObjetivoLadron(btn.dataset.uid, btn.dataset.nombre))
   );

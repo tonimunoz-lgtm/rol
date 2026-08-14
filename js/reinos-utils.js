@@ -50,9 +50,13 @@ export const COSTE_CABALLERIA = { comida: 14, piedra: 4, oro: 14, segundos: 10 }
 
 export function calcularProduccionTotal(edificios) {
   return {
-    comida: 20 + produccionPorNivel(edificios?.granja?.nivel), // base, para que nunca sea 0
-    piedra: 15 + produccionPorNivel(edificios?.cantera?.nivel),
-    oro: 10 + produccionPorNivel(edificios?.mina?.nivel),
+    // Antes esto era tan bajo que en una sesión de prueba de pocos minutos
+    // no se apreciaba ningún cambio (el redondeo hacía el resto). Ahora la
+    // base ya da un ritmo visible desde el primer minuto, y cada nivel de
+    // edificio suma bastante más encima.
+    comida: 240 + produccionPorNivel(edificios?.granja?.nivel) * 6,
+    piedra: 180 + produccionPorNivel(edificios?.cantera?.nivel) * 6,
+    oro: 120 + produccionPorNivel(edificios?.mina?.nivel) * 6,
   };
 }
 
@@ -87,4 +91,20 @@ export function generarCodigoMundo() {
   let out = "";
   for (let i = 0; i < 5; i++) out += letras[Math.floor(Math.random() * letras.length)];
   return out;
+}
+
+const RANGOS = [
+  { min: 0, nombre: "Aldea" },
+  { min: 3, nombre: "Señorío" },
+  { min: 6, nombre: "Condado" },
+  { min: 11, nombre: "Ducado" },
+  { min: 20, nombre: "Reino" },
+  { min: 35, nombre: "Imperio" },
+];
+export function calcularRango(numTerritorios) {
+  let actual = RANGOS[0].nombre;
+  for (const r of RANGOS) {
+    if (numTerritorios >= r.min) actual = r.nombre;
+  }
+  return actual;
 }

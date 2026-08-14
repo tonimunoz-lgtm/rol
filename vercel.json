@@ -1,5 +1,5 @@
 {
-  "rewrites": [
-    { "source": "/", "destination": "/reinos.html" }
+  "routes": [
+    { "src": "^/$", "dest": "/reinos.html" }
   ]
 }

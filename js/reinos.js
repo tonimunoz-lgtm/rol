@@ -171,6 +171,8 @@ function valoresIniciales(nombreReino, colorAsignado, posicion) {
     ejercito: { soldados: 5, caballeria: 0 },
     entrenando: null,
     entrenandoCaballeria: null,
+    reputacion: 100,
+    sorpresaDisponibleContra: null,
     vivo: true,
   };
 }
@@ -246,7 +248,9 @@ function arrancarJuego() {
   });
 
   onSnapshot(query(collection(db, "mundos", mundoId, "mensajes"), orderBy("timestamp", "asc")), (snap) => {
-    renderChatMundo(snap.docs.map((d) => d.data()));
+    snap.docChanges().forEach((change) => {
+      if (change.type === "added") añadirMensajeChatMundo(change.doc.data());
+    });
   });
 
   onSnapshot(collection(db, "mundos", mundoId, "pactos"), (snap) => {
@@ -321,6 +325,7 @@ function renderCastillo() {
   $("reino-rango-texto").textContent = calcularRango(numTerritorios);
   $("resumen-territorios").textContent = numTerritorios;
   $("resumen-ejercito").textContent = fuerzaEjercito(reinoActual.ejercito);
+  $("resumen-reputacion").textContent = reinoActual.reputacion ?? 100;
 
   $("castillo-nivel").textContent = reinoActual.castilloNivel || 1;
   $("castillo-imagen").innerHTML = reinoActual.castilloImagenUrl
@@ -754,9 +759,15 @@ $("btn-enviar-ataque").addEventListener("click", async () => {
   const segundosPorCasilla = soloCaballeria ? SEGUNDOS_POR_CASILLA_VIAJE / 2 : SEGUNDOS_POR_CASILLA_VIAJE;
   const propietarioDestino = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === casillaSeleccionada.f && t.c === casillaSeleccionada.c));
 
+  // Si traicionaste a este mismo reino hace poco, este ataque es la
+  // emboscada por sorpresa que te ganaste — se consume al usarla.
+  const sorpresa = reinoActual.sorpresaDisponibleContra;
+  const aplicaSorpresa = sorpresa && propietarioDestino && sorpresa.uid === propietarioDestino[0] && sorpresa.expiraEn > Date.now();
+
   await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
     "ejercito.soldados": (reinoActual.ejercito.soldados || 0) - soldadosEnviados,
     "ejercito.caballeria": (reinoActual.ejercito.caballeria || 0) - caballeriaEnviada,
+    ...(aplicaSorpresa ? { sorpresaDisponibleContra: null } : {}),
   });
 
   await addDoc(collection(db, "mundos", mundoId, "movimientos"), {
@@ -767,6 +778,7 @@ $("btn-enviar-ataque").addEventListener("click", async () => {
     destino: casillaSeleccionada,
     soldadosEnviados,
     caballeriaEnviada,
+    ataqueSorpresa: !!aplicaSorpresa,
     salida: Date.now(),
     llegada: Date.now() + distancia * segundosPorCasilla * 1000,
     resuelto: false,
@@ -821,7 +833,8 @@ async function intentarResolverMovimiento(movimiento) {
         const defensorSnap = await tx.get(defensorRef);
         const defensor = defensorSnap.data();
 
-        const fuerzaAtacante = (mov.soldadosEnviados || 0) + (mov.caballeriaEnviada || 0) * 2;
+        let fuerzaAtacante = (mov.soldadosEnviados || 0) + (mov.caballeriaEnviada || 0) * 2;
+        if (mov.ataqueSorpresa) fuerzaAtacante = Math.round(fuerzaAtacante * 1.25);
         const fuerzaDefensiva = defensaConMurallas(defensor);
         const nivelMurallas = defensor.edificios?.murallas?.nivel || 0;
 
@@ -841,7 +854,7 @@ async function intentarResolverMovimiento(movimiento) {
           textoResultado =
             territoriosRestantes.length === 0
               ? `👑 ${mov.atacanteNombre} conquista el último territorio de ${mov.defensorNombre} — ¡reino derrotado!`
-              : `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}${nivelMurallas > 0 ? ` (a pesar de sus murallas nivel ${nivelMurallas})` : ""}.`;
+              : `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}${mov.ataqueSorpresa ? " con una EMBOSCADA por sorpresa" : ""}${nivelMurallas > 0 ? ` (a pesar de sus murallas nivel ${nivelMurallas})` : ""}.`;
         } else {
           // El defensor resiste, gracias en parte a sus murallas — pero
           // sufre bajas proporcionales al empuje del ataque recibido.
@@ -863,14 +876,36 @@ async function intentarResolverMovimiento(movimiento) {
   }
 }
 
-// ---------- Chat del mundo ----------
-function renderChatMundo(mensajes) {
-  const cont = $("chat-mensajes");
-  cont.innerHTML = mensajes
-    .map((m) => `<div class="chat-linea-mundo"><span class="chat-autor-mundo">${m.autorNombre}:</span> ${m.texto}</div>`)
-    .join("");
-  cont.scrollTop = cont.scrollHeight;
+// ---------- Chat del mundo (flotante, estilo Twitch, se desvanece solo) ----------
+const MAX_LINEAS_CHAT = 6;
+const DURACION_LINEA_CHAT_MS = 20000;
+
+function colorParaUid(uid) {
+  let hash = 0;
+  for (let i = 0; i < String(uid).length; i++) hash = String(uid).charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${hash % 360}, 65%, 68%)`;
 }
+
+function añadirMensajeChatMundo(mensaje) {
+  const cont = $("chat-overlay");
+  const color = mensaje.autorUid === "sistema" ? "#F0C93B" : colorParaUid(mensaje.autorUid);
+  const linea = document.createElement("div");
+  linea.className = "chat-linea";
+  linea.innerHTML = `<span class="chat-autor" style="color:${color};">${mensaje.autorNombre}:</span> ${mensaje.texto}`;
+  cont.appendChild(linea);
+
+  while (cont.children.length > MAX_LINEAS_CHAT) cont.removeChild(cont.firstChild);
+
+  setTimeout(() => {
+    linea.classList.add("saliendo");
+    setTimeout(() => linea.remove(), 1000);
+  }, DURACION_LINEA_CHAT_MS);
+}
+
+$("btn-abrir-chat").addEventListener("click", () => {
+  $("chat-input-flotante").classList.toggle("visible");
+  if ($("chat-input-flotante").classList.contains("visible")) $("in-chat-texto").focus();
+});
 
 $("btn-enviar-chat").addEventListener("click", async () => {
   const texto = $("in-chat-texto").value.trim();
@@ -889,50 +924,139 @@ $("in-chat-texto").addEventListener("keydown", (e) => {
 
 // ---------- Reinos: lista, pactos de alianza, y espionaje ----------
 function estadoPactoCon(uidOtro) {
-  const pacto = pactosActuales.find(
-    (p) => p.estado !== "roto" && ((p.propuestoPor === currentUid && p.propuestoA === uidOtro) || (p.propuestoPor === uidOtro && p.propuestoA === currentUid))
-  );
+  const pacto = pactosActuales.find((p) => p.estado !== "roto" && p.jugadores.includes(uidOtro));
   return pacto || null;
 }
 
-// Devuelve tu aliado activo (si tienes uno) — { uid, nombre } — o null.
-// De momento el juego solo contempla una alianza activa a la vez por
-// simplicidad (puedes romperla y proponer otra distinta cuando quieras).
+// Devuelve tu aliado activo con alianza MILITAR (si tienes uno) — { uid,
+// nombre } — o null. Solo la alianza militar permite ataques conjuntos; la
+// de no agresión solo impide atacaros entre vosotros.
 function aliadoActivo() {
-  const pacto = pactosActuales.find((p) => p.estado === "aceptado" && (p.propuestoPor === currentUid || p.propuestoA === currentUid));
+  const pacto = pactosActuales.find((p) => p.estado === "aceptado" && p.tipo === "alianza_militar" && p.jugadores.includes(currentUid));
   if (!pacto) return null;
-  const uidAliado = pacto.propuestoPor === currentUid ? pacto.propuestoA : pacto.propuestoPor;
-  const nombreAliado = todosLosReinos[uidAliado]?.nombreReino || (pacto.propuestoPor === currentUid ? "tu aliado" : pacto.propuestoPorNombre);
-  return { uid: uidAliado, nombre: nombreAliado };
+  const uidAliado = pacto.jugadores.find((u) => u !== currentUid);
+  return { uid: uidAliado, nombre: pacto.nombres?.[uidAliado] || "tu aliado" };
 }
 
+const ETIQUETAS_TIPO_PACTO = { no_agresion: "🕊️ No agresión", alianza_militar: "⚔️ Alianza militar" };
+
+// ---------- Alerta central: aparece sola cuando alguien espera tu respuesta ----------
+let pactoEnNegociacion = null;
+
+function comprobarNegociacionesPendientes() {
+  const pendiente = pactosActuales.find((p) => p.estado === "pendiente" && p.ultimaPropuestaPor !== currentUid && p.jugadores.includes(currentUid));
+  if (!pendiente) {
+    $("negociacion-modal").classList.remove("visible");
+    pactoEnNegociacion = null;
+    return;
+  }
+  if (pactoEnNegociacion?.id === pendiente.id && $("negociacion-modal").classList.contains("visible")) return; // ya mostrada
+  pactoEnNegociacion = pendiente;
+  const otroUid = pendiente.jugadores.find((u) => u !== currentUid);
+  const otroNombre = pendiente.nombres?.[otroUid] || "Un reino";
+  $("negociacion-titulo").textContent = "🤝 Propuesta diplomática";
+  $("negociacion-texto").textContent =
+    `${otroNombre} propone: ${ETIQUETAS_TIPO_PACTO[pendiente.tipo] || pendiente.tipo}.` + (pendiente.mensaje ? ` "${pendiente.mensaje}"` : "");
+  const historial = pendiente.historial || [];
+  if (historial.length > 1) {
+    $("negociacion-historial").style.display = "block";
+    $("negociacion-historial").innerHTML = historial
+      .map((h) => `<div>${h.nombre}: ${ETIQUETAS_TIPO_PACTO[h.tipo] || h.tipo}${h.mensaje ? ` — "${h.mensaje}"` : ""}</div>`)
+      .join("");
+  } else {
+    $("negociacion-historial").style.display = "none";
+  }
+  $("negociacion-modal").classList.add("visible");
+}
+
+$("btn-negociacion-aceptar").addEventListener("click", async () => {
+  if (!pactoEnNegociacion) return;
+  await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoEnNegociacion.id), { estado: "aceptado" });
+  await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+    autorUid: "sistema",
+    autorNombre: "📯 Heraldo",
+    texto: `🤝 ${reinoActual.nombreReino} y ${pactoEnNegociacion.nombres[pactoEnNegociacion.jugadores.find((u) => u !== currentUid)]} han sellado un pacto de ${ETIQUETAS_TIPO_PACTO[pactoEnNegociacion.tipo]}.`,
+    timestamp: serverTimestamp(),
+  });
+  $("negociacion-modal").classList.remove("visible");
+});
+
+$("btn-negociacion-rechazar").addEventListener("click", async () => {
+  if (!pactoEnNegociacion) return;
+  await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoEnNegociacion.id), { estado: "roto" });
+  $("negociacion-modal").classList.remove("visible");
+});
+
+$("btn-negociacion-contraofertar").addEventListener("click", () => {
+  if (!pactoEnNegociacion) return;
+  $("negociacion-modal").classList.remove("visible");
+  abrirProponerPacto(
+    pactoEnNegociacion.jugadores.find((u) => u !== currentUid),
+    pactoEnNegociacion.nombres[pactoEnNegociacion.jugadores.find((u) => u !== currentUid)],
+    pactoEnNegociacion
+  );
+});
+
+// ---------- Proponer o contraofertar ----------
+let pactoObjetivoParaProponer = null; // { uid, nombre, pactoExistente }
+
+function abrirProponerPacto(uid, nombre, pactoExistente = null) {
+  pactoObjetivoParaProponer = { uid, nombre, pactoExistente };
+  $("proponer-pacto-titulo").textContent = pactoExistente ? `Contraofertar a ${nombre}` : `Proponer pacto a ${nombre}`;
+  $("sel-tipo-pacto").value = pactoExistente?.tipo || "no_agresion";
+  $("in-mensaje-pacto").value = "";
+  $("proponer-pacto-modal").classList.add("visible");
+}
+$("btn-cancelar-pacto").addEventListener("click", () => $("proponer-pacto-modal").classList.remove("visible"));
+
+$("btn-confirmar-pacto").addEventListener("click", async () => {
+  if (!pactoObjetivoParaProponer) return;
+  const { uid, nombre, pactoExistente } = pactoObjetivoParaProponer;
+  const tipo = $("sel-tipo-pacto").value;
+  const mensaje = $("in-mensaje-pacto").value.trim().slice(0, 200);
+  const entradaHistorial = { uid: currentUid, nombre: reinoActual.nombreReino, tipo, mensaje, timestamp: Date.now() };
+
+  if (pactoExistente) {
+    await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoExistente.id), {
+      tipo,
+      mensaje,
+      ultimaPropuestaPor: currentUid,
+      estado: "pendiente",
+      historial: [...(pactoExistente.historial || []), entradaHistorial],
+      actualizadoEn: serverTimestamp(),
+    });
+  } else {
+    await addDoc(collection(db, "mundos", mundoId, "pactos"), {
+      jugadores: [currentUid, uid],
+      nombres: { [currentUid]: reinoActual.nombreReino, [uid]: nombre },
+      ultimaPropuestaPor: currentUid,
+      tipo,
+      mensaje,
+      estado: "pendiente",
+      historial: [entradaHistorial],
+      actualizadoEn: serverTimestamp(),
+    });
+  }
+  pactoObjetivoParaProponer = null;
+  $("proponer-pacto-modal").classList.remove("visible");
+});
+
 function renderPactosPendientes() {
+  // La alerta central ya avisa de las que necesitan tu respuesta — aquí
+  // solo dejamos un resumen discreto de las que has enviado tú y esperan.
   const cont = $("lista-pactos-pendientes");
-  const pendientesParaMi = pactosActuales.filter((p) => p.estado === "pendiente" && p.propuestoA === currentUid);
-  if (pendientesParaMi.length === 0) {
+  const misPropuestasEnEspera = pactosActuales.filter((p) => p.estado === "pendiente" && p.ultimaPropuestaPor === currentUid && p.jugadores.includes(currentUid));
+  if (misPropuestasEnEspera.length === 0) {
     cont.innerHTML = "";
     return;
   }
-  cont.innerHTML =
-    `<h3 style="font-size:1rem;">Propuestas de alianza pendientes</h3>` +
-    pendientesParaMi
-      .map(
-        (p) => `
-      <div class="reino-card">
-        <span>${p.propuestoPorNombre} quiere aliarse contigo</span>
-        <div style="display:flex; gap:.4em;">
-          <button class="btn-aceptar-pacto" data-id="${p.id}" style="font-size:.75rem;">✅ Aceptar</button>
-          <button class="btn-rechazar-pacto" data-id="${p.id}" style="font-size:.75rem;">✕ Rechazar</button>
-        </div>
-      </div>`
-      )
-      .join("");
-  cont.querySelectorAll(".btn-aceptar-pacto").forEach((btn) =>
-    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "aceptado" }))
-  );
-  cont.querySelectorAll(".btn-rechazar-pacto").forEach((btn) =>
-    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "roto" }))
-  );
+  cont.innerHTML = misPropuestasEnEspera
+    .map((p) => {
+      const otro = p.jugadores.find((u) => u !== currentUid);
+      return `<p style="color:var(--parchment-dim); font-size:.8rem;">⏳ Esperando respuesta de ${p.nombres[otro]}...</p>`;
+    })
+    .join("");
+  comprobarNegociacionesPendientes();
 }
 
 function renderOtrosReinos() {
@@ -947,22 +1071,21 @@ function renderOtrosReinos() {
       const pacto = estadoPactoCon(uid);
       let botonAlianza;
       if (!pacto) {
-        botonAlianza = `<button class="btn-proponer-pacto" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🤝 Proponer alianza</button>`;
+        botonAlianza = `<button class="btn-proponer-pacto" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🤝 Proponer pacto</button>`;
       } else if (pacto.estado === "pendiente") {
-        botonAlianza =
-          pacto.propuestoPor === currentUid
-            ? `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Propuesta enviada...</span>`
-            : `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Te ha propuesto una alianza (revisa arriba)</span>`;
+        botonAlianza = `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Negociación en curso</span>`;
       } else if (pacto.estado === "aceptado") {
-        botonAlianza = `<button class="btn-romper-pacto" data-id="${pacto.id}" style="font-size:.7rem;">💔 Romper alianza</button>`;
+        botonAlianza = `
+          <button class="btn-romper-pacto" data-id="${pacto.id}" style="font-size:.7rem;">💔 Romper</button>
+          <button class="btn-traicionar" data-id="${pacto.id}" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem; color:var(--rust);">🗡️ Traicionar</button>`;
       } else {
-        botonAlianza = `<button class="btn-proponer-pacto" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🤝 Proponer alianza</button>`;
+        botonAlianza = `<button class="btn-proponer-pacto" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🤝 Proponer pacto</button>`;
       }
       return `
         <div class="reino-card">
           <div>
-            <strong>${reino.nombreReino}</strong> ${pacto?.estado === "aceptado" ? "🤝" : ""}
-            <p style="color:var(--parchment-dim); font-size:.75rem; margin:.1em 0;">${(reino.territorios || []).length} territorio(s)</p>
+            <strong>${reino.nombreReino}</strong> ${pacto?.estado === "aceptado" ? ETIQUETAS_TIPO_PACTO[pacto.tipo] : ""}
+            <p style="color:var(--parchment-dim); font-size:.75rem; margin:.1em 0;">${(reino.territorios || []).length} territorio(s) · reputación ${reino.reputacion ?? 100}</p>
           </div>
           <div style="display:flex; gap:.4em; flex-wrap:wrap; justify-content:flex-end;">
             ${botonAlianza}
@@ -973,22 +1096,33 @@ function renderOtrosReinos() {
     .join("");
 
   cont.querySelectorAll(".btn-proponer-pacto").forEach((btn) =>
-    btn.addEventListener("click", async () => {
-      await addDoc(collection(db, "mundos", mundoId, "pactos"), {
-        propuestoPor: currentUid,
-        propuestoPorNombre: reinoActual.nombreReino,
-        propuestoA: btn.dataset.uid,
-        estado: "pendiente",
-        timestamp: serverTimestamp(),
-      });
-    })
+    btn.addEventListener("click", () => abrirProponerPacto(btn.dataset.uid, btn.dataset.nombre))
   );
   cont.querySelectorAll(".btn-romper-pacto").forEach((btn) =>
     btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "roto" }))
   );
+  cont.querySelectorAll(".btn-traicionar").forEach((btn) => btn.addEventListener("click", () => traicionar(btn.dataset.id, btn.dataset.uid, btn.dataset.nombre)));
   cont.querySelectorAll(".btn-elegir-ladron").forEach((btn) =>
     btn.addEventListener("click", () => elegirObjetivoLadron(btn.dataset.uid, btn.dataset.nombre))
   );
+}
+
+// ---------- Traición: rompes la alianza para siempre a cambio de una
+// ventaja táctica puntual, pero todo el mundo se entera. ----------
+async function traicionar(pactoId, uidVictima, nombreVictima) {
+  if (!confirm(`¿Seguro que quieres traicionar a ${nombreVictima}? Perderás reputación y todo el mundo lo sabrá — pero tu próximo ataque contra ellos será una emboscada (+25% de fuerza) durante 5 minutos.`)) return;
+
+  await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoId), { estado: "roto" });
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    reputacion: Math.max(0, (reinoActual.reputacion ?? 100) - 30),
+    sorpresaDisponibleContra: { uid: uidVictima, expiraEn: Date.now() + 5 * 60 * 1000 },
+  });
+  await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+    autorUid: "sistema",
+    autorNombre: "📯 Heraldo",
+    texto: `🗡️👑 ¡TRAICIÓN! ${reinoActual.nombreReino} ha roto su alianza con ${nombreVictima} por la espalda. Su reputación cae a ${Math.max(0, (reinoActual.reputacion ?? 100) - 30)}.`,
+    timestamp: serverTimestamp(),
+  });
 }
 
 function elegirObjetivoLadron(uidObjetivo, nombreObjetivo) {
@@ -1020,6 +1154,11 @@ $("btn-enviar-ladron").addEventListener("click", async () => {
   const destinoCapital = objetivo?.territorios?.[0] || origen;
   const distancia = Math.abs(origen.f - destinoCapital.f) + Math.abs(origen.c - destinoCapital.c) + 1;
 
+  // Cuantas más murallas tenga el objetivo, más probable que detecte al
+  // ladrón ANTES de que llegue — dándole tiempo a reaccionar de verdad.
+  const nivelMurallasObjetivo = objetivo?.edificios?.murallas?.nivel || 0;
+  const detectadoTemprano = Math.random() < Math.min(0.85, 0.15 + nivelMurallasObjetivo * 0.1);
+
   await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
     recursos: { comida: recursos.comida - COSTE_ENVIAR_LADRON.comida, piedra: recursos.piedra, oro: recursos.oro - COSTE_ENVIAR_LADRON.oro },
   });
@@ -1030,6 +1169,8 @@ $("btn-enviar-ladron").addEventListener("click", async () => {
     defensorUid: ladronObjetivoSeleccionado.uid,
     defensorNombre: ladronObjetivoSeleccionado.nombre,
     llegada: Date.now() + distancia * SEGUNDOS_VIAJE_LADRON * 1000,
+    detectadoTemprano,
+    reaccionDefensor: null,
     resuelto: false,
   });
 
@@ -1037,6 +1178,9 @@ $("btn-enviar-ladron").addEventListener("click", async () => {
   ladronObjetivoSeleccionado = null;
   setTimeout(() => ($("ladron-panel").style.display = "none"), 1200);
 });
+
+const COSTE_REFORZAR_GUARDIA = { oro: 40 };
+const COSTE_TENDER_TRAMPA = { oro: 30, piedra: 30 };
 
 function renderLadrones(ladrones) {
   const cont = $("lista-ladrones");
@@ -1051,9 +1195,46 @@ function renderLadrones(ladrones) {
       .map((l) => {
         const restante = Math.max(0, Math.round((l.llegada - Date.now()) / 1000));
         const esMio = l.atacanteUid === currentUid;
-        return `<div class="registro-linea">${esMio ? `Tu ladrón se acerca a "${l.defensorNombre}"` : `🕵️ Alguien puede estar intentando robarte...`} — ${restante}s</div>`;
+
+        if (esMio) {
+          return `<div class="registro-linea">Tu ladrón se acerca a "${l.defensorNombre}" — ${restante}s</div>`;
+        }
+
+        // Soy el objetivo. Si no lo he detectado a tiempo, solo un aviso
+        // vago (no sé quién es ni cuándo llega de verdad). Si SÍ lo he
+        // detectado, aquí es donde puedo reaccionar de verdad.
+        if (!l.detectadoTemprano) {
+          return `<div class="registro-linea">🕵️ Rumores de que alguien podría estar tramando algo contra ti...</div>`;
+        }
+        if (l.reaccionDefensor) {
+          const etiqueta = l.reaccionDefensor === "reforzar" ? "🛡️ Guardia reforzada" : "🕸️ Trampa tendida";
+          return `<div class="registro-linea">⚠️ ${l.atacanteNombre} envía un ladrón — ${etiqueta}, llega en ${restante}s.</div>`;
+        }
+        return `
+          <div class="reino-card" style="flex-direction:column; align-items:stretch; gap:.4em; border-color:var(--rust);">
+            <span>⚠️ ¡Has detectado un ladrón de <strong>${l.atacanteNombre}</strong> dirigiéndose a tu reino! Llega en ${restante}s.</span>
+            <div style="display:flex; gap:.4em; flex-wrap:wrap;">
+              <button class="btn-reforzar-guardia" data-id="${l.id}" style="font-size:.75rem;">🛡️ Reforzar guardia (🪙${COSTE_REFORZAR_GUARDIA.oro})</button>
+              <button class="btn-tender-trampa" data-id="${l.id}" style="font-size:.75rem;">🕸️ Tenderle una trampa (🪙${COSTE_TENDER_TRAMPA.oro} 🪨${COSTE_TENDER_TRAMPA.piedra})</button>
+            </div>
+          </div>`;
       })
       .join("");
+
+  cont.querySelectorAll(".btn-reforzar-guardia").forEach((btn) => btn.addEventListener("click", () => reaccionarAnteLadron(btn.dataset.id, "reforzar")));
+  cont.querySelectorAll(".btn-tender-trampa").forEach((btn) => btn.addEventListener("click", () => reaccionarAnteLadron(btn.dataset.id, "trampa")));
+}
+
+async function reaccionarAnteLadron(ladronId, tipo) {
+  const coste = tipo === "reforzar" ? COSTE_REFORZAR_GUARDIA : COSTE_TENDER_TRAMPA;
+  const recursos = await sincronizarRecursos();
+  if (recursos.oro < (coste.oro || 0) || recursos.piedra < (coste.piedra || 0)) {
+    return alert("No tienes recursos suficientes para esa reacción.");
+  }
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    recursos: { comida: recursos.comida, piedra: recursos.piedra - (coste.piedra || 0), oro: recursos.oro - (coste.oro || 0) },
+  });
+  await updateDoc(doc(db, "mundos", mundoId, "ladrones", ladronId), { reaccionDefensor: tipo });
 }
 
 // Un ladrón descubierto no roba nada; cuantas más murallas tenga el
@@ -1075,7 +1256,9 @@ async function intentarResolverLadron(ladron) {
       const atacante = atacanteSnap.data();
 
       const nivelMurallas = defensor?.edificios?.murallas?.nivel || 0;
-      const probabilidadExito = Math.max(0.15, 0.6 - nivelMurallas * 0.05);
+      let probabilidadExito = Math.max(0.1, 0.6 - nivelMurallas * 0.05);
+      if (l.reaccionDefensor === "reforzar") probabilidadExito = Math.max(0.05, probabilidadExito - 0.25);
+      if (l.reaccionDefensor === "trampa") probabilidadExito = Math.max(0.05, probabilidadExito - 0.35);
       const exito = Math.random() < probabilidadExito;
 
       let texto;
@@ -1106,6 +1289,24 @@ async function intentarResolverLadron(ladron) {
           });
         }
         texto = `🕵️ El ladrón de ${l.atacanteNombre} roba recursos de ${l.defensorNombre} sin ser visto.`;
+      } else if (l.reaccionDefensor === "trampa" && atacante) {
+        // Cae en la trampa: no solo fracasa, además el atacante sufre un
+        // revés en su propia casa (se ha corrido la voz de su intento).
+        const recursosAtacante = recursosActuales(atacante);
+        const perdida = {
+          comida: Math.round(recursosAtacante.comida * 0.1),
+          piedra: Math.round(recursosAtacante.piedra * 0.1),
+          oro: Math.round(recursosAtacante.oro * 0.1),
+        };
+        tx.update(atacanteRef, {
+          recursos: {
+            comida: recursosAtacante.comida - perdida.comida,
+            piedra: recursosAtacante.piedra - perdida.piedra,
+            oro: recursosAtacante.oro - perdida.oro,
+          },
+          ultimaActualizacionRecursos: serverTimestamp(),
+        });
+        texto = `🕸️ ¡${l.defensorNombre} atrapa al ladrón de ${l.atacanteNombre} en una trampa! Su intento se paga caro — pierde parte de sus propios recursos.`;
       } else {
         texto = `🛡️ ${l.defensorNombre} descubre y detiene a un ladrón enviado por ${l.atacanteNombre}${nivelMurallas > 0 ? ` (murallas nivel ${nivelMurallas})` : ""}.`;
       }

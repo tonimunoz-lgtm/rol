@@ -32,6 +32,22 @@ export function produccionPorNivel(nivel) {
   return Math.round(8 * (nivel || 0) * 1.25);
 }
 
+// La caballería cuenta el doble en combate que la infantería (más cara y
+// más lenta de entrenar, a cambio de pegar más fuerte).
+export function fuerzaEjercito(ejercito) {
+  return (ejercito?.soldados || 0) + (ejercito?.caballeria || 0) * 2;
+}
+
+// Las murallas dan un % de defensa extra por nivel — cuanto más altas,
+// más difícil conquistar ese castillo a la fuerza.
+export function defensaConMurallas(reino) {
+  const nivelMurallas = reino.edificios?.murallas?.nivel || 0;
+  return fuerzaEjercito(reino.ejercito) * (1 + nivelMurallas * 0.15);
+}
+
+export const COSTE_SOLDADO = { comida: 8, piedra: 2, oro: 6, segundos: 6 };
+export const COSTE_CABALLERIA = { comida: 14, piedra: 4, oro: 14, segundos: 10 };
+
 export function calcularProduccionTotal(edificios) {
   return {
     comida: 20 + produccionPorNivel(edificios?.granja?.nivel), // base, para que nunca sea 0

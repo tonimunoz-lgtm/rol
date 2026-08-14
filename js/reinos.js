@@ -4,7 +4,7 @@ import {
   signInAnonymously, onAuthStateChanged,
   doc, getDoc, setDoc, updateDoc, onSnapshot,
   collection, addDoc, serverTimestamp,
-  query, where, getDocs, runTransaction,
+  query, where, orderBy, getDocs, runTransaction,
 } from "./firebase-config.js";
 import {
   EDIFICIOS_DEF, ORDEN_EDIFICIOS, costeMejora, calcularProduccionTotal,
@@ -24,6 +24,8 @@ let mundoActual = null;
 let reinoActual = null;
 let todosLosReinos = {}; // uid -> reino, de TODOS los jugadores del mundo (para el mapa)
 let casillaSeleccionada = null;
+let pactosActuales = [];
+let ladronObjetivoSeleccionado = null;
 
 // ---------- Arranque / sesión ----------
 onAuthStateChanged(auth, async (user) => {
@@ -240,6 +242,22 @@ function arrancarJuego() {
     const movimientos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderMovimientos(movimientos);
     movimientos.forEach((m) => intentarResolverMovimiento(m));
+  });
+
+  onSnapshot(query(collection(db, "mundos", mundoId, "mensajes"), orderBy("timestamp", "asc")), (snap) => {
+    renderChatMundo(snap.docs.map((d) => d.data()));
+  });
+
+  onSnapshot(collection(db, "mundos", mundoId, "pactos"), (snap) => {
+    pactosActuales = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderOtrosReinos();
+    renderPactosPendientes();
+  });
+
+  onSnapshot(query(collection(db, "mundos", mundoId, "ladrones"), where("resuelto", "==", false)), (snap) => {
+    const ladrones = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderLadrones(ladrones);
+    ladrones.forEach((l) => intentarResolverLadron(l));
   });
 
   setInterval(() => {
@@ -787,5 +805,252 @@ async function intentarResolverMovimiento(movimiento) {
     });
   } catch (e) {
     console.warn("No se pudo resolver el movimiento:", e.message);
+  }
+}
+
+// ---------- Chat del mundo ----------
+function renderChatMundo(mensajes) {
+  const cont = $("chat-mensajes");
+  cont.innerHTML = mensajes
+    .map((m) => `<div class="chat-linea-mundo"><span class="chat-autor-mundo">${m.autorNombre}:</span> ${m.texto}</div>`)
+    .join("");
+  cont.scrollTop = cont.scrollHeight;
+}
+
+$("btn-enviar-chat").addEventListener("click", async () => {
+  const texto = $("in-chat-texto").value.trim();
+  if (!texto || !reinoActual) return;
+  await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+    autorUid: currentUid,
+    autorNombre: reinoActual.nombreReino,
+    texto: texto.slice(0, 300),
+    timestamp: serverTimestamp(),
+  });
+  $("in-chat-texto").value = "";
+});
+$("in-chat-texto").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("btn-enviar-chat").click();
+});
+
+// ---------- Reinos: lista, pactos de alianza, y espionaje ----------
+function estadoPactoCon(uidOtro) {
+  const pacto = pactosActuales.find(
+    (p) => p.estado !== "roto" && ((p.propuestoPor === currentUid && p.propuestoA === uidOtro) || (p.propuestoPor === uidOtro && p.propuestoA === currentUid))
+  );
+  return pacto || null;
+}
+
+function renderPactosPendientes() {
+  const cont = $("lista-pactos-pendientes");
+  const pendientesParaMi = pactosActuales.filter((p) => p.estado === "pendiente" && p.propuestoA === currentUid);
+  if (pendientesParaMi.length === 0) {
+    cont.innerHTML = "";
+    return;
+  }
+  cont.innerHTML =
+    `<h3 style="font-size:1rem;">Propuestas de alianza pendientes</h3>` +
+    pendientesParaMi
+      .map(
+        (p) => `
+      <div class="reino-card">
+        <span>${p.propuestoPorNombre} quiere aliarse contigo</span>
+        <div style="display:flex; gap:.4em;">
+          <button class="btn-aceptar-pacto" data-id="${p.id}" style="font-size:.75rem;">✅ Aceptar</button>
+          <button class="btn-rechazar-pacto" data-id="${p.id}" style="font-size:.75rem;">✕ Rechazar</button>
+        </div>
+      </div>`
+      )
+      .join("");
+  cont.querySelectorAll(".btn-aceptar-pacto").forEach((btn) =>
+    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "aceptado" }))
+  );
+  cont.querySelectorAll(".btn-rechazar-pacto").forEach((btn) =>
+    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "roto" }))
+  );
+}
+
+function renderOtrosReinos() {
+  const cont = $("lista-otros-reinos");
+  const otros = Object.entries(todosLosReinos).filter(([uid]) => uid !== currentUid);
+  if (otros.length === 0) {
+    cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Todavía no hay más reinos en este mundo.</p>`;
+    return;
+  }
+  cont.innerHTML = otros
+    .map(([uid, reino]) => {
+      const pacto = estadoPactoCon(uid);
+      let botonAlianza;
+      if (!pacto) {
+        botonAlianza = `<button class="btn-proponer-pacto" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🤝 Proponer alianza</button>`;
+      } else if (pacto.estado === "pendiente") {
+        botonAlianza =
+          pacto.propuestoPor === currentUid
+            ? `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Propuesta enviada...</span>`
+            : `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Te ha propuesto una alianza (revisa arriba)</span>`;
+      } else if (pacto.estado === "aceptado") {
+        botonAlianza = `<button class="btn-romper-pacto" data-id="${pacto.id}" style="font-size:.7rem;">💔 Romper alianza</button>`;
+      } else {
+        botonAlianza = `<button class="btn-proponer-pacto" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🤝 Proponer alianza</button>`;
+      }
+      return `
+        <div class="reino-card">
+          <div>
+            <strong>${reino.nombreReino}</strong> ${pacto?.estado === "aceptado" ? "🤝" : ""}
+            <p style="color:var(--parchment-dim); font-size:.75rem; margin:.1em 0;">${(reino.territorios || []).length} territorio(s)</p>
+          </div>
+          <div style="display:flex; gap:.4em; flex-wrap:wrap; justify-content:flex-end;">
+            ${botonAlianza}
+            <button class="btn-elegir-ladron" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🕵️ Ladrón</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  cont.querySelectorAll(".btn-proponer-pacto").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await addDoc(collection(db, "mundos", mundoId, "pactos"), {
+        propuestoPor: currentUid,
+        propuestoPorNombre: reinoActual.nombreReino,
+        propuestoA: btn.dataset.uid,
+        estado: "pendiente",
+        timestamp: serverTimestamp(),
+      });
+    })
+  );
+  cont.querySelectorAll(".btn-romper-pacto").forEach((btn) =>
+    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "roto" }))
+  );
+  cont.querySelectorAll(".btn-elegir-ladron").forEach((btn) =>
+    btn.addEventListener("click", () => elegirObjetivoLadron(btn.dataset.uid, btn.dataset.nombre))
+  );
+}
+
+function elegirObjetivoLadron(uidObjetivo, nombreObjetivo) {
+  const pacto = estadoPactoCon(uidObjetivo);
+  if (pacto?.estado === "aceptado") {
+    return alert("No puedes robar a un reino aliado — rompe la alianza primero si quieres hacerlo.");
+  }
+  ladronObjetivoSeleccionado = { uid: uidObjetivo, nombre: nombreObjetivo };
+  $("ladron-info").textContent = `Enviar un ladrón a robar recursos de "${nombreObjetivo}". Puede ser descubierto — sus murallas dificultan el robo.`;
+  $("ladron-panel").style.display = "block";
+}
+
+$("btn-cancelar-ladron").addEventListener("click", () => {
+  ladronObjetivoSeleccionado = null;
+  $("ladron-panel").style.display = "none";
+});
+
+const COSTE_ENVIAR_LADRON = { comida: 20, piedra: 0, oro: 30 };
+const SEGUNDOS_VIAJE_LADRON = 20;
+
+$("btn-enviar-ladron").addEventListener("click", async () => {
+  if (!ladronObjetivoSeleccionado) return;
+  const recursos = await sincronizarRecursos();
+  if (!puedeCostear(recursos, { ...COSTE_ENVIAR_LADRON, segundos: 0 })) {
+    return ($("ladron-status").textContent = "No tienes recursos suficientes para pagar al ladrón.");
+  }
+  const objetivo = todosLosReinos[ladronObjetivoSeleccionado.uid];
+  const origen = reinoActual.territorios[0];
+  const destinoCapital = objetivo?.territorios?.[0] || origen;
+  const distancia = Math.abs(origen.f - destinoCapital.f) + Math.abs(origen.c - destinoCapital.c) + 1;
+
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    recursos: { comida: recursos.comida - COSTE_ENVIAR_LADRON.comida, piedra: recursos.piedra, oro: recursos.oro - COSTE_ENVIAR_LADRON.oro },
+  });
+
+  await addDoc(collection(db, "mundos", mundoId, "ladrones"), {
+    atacanteUid: currentUid,
+    atacanteNombre: reinoActual.nombreReino,
+    defensorUid: ladronObjetivoSeleccionado.uid,
+    defensorNombre: ladronObjetivoSeleccionado.nombre,
+    llegada: Date.now() + distancia * SEGUNDOS_VIAJE_LADRON * 1000,
+    resuelto: false,
+  });
+
+  $("ladron-status").textContent = "Ladrón en camino...";
+  ladronObjetivoSeleccionado = null;
+  setTimeout(() => ($("ladron-panel").style.display = "none"), 1200);
+});
+
+function renderLadrones(ladrones) {
+  const cont = $("lista-ladrones");
+  const relevantes = ladrones.filter((l) => l.atacanteUid === currentUid || l.defensorUid === currentUid);
+  if (relevantes.length === 0) {
+    cont.innerHTML = "";
+    return;
+  }
+  cont.innerHTML =
+    `<h3 style="font-size:1rem;">Ladrones en camino</h3>` +
+    relevantes
+      .map((l) => {
+        const restante = Math.max(0, Math.round((l.llegada - Date.now()) / 1000));
+        const esMio = l.atacanteUid === currentUid;
+        return `<div class="registro-linea">${esMio ? `Tu ladrón se acerca a "${l.defensorNombre}"` : `🕵️ Alguien puede estar intentando robarte...`} — ${restante}s</div>`;
+      })
+      .join("");
+}
+
+// Un ladrón descubierto no roba nada; cuantas más murallas tenga el
+// objetivo, más difícil que pase desapercibido.
+async function intentarResolverLadron(ladron) {
+  if (Date.now() < ladron.llegada) return;
+  try {
+    await runTransaction(db, async (tx) => {
+      const ladronRef = doc(db, "mundos", mundoId, "ladrones", ladron.id);
+      const ladronSnap = await tx.get(ladronRef);
+      const l = ladronSnap.data();
+      if (!l || l.resuelto) return;
+
+      const defensorRef = doc(db, "mundos", mundoId, "reinos", l.defensorUid);
+      const defensorSnap = await tx.get(defensorRef);
+      const defensor = defensorSnap.data();
+      const atacanteRef = doc(db, "mundos", mundoId, "reinos", l.atacanteUid);
+      const atacanteSnap = await tx.get(atacanteRef);
+      const atacante = atacanteSnap.data();
+
+      const nivelMurallas = defensor?.edificios?.murallas?.nivel || 0;
+      const probabilidadExito = Math.max(0.15, 0.6 - nivelMurallas * 0.05);
+      const exito = Math.random() < probabilidadExito;
+
+      let texto;
+      if (exito && defensor) {
+        const recursosDefensor = recursosActuales(defensor);
+        const robado = {
+          comida: Math.round(recursosDefensor.comida * 0.15),
+          piedra: Math.round(recursosDefensor.piedra * 0.15),
+          oro: Math.round(recursosDefensor.oro * 0.15),
+        };
+        tx.update(defensorRef, {
+          recursos: {
+            comida: recursosDefensor.comida - robado.comida,
+            piedra: recursosDefensor.piedra - robado.piedra,
+            oro: recursosDefensor.oro - robado.oro,
+          },
+          ultimaActualizacionRecursos: serverTimestamp(),
+        });
+        if (atacante) {
+          const recursosAtacante = recursosActuales(atacante);
+          tx.update(atacanteRef, {
+            recursos: {
+              comida: recursosAtacante.comida + robado.comida,
+              piedra: recursosAtacante.piedra + robado.piedra,
+              oro: recursosAtacante.oro + robado.oro,
+            },
+            ultimaActualizacionRecursos: serverTimestamp(),
+          });
+        }
+        texto = `🕵️ El ladrón de ${l.atacanteNombre} roba recursos de ${l.defensorNombre} sin ser visto.`;
+      } else {
+        texto = `🛡️ ${l.defensorNombre} descubre y detiene a un ladrón enviado por ${l.atacanteNombre}${nivelMurallas > 0 ? ` (murallas nivel ${nivelMurallas})` : ""}.`;
+      }
+
+      tx.update(ladronRef, { resuelto: true, resultado: texto });
+      if (l.defensorUid) {
+        const eventoRef = doc(collection(db, "mundos", mundoId, "mensajes"));
+        tx.set(eventoRef, { autorUid: "sistema", autorNombre: "📯 Heraldo", texto, timestamp: serverTimestamp() });
+      }
+    });
+  } catch (e) {
+    console.warn("No se pudo resolver el ladrón:", e.message);
   }
 }

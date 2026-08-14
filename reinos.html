@@ -43,6 +43,12 @@
   .celda-mapa:hover { stroke: var(--amber-glow); stroke-width: 1; }
   .celda-mia { stroke: var(--amber-glow) !important; stroke-width: 1.2 !important; }
   .etiqueta-castillo { font-size: 3px; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,0.7); stroke-width: .6; fill: white; pointer-events: none; }
+  .chat-linea-mundo { font-size: .85rem; }
+  .chat-linea-mundo .chat-autor-mundo { font-weight: 600; color: var(--amber); }
+  .reino-card {
+    display: flex; justify-content: space-between; align-items: center;
+    border: 1px solid #3a3226; border-radius: var(--radius); padding: .6em .8em; margin-bottom: .5em;
+  }
 </style>
 </head>
 <body>
@@ -99,6 +105,8 @@
     <div class="reinos-tabs">
       <button class="reinos-tab-btn active" data-tab="castillo">🏰 Castillo</button>
       <button class="reinos-tab-btn" data-tab="mapa">🗺️ Mapa del mundo</button>
+      <button class="reinos-tab-btn" data-tab="reinos">🤝 Reinos</button>
+      <button class="reinos-tab-btn" data-tab="chat">💬 Chat</button>
     </div>
 
     <div id="reinos-tab-castillo" class="reinos-tab-panel active">
@@ -170,6 +178,28 @@
         </div>
       </div>
       <div id="lista-movimientos" style="margin-top:1em;"></div>
+    </div>
+
+    <div id="reinos-tab-reinos" class="reinos-tab-panel">
+      <p style="color:var(--parchment-dim); font-size:.85rem;">El resto de reinos del mundo — propón alianzas o envía un ladrón a robar recursos.</p>
+      <div id="lista-pactos-pendientes"></div>
+      <div id="lista-otros-reinos"></div>
+
+      <div id="ladron-panel" class="card" style="display:none; margin-top:.8em;">
+        <p id="ladron-info" style="font-size:.85rem;"></p>
+        <button id="btn-enviar-ladron" class="primary">🕵️ Enviar ladrón</button>
+        <button id="btn-cancelar-ladron">Cancelar</button>
+        <p id="ladron-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
+      </div>
+      <div id="lista-ladrones" style="margin-top:1em;"></div>
+    </div>
+
+    <div id="reinos-tab-chat" class="reinos-tab-panel">
+      <div id="chat-mensajes" style="height:50vh; overflow-y:auto; border:1px solid #3a3226; border-radius:var(--radius); padding:.6em; margin-bottom:.6em; display:flex; flex-direction:column; gap:.4em;"></div>
+      <div style="display:flex; gap:.5em;">
+        <input id="in-chat-texto" placeholder="Escribe al resto del mundo..." style="flex:1;" />
+        <button id="btn-enviar-chat" class="primary">Enviar</button>
+      </div>
     </div>
     </div>
   </div>

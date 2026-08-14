@@ -951,6 +951,43 @@ async function intentarResolverMovimiento(movimiento) {
   }
 }
 
+// ---------- Comandos secretos de desarrollo ----------
+const COMANDO_SUPERADMIN = "pot of gold";
+const BONUS_SUPERADMIN = 10_000;
+
+async function ejecutarComandoSuperadmin(texto) {
+  if (texto.trim().toLowerCase() !== COMANDO_SUPERADMIN) {
+    return false;
+  }
+
+  const reinoRef = doc(db, "mundos", mundoId, "reinos", currentUid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(reinoRef);
+
+    if (!snap.exists()) {
+      throw new Error("No se ha encontrado el reino.");
+    }
+
+    const reino = snap.data();
+
+    // Calculamos primero todo lo producido hasta este instante.
+    const actuales = recursosActuales(reino);
+
+    tx.update(reinoRef, {
+      recursos: {
+        comida: actuales.comida + BONUS_SUPERADMIN,
+        piedra: actuales.piedra + BONUS_SUPERADMIN,
+        oro: actuales.oro + BONUS_SUPERADMIN,
+      },
+      ultimaActualizacionRecursos: serverTimestamp(),
+    });
+  });
+
+  return true;
+}
+
+
 // ---------- Chat del mundo (flotante, estilo Twitch, se desvanece solo) ----------
 const MAX_LINEAS_CHAT = 4; // la franja fija de arriba es más pequeña que en Rúnica, no caben tantas líneas a la vez
 const DURACION_LINEA_CHAT_MS = 20000;

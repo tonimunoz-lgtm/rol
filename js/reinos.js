@@ -10,6 +10,7 @@ import {
   EDIFICIOS_DEF, ORDEN_EDIFICIOS, costeMejora, calcularProduccionTotal,
   recursosActuales, puedeCostear, generarCodigoMundo,
   fuerzaEjercito, defensaConMurallas, COSTE_SOLDADO, COSTE_CABALLERIA, calcularRango,
+  reduccionTiempoBiblioteca, alcanceAtaque, TITULOS_NOBLES,
 } from "./reinos-utils.js";
 
 const $ = (id) => document.getElementById(id);
@@ -165,7 +166,8 @@ function valoresIniciales(nombreReino, colorAsignado, posicion) {
     castilloImagenUrl: "",
     edificios: edificiosIniciales,
     recursos: { comida: 150, piedra: 150, oro: 100 },
-    produccionPorHora: calcularProduccionTotal(edificiosIniciales),
+    produccionPorHora: calcularProduccionTotal(edificiosIniciales, []),
+    nobles: [],
     ultimaActualizacionRecursos: serverTimestamp(),
     construyendo: null,
     ejercito: { soldados: 5, caballeria: 0 },
@@ -369,12 +371,80 @@ function renderEdificios() {
   });
   $("barracones-nivel-texto").textContent = reinoActual.edificios?.barracones?.nivel || 0;
   $("cuadras-nivel-texto").textContent = reinoActual.edificios?.cuadras?.nivel || 0;
+  renderNobles();
+}
+
+// ---------- Nobleza: nombrar nobles y cederles tierras ----------
+$("sel-titulo-noble").innerHTML = TITULOS_NOBLES.map((t) => `<option value="${t.nombre}">${t.nombre} (🪙${t.costeOro})</option>`).join("");
+
+function renderNobles() {
+  const cont = $("lista-nobles");
+  const nobles = reinoActual.nobles || [];
+  if (nobles.length === 0) {
+    cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.8rem;">Todavía no has nombrado a ningún noble.</p>`;
+    return;
+  }
+  const territoriosLibres = (reinoActual.territorios || []).filter(
+    (t, idx) => idx > 0 && !nobles.some((n) => n.territorioAsignado && n.territorioAsignado.f === t.f && n.territorioAsignado.c === t.c)
+  );
+  cont.innerHTML = nobles
+    .map((n, idx) => {
+      const bonus = Math.round((TITULOS_NOBLES.find((t) => t.nombre === n.titulo)?.bonusProduccion || 0) * 100);
+      if (n.territorioAsignado) {
+        return `<div class="reino-card"><span>👑 ${n.nombre}, ${n.titulo} de (${n.territorioAsignado.f},${n.territorioAsignado.c}) — +${bonus}% producción</span></div>`;
+      }
+      const opcionesTierras = territoriosLibres.map((t) => `<option value="${t.f},${t.c}">(${t.f},${t.c})</option>`).join("");
+      return `
+        <div class="reino-card">
+          <span>👑 ${n.nombre}, ${n.titulo} (sin tierras todavía)</span>
+          ${
+            territoriosLibres.length > 0
+              ? `<div style="display:flex; gap:.3em;"><select class="sel-tierra-noble" data-idx="${idx}">${opcionesTierras}</select><button class="btn-ceder-tierras" data-idx="${idx}" style="font-size:.7rem;">Ceder tierras</button></div>`
+              : `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Sin territorio libre que ceder</span>`
+          }
+        </div>`;
+    })
+    .join("");
+  cont.querySelectorAll(".btn-ceder-tierras").forEach((btn) =>
+    btn.addEventListener("click", () => cederTierras(Number(btn.dataset.idx)))
+  );
+}
+
+$("btn-nombrar-noble").addEventListener("click", async () => {
+  const nombre = $("in-nombre-noble").value.trim();
+  const titulo = $("sel-titulo-noble").value;
+  if (!nombre) return ($("noble-status").textContent = "Ponle un nombre a tu nuevo noble.");
+  const costeOro = TITULOS_NOBLES.find((t) => t.nombre === titulo)?.costeOro || 0;
+  const recursos = await sincronizarRecursos();
+  if (recursos.oro < costeOro) return ($("noble-status").textContent = `Necesitas 🪙${costeOro} para nombrar un ${titulo}.`);
+
+  const nuevosNobles = [...(reinoActual.nobles || []), { nombre, titulo, territorioAsignado: null }];
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    recursos: { comida: recursos.comida, piedra: recursos.piedra, oro: recursos.oro - costeOro },
+    nobles: nuevosNobles,
+  });
+  $("in-nombre-noble").value = "";
+  $("noble-status").textContent = `¡${nombre} ha sido nombrado ${titulo}! Ahora cédele tierras para que empiece a rendir.`;
+});
+
+async function cederTierras(idxNoble) {
+  const select = document.querySelector(`.sel-tierra-noble[data-idx="${idxNoble}"]`);
+  if (!select || !select.value) return;
+  const [f, c] = select.value.split(",").map(Number);
+  const nuevosNobles = [...(reinoActual.nobles || [])];
+  nuevosNobles[idxNoble] = { ...nuevosNobles[idxNoble], territorioAsignado: { f, c } };
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    nobles: nuevosNobles,
+    produccionPorHora: calcularProduccionTotal(reinoActual.edificios, nuevosNobles),
+  });
 }
 
 async function iniciarConstruccion(clave) {
   if (reinoActual.construyendo) return alert("Ya tienes una construcción en marcha. Espera a que termine.");
   const nivelActual = clave === "castillo" ? reinoActual.castilloNivel || 1 : reinoActual.edificios?.[clave]?.nivel || 0;
   const coste = costeMejora(nivelActual);
+  const reduccion = reduccionTiempoBiblioteca(reinoActual.edificios?.biblioteca?.nivel);
+  const segundosReales = Math.round(coste.segundos * (1 - reduccion));
   const recursos = await sincronizarRecursos();
   if (!puedeCostear(recursos, coste)) return alert("No tienes recursos suficientes todavía.");
 
@@ -384,7 +454,7 @@ async function iniciarConstruccion(clave) {
       clave,
       nombre: clave === "castillo" ? "Castillo" : EDIFICIOS_DEF[clave].nombre,
       nivelObjetivo: nivelActual + 1,
-      finalizaEn: Date.now() + coste.segundos * 1000,
+      finalizaEn: Date.now() + segundosReales * 1000,
     },
   });
 }
@@ -408,7 +478,7 @@ async function intentarFinalizarConstruccion() {
       else cambios[`edificios.${clave}.nivel`] = nivelObjetivo;
       const nuevosEdificios = { ...data.edificios };
       if (clave !== "castillo") nuevosEdificios[clave] = { ...nuevosEdificios[clave], nivel: nivelObjetivo };
-      cambios.produccionPorHora = calcularProduccionTotal(clave === "castillo" ? data.edificios : nuevosEdificios);
+      cambios.produccionPorHora = calcularProduccionTotal(clave === "castillo" ? data.edificios : nuevosEdificios, data.nobles);
       tx.update(ref, cambios);
     });
 
@@ -445,7 +515,7 @@ $("btn-entrenar-soldados").addEventListener("click", async () => {
 
   await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
     recursos: { comida: recursos.comida - coste.comida, piedra: recursos.piedra - coste.piedra, oro: recursos.oro - coste.oro },
-    entrenando: { cantidad, finalizaEn: Date.now() + COSTE_SOLDADO.segundos * cantidad * 1000 },
+    entrenando: { cantidad, finalizaEn: Date.now() + COSTE_SOLDADO.segundos * cantidad * (1 - reduccionTiempoBiblioteca(reinoActual.edificios?.biblioteca?.nivel)) * 1000 },
   });
   $("entrenar-status").textContent = `Entrenando ${cantidad} soldados...`;
 });
@@ -486,7 +556,7 @@ $("btn-entrenar-caballeria").addEventListener("click", async () => {
 
   await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
     recursos: { comida: recursos.comida - coste.comida, piedra: recursos.piedra - coste.piedra, oro: recursos.oro - coste.oro },
-    entrenandoCaballeria: { cantidad, finalizaEn: Date.now() + COSTE_CABALLERIA.segundos * cantidad * 1000 },
+    entrenandoCaballeria: { cantidad, finalizaEn: Date.now() + COSTE_CABALLERIA.segundos * cantidad * (1 - reduccionTiempoBiblioteca(reinoActual.edificios?.biblioteca?.nivel)) * 1000 },
   });
   $("entrenar-caballeria-status").textContent = `Entrenando ${cantidad} jinetes...`;
 });
@@ -662,18 +732,23 @@ viewportMundo.addEventListener(
   { passive: false }
 );
 
-function sonVecinas(a, b) {
-  return Math.abs(a.f - b.f) + Math.abs(a.c - b.c) === 1;
+function distanciaCasillas(a, b) {
+  return Math.abs(a.f - b.f) + Math.abs(a.c - b.c);
 }
 
 function seleccionarCasilla(f, c) {
   if (!reinoActual) return;
-  const esVecinaDeAlgunaPropia = (reinoActual.territorios || []).some((t) => sonVecinas(t, { f, c }));
+  const alcance = alcanceAtaque(reinoActual.edificios?.biblioteca?.nivel);
+  const dentroDeAlcance = (reinoActual.territorios || []).some((t) => distanciaCasillas(t, { f, c }) <= alcance && distanciaCasillas(t, { f, c }) > 0);
   const yaEsMia = (reinoActual.territorios || []).some((t) => t.f === f && t.c === c);
   if (yaEsMia) return;
-  if (!esVecinaDeAlgunaPropia) {
+  if (!dentroDeAlcance) {
     $("ataque-panel").style.display = "none";
-    return alert("Solo puedes atacar casillas justo al lado de tu territorio.");
+    return alert(
+      alcance > 1
+        ? `Solo puedes atacar casillas a ${alcance} de distancia de tu territorio (tu biblioteca lo permite).`
+        : "Solo puedes atacar casillas justo al lado de tu territorio (mejora tu biblioteca a nivel 5 para ampliar el alcance)."
+    );
   }
   casillaSeleccionada = { f, c };
   const propietario = Object.entries(todosLosReinos).find(([uid, r]) => (r.territorios || []).some((t) => t.f === f && t.c === c));

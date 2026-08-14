@@ -1,4 +1,4 @@
-const CACHE_NAME = "runica-cache-v2";
+const CACHE_NAME = "runica-cache-v3";
 const APP_SHELL = [
   "/index.html",
   "/master.html",
@@ -7,6 +7,11 @@ const APP_SHELL = [
   "/js/firebase-config.js",
   "/js/app.js",
   "/js/master.js",
+  // Reinos — juego independiente, mismo service worker compartido.
+  "/reinos.html",
+  "/manifest-reinos.json",
+  "/js/reinos.js",
+  "/js/reinos-utils.js",
 ];
 
 self.addEventListener("install", (event) => {

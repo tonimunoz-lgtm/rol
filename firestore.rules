@@ -120,6 +120,31 @@ service cloud.firestore {
         allow update: if request.auth != null;
         allow delete: if request.auth != null;
       }
+
+      // Chat del mundo: cualquier jugador conectado puede leer y escribir,
+      // pero solo en su propio nombre (no se puede suplantar a otro).
+      match /mensajes/{mensajeId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && request.resource.data.autorUid == request.auth.uid;
+      }
+
+      // Pactos de alianza entre dos reinos: cualquiera puede proponer (en
+      // su propio nombre), y cualquiera de las dos partes puede aceptar,
+      // rechazar o romper el pacto después.
+      match /pactos/{pactoId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && request.resource.data.propuestoPor == request.auth.uid;
+        allow update: if request.auth != null;
+      }
+
+      // Ladrones/espías: igual que los movimientos de ejército, se
+      // resuelven solos con el paso del tiempo, por cualquier cliente
+      // conectado.
+      match /ladrones/{ladronId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update: if request.auth != null;
+      }
     }
   }
 }

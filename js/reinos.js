@@ -363,17 +363,7 @@ function renderCastillo() {
 // sin recortar, ni siquiera un instante.
 function mostrarImagenRecortada(contenedor, url, iconoPorDefecto) {
   if (!contenedor) return;
-  if (!url) {
-    contenedor.innerHTML = iconoPorDefecto;
-    return;
-  }
-  const urlEnEsteMomento = url;
-  obtenerImagenTransparente(url).then((transparente) => {
-    // Si mientras se recortaba llegó una imagen más nueva, no pisamos esa.
-    if (contenedor.dataset.urlOrigen && contenedor.dataset.urlOrigen !== urlEnEsteMomento) return;
-    contenedor.innerHTML = `<img src="${transparente}" style="width:100%; height:100%; object-fit:contain;" />`;
-  });
-  contenedor.dataset.urlOrigen = urlEnEsteMomento;
+  contenedor.innerHTML = url ? `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />` : iconoPorDefecto;
 }
 
 $("btn-mejorar-castillo").addEventListener("click", () => iniciarConstruccion("castillo"));
@@ -422,7 +412,6 @@ async function regenerarImagenEdificio(clave) {
   try {
     const nivel = reinoActual.edificios?.[clave]?.nivel || 1;
     const url = await generarImagenReino("edificio", { nombre: EDIFICIOS_DEF[clave].nombre, nivel });
-    cacheImagenesTransparentes.delete(reinoActual.edificios?.[clave]?.imagenUrl); // no reutilizar recorte viejo
     await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), { [`edificios.${clave}.imagenUrl`]: url });
   } catch (e) {
     alert(`No se pudo regenerar la imagen: ${e.message}`);
@@ -768,30 +757,14 @@ const DECORACION_RECINTO = [
   { gx: 1.5, gy: 2.7, icono: "🌾" },
 ];
 
-let tokenRenderRecinto = 0;
-async function renderRecinto() {
+function renderRecinto() {
   const cont = $("recinto-lienzo");
   if (!cont || !reinoActual) return;
-  const miToken = ++tokenRenderRecinto;
 
   // Orden de dibujado: de atrás (gy bajo) a delante (gy alto), para que lo
   // que está "más cerca de la cámara" tape a lo que está detrás — como en
   // cualquier vista isométrica de verdad.
   const claves = Object.keys(ISO_GRID).sort((a, b) => ISO_GRID[a].gy - ISO_GRID[b].gy || ISO_GRID[a].gx - ISO_GRID[b].gx);
-
-  // Recortamos el fondo magenta de cada sprite en paralelo antes de montar
-  // el SVG — así no aparece medio edificio mientras se procesa el resto.
-  const datosPorClave = {};
-  await Promise.all(
-    claves.map(async (clave) => {
-      const esCastillo = clave === "castillo";
-      const imagenUrlOriginal = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
-      datosPorClave[clave] = {
-        imagenUrl: imagenUrlOriginal ? await obtenerImagenTransparente(imagenUrlOriginal) : null,
-      };
-    })
-  );
-  if (miToken !== tokenRenderRecinto) return; // llegó una actualización más nueva mientras recortábamos
 
   // Caminos de tierra desde el castillo hasta cada edificio — refuerzan la
   // sensación de recinto habitado, no solo piezas sueltas flotando.
@@ -801,9 +774,9 @@ async function renderRecinto() {
     return `<line x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}" stroke="#8a6d4a" stroke-width="7" stroke-linecap="round" opacity="0.55" />`;
   }).join("");
 
-  // Las murallas ya no son "un edificio más" — es un perímetro real que
-  // rodea todo el recinto, con torres en las esquinas y una puerta de
-  // entrada en el lado frontal, que crece con el nivel.
+  // ---------- Murallas: perímetro real con almenas, torres con tejado, y
+  // un arco de entrada de verdad — todo dibujado a mano, no depende de
+  // ninguna imagen de IA, así que siempre sale bien. Crece con el nivel.
   const nivelMurallas = reinoActual.edificios?.murallas?.nivel || 0;
   const margen = 0.42;
   const [pTop, pRight, pBottom, pLeft] = [
@@ -812,31 +785,59 @@ async function renderRecinto() {
     isoAScreen(2 + margen, 2 + margen),
     isoAScreen(-margen, 2 + margen),
   ];
-  const grosorMuro = 8 + nivelMurallas * 3;
+  const grosorMuro = 10 + nivelMurallas * 3;
+  const alturaAlmena = 5 + nivelMurallas * 1.2;
 
-  function tramoMuro(p1, p2) {
-    return `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linecap="round" opacity="0.92" />`;
+  // Dibuja un tramo de muro con almenas (dientes) a lo largo de toda su
+  // longitud, perpendiculares a la dirección del tramo.
+  function tramoConAlmenas(p1, p2, saltar = null) {
+    const largoTotal = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const dx = (p2.x - p1.x) / largoTotal, dy = (p2.y - p1.y) / largoTotal;
+    const nx = -dy, ny = dx; // perpendicular, hacia "fuera" del recinto
+    const pasoAlmena = 26;
+    const numDientes = Math.max(2, Math.round(largoTotal / pasoAlmena));
+    let svg = `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linecap="round" opacity="0.92" />`;
+    for (let i = 0; i < numDientes; i++) {
+      const t = (i + 0.5) / numDientes;
+      if (saltar && t > saltar[0] && t < saltar[1]) continue; // hueco de la puerta
+      if (i % 2 === 0) continue; // almenas alternas, como un castillo de verdad
+      const cx = p1.x + dx * largoTotal * t;
+      const cy = p1.y + dy * largoTotal * t;
+      svg += `<rect x="${cx - 5}" y="${cy - 5}" width="10" height="${alturaAlmena + 5}" fill="#8a8070" stroke="#5a5348" stroke-width="1" transform="rotate(${(Math.atan2(dy, dx) * 180) / Math.PI}, ${cx}, ${cy}) translate(0, -${alturaAlmena})" />`;
+    }
+    return svg;
   }
-  function tramoMuroConPuerta(p1, p2) {
+
+  function tramoConPuerta(p1, p2) {
     const hueco = 0.16;
     const g1x = p1.x + (p2.x - p1.x) * (0.5 - hueco), g1y = p1.y + (p2.y - p1.y) * (0.5 - hueco);
     const g2x = p1.x + (p2.x - p1.x) * (0.5 + hueco), g2y = p1.y + (p2.y - p1.y) * (0.5 + hueco);
     const mx = (g1x + g2x) / 2, my = (g1y + g2y) / 2;
     return `
-      <line x1="${p1.x}" y1="${p1.y}" x2="${g1x}" y2="${g1y}" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linecap="round" opacity="0.92" />
-      <line x1="${g2x}" y1="${g2y}" x2="${p2.x}" y2="${p2.y}" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linecap="round" opacity="0.92" />
-      <rect x="${mx - 16}" y="${my - 10}" width="32" height="20" rx="3" fill="#4a3826" stroke="#2a1f16" stroke-width="2" />
-      <text x="${mx}" y="${my + 6}" text-anchor="middle" font-size="16">🚪</text>`;
+      ${tramoConAlmenas(p1, p2, [0.5 - hueco, 0.5 + hueco])}
+      <rect x="${mx - 22}" y="${my - 26}" width="44" height="34" rx="4" fill="#5a4530" stroke="#2a1f16" stroke-width="2" />
+      <path d="M ${mx - 22} ${my - 8} A 22 18 0 0 1 ${mx + 22} ${my - 8}" fill="none" stroke="#2a1f16" stroke-width="2" />
+      <rect x="${mx - 14}" y="${my - 12}" width="28" height="20" fill="#2a1f16" />
+      <line x1="${mx - 14}" y1="${my - 12}" x2="${mx - 14}" y2="${my + 8}" stroke="#8a7050" stroke-width="2" />
+      <line x1="${mx}" y1="${my - 16}" x2="${mx}" y2="${my + 8}" stroke="#8a7050" stroke-width="2" />
+      <line x1="${mx + 14}" y1="${my - 12}" x2="${mx + 14}" y2="${my + 8}" stroke="#8a7050" stroke-width="2" />`;
   }
-  const tramosMuro = [tramoMuro(pTop, pRight), tramoMuro(pRight, pBottom), tramoMuroConPuerta(pBottom, pLeft), tramoMuro(pLeft, pTop)].join("");
-  const torresMuro = [pTop, pRight, pBottom, pLeft]
-    .map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${9 + nivelMurallas * 1.5}" fill="#6b6355" stroke="#3a352b" stroke-width="2" />`)
-    .join("");
+
+  function torreConTejado(p) {
+    const r = 11 + nivelMurallas * 1.6;
+    return `
+      <circle cx="${p.x}" cy="${p.y}" r="${r}" fill="#6b6355" stroke="#3a352b" stroke-width="2" />
+      <polygon points="${p.x},${p.y - r - 16} ${p.x - r - 3},${p.y - r + 4} ${p.x + r + 3},${p.y - r + 4}" fill="#7a2e2e" stroke="#3a1414" stroke-width="1.5" />`;
+  }
+
   const murallaSvg =
     nivelMurallas > 0
-      ? `${tramosMuro}
-         ${torresMuro}
-         <text x="${pTop.x}" y="${pTop.y - 14}" text-anchor="middle" class="etiqueta-nivel-iso">Murallas · Nv.${nivelMurallas}</text>`
+      ? `${tramoConAlmenas(pTop, pRight)}
+         ${tramoConAlmenas(pRight, pBottom)}
+         ${tramoConPuerta(pBottom, pLeft)}
+         ${tramoConAlmenas(pLeft, pTop)}
+         ${[pTop, pRight, pBottom, pLeft].map(torreConTejado).join("")}
+         <text x="${pTop.x}" y="${pTop.y - 34}" text-anchor="middle" class="etiqueta-nivel-iso">Murallas · Nv.${nivelMurallas}</text>`
       : "";
 
   const decoracion = DECORACION_RECINTO.map((d) => {
@@ -844,25 +845,33 @@ async function renderRecinto() {
     return `<text x="${x}" y="${y}" text-anchor="middle" font-size="24" opacity="0.85">${d.icono}</text>`;
   }).join("");
 
+  // ---------- Edificios como tarjetas enmarcadas: en vez de intentar
+  // recortar el fondo de la imagen de la IA (poco fiable, depende de que
+  // el modelo obedezca a la perfección), la mostramos tal cual dentro de
+  // un marco redondeado — como una placa o retrato, no un sprite suelto.
+  let defsRecortes = "";
   let piezas = "";
   claves.forEach((clave) => {
     const { gx, gy } = ISO_GRID[clave];
     const { x, y } = isoAScreen(gx, gy);
     const esCastillo = clave === "castillo";
     const nivel = esCastillo ? reinoActual.castilloNivel || 1 : reinoActual.edificios?.[clave]?.nivel || 0;
-    const imagenUrl = datosPorClave[clave].imagenUrl;
+    const imagenUrl = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
     const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
     const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
-    const anchoImg = esCastillo ? 130 : 90;
-    const altoImg = esCastillo ? 130 : 90;
+    const tam = esCastillo ? 100 : 76;
+    const rx = -tam / 2, ry = -tam - 6;
+
+    if (imagenUrl) defsRecortes += `<clipPath id="clip-${clave}"><rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" /></clipPath>`;
 
     piezas += `
       <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
         <polygon class="losa-iso" points="0,${-ISO_TILE_H / 2} ${ISO_TILE_W / 2},0 0,${ISO_TILE_H / 2} ${-ISO_TILE_W / 2},0" />
         ${
           imagenUrl
-            ? `<image href="${imagenUrl}" x="${-anchoImg / 2}" y="${-altoImg - 4}" width="${anchoImg}" height="${altoImg}" preserveAspectRatio="xMidYMid meet" />`
-            : `<text x="0" y="${-altoImg / 2}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
+            ? `<g clip-path="url(#clip-${clave})"><image href="${imagenUrl}" x="${rx}" y="${ry}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid slice" /></g>
+               <rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" fill="none" stroke="#c9a227" stroke-width="2.5" />`
+            : `<text x="0" y="${ry + tam / 2 + 8}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
         }
         <text class="etiqueta-nivel-iso" x="0" y="12">${nombre} · Nv.${nivel}</text>
       </g>`;
@@ -875,6 +884,7 @@ async function renderRecinto() {
           <stop offset="0%" stop-color="#5c7a42" />
           <stop offset="100%" stop-color="#3a4a2e" />
         </radialGradient>
+        ${defsRecortes}
       </defs>
       <rect x="-320" y="-180" width="640" height="520" fill="url(#suelo-recinto)" />
       ${decoracion}

@@ -48,6 +48,17 @@
     position: relative; width: 100%; height: 65vh; overflow: hidden;
     border: 1px solid var(--amber); border-radius: var(--radius); touch-action: none; background: #6b8f4e;
   }
+  #recinto-viewport {
+    position: relative; width: 100%; height: 65vh; overflow: hidden;
+    border: 1px solid var(--amber); border-radius: var(--radius); touch-action: none; background: #3a4a2e;
+  }
+  #recinto-lienzo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; cursor: grab; }
+  #recinto-lienzo:active { cursor: grabbing; }
+  #recinto-svg { width: 100%; height: 100%; display: block; }
+  .edificio-iso { cursor: pointer; }
+  .edificio-iso:hover .losa-iso { stroke: var(--amber-glow); stroke-width: 2; }
+  .losa-iso { fill: rgba(240,201,59,0.12); stroke: rgba(240,201,59,0.35); stroke-width: 1; }
+  .etiqueta-nivel-iso { font-size: 11px; font-weight: 700; fill: var(--amber); paint-order: stroke; stroke: #14110D; stroke-width: 3; text-anchor: middle; }
   #mundo-mapa-lienzo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; cursor: grab; }
   #mundo-mapa-lienzo:active { cursor: grabbing; }
   #mundo-mapa-svg { width: 100%; height: 100%; display: block; }
@@ -211,6 +222,7 @@
 
     <div class="reinos-tabs">
       <button class="reinos-tab-btn active" data-tab="castillo">🏰 Castillo</button>
+      <button class="reinos-tab-btn" data-tab="recinto">🏯 Recinto</button>
       <button class="reinos-tab-btn" data-tab="mapa">🗺️ Mapa del mundo</button>
       <button class="reinos-tab-btn" data-tab="reinos">🤝 Reinos</button>
       <button class="reinos-tab-btn" data-tab="calabozo">⚖️ Calabozo</button>
@@ -277,6 +289,18 @@
         <div class="field"><label>Nombre del noble</label><input id="in-nombre-noble" placeholder="Sir Alaric" /></div>
         <button id="btn-nombrar-noble" class="primary">Nombrar</button>
         <p id="noble-status" style="color:var(--parchment-dim); font-size:.8rem;"></p>
+      </div>
+    </div>
+
+    <div id="reinos-tab-recinto" class="reinos-tab-panel">
+      <p style="color:var(--parchment-dim); font-size:.85rem;">Tu recinto, visto desde arriba en ángulo — cada edificio con su imagen real según su nivel. Toca uno para ir a mejorarlo.</p>
+      <div id="recinto-viewport">
+        <div id="recinto-lienzo"></div>
+        <div class="mapa-zoom-controles">
+          <button id="btn-recinto-zoom-mas" type="button">➕</button>
+          <button id="btn-recinto-zoom-menos" type="button">➖</button>
+          <button id="btn-recinto-centrar" type="button">🎯</button>
+        </div>
       </div>
     </div>
 

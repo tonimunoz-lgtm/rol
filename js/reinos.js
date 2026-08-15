@@ -658,14 +658,13 @@ function obtenerImagenTransparente(url) {
         });
         refR /= 4; refG /= 4; refB /= 4;
 
-        // Inundación "adaptativa" desde el borde hacia dentro: cada píxel
-        // se compara con el color del píxel que lo descubrió (no siempre
-        // con la referencia original), así se sigue bien un degradado
-        // suave en el fondo sin dejar un halo a medio recortar — pero
-        // nunca se cuela dentro del edificio, porque su contorno supone
-        // un salto de color demasiado brusco para el umbral, tan ajustado
-        // paso a paso.
-        const UMBRAL_PASO = 32;
+        // Inundación "adaptativa" desde el borde hacia dentro, con dos
+        // límites a la vez: el salto de un píxel al siguiente (sigue bien
+        // un degradado suave) Y la distancia total acumulada desde el
+        // color original de la esquina (nunca se aleja tanto como para
+        // colarse dentro del edificio, aunque el camino haya sido gradual).
+        const UMBRAL_PASO = 26;
+        const UMBRAL_TOTAL = 85;
         const visitado = new Uint8Array(ancho * alto);
         const cola = [];
         const colaPadre = [];
@@ -692,8 +691,9 @@ function obtenerImagenTransparente(url) {
             const pp = padreIdx * 4;
             rr = d[pp]; gg = d[pp + 1]; bb = d[pp + 2];
           }
-          const dist = Math.sqrt((d[p] - rr) ** 2 + (d[p + 1] - gg) ** 2 + (d[p + 2] - bb) ** 2);
-          if (dist >= UMBRAL_PASO) continue;
+          const distPaso = Math.sqrt((d[p] - rr) ** 2 + (d[p + 1] - gg) ** 2 + (d[p + 2] - bb) ** 2);
+          const distTotal = Math.sqrt((d[p] - refR) ** 2 + (d[p + 1] - refG) ** 2 + (d[p + 2] - refB) ** 2);
+          if (distPaso >= UMBRAL_PASO || distTotal >= UMBRAL_TOTAL) continue;
           visitado[idx] = 1;
           d[p + 3] = 0;
 
@@ -768,27 +768,41 @@ async function renderRecinto() {
   }).join("");
 
   // Las murallas ya no son "un edificio más" — es un perímetro real que
-  // rodea todo el recinto, con torres en las esquinas, que crece con el
-  // nivel (más grosor, más presencia).
+  // rodea todo el recinto, con torres en las esquinas y una puerta de
+  // entrada en el lado frontal, que crece con el nivel.
   const nivelMurallas = reinoActual.edificios?.murallas?.nivel || 0;
   const margen = 0.42;
-  const esquinasMuro = [
+  const [pTop, pRight, pBottom, pLeft] = [
     isoAScreen(-margen, -margen),
     isoAScreen(2 + margen, -margen),
     isoAScreen(2 + margen, 2 + margen),
     isoAScreen(-margen, 2 + margen),
   ];
-  const puntosMuro = esquinasMuro.map((p) => `${p.x},${p.y}`).join(" ");
   const grosorMuro = 8 + nivelMurallas * 3;
-  const torresMuro = esquinasMuro
+
+  function tramoMuro(p1, p2) {
+    return `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linecap="round" opacity="0.92" />`;
+  }
+  function tramoMuroConPuerta(p1, p2) {
+    const hueco = 0.16;
+    const g1x = p1.x + (p2.x - p1.x) * (0.5 - hueco), g1y = p1.y + (p2.y - p1.y) * (0.5 - hueco);
+    const g2x = p1.x + (p2.x - p1.x) * (0.5 + hueco), g2y = p1.y + (p2.y - p1.y) * (0.5 + hueco);
+    const mx = (g1x + g2x) / 2, my = (g1y + g2y) / 2;
+    return `
+      <line x1="${p1.x}" y1="${p1.y}" x2="${g1x}" y2="${g1y}" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linecap="round" opacity="0.92" />
+      <line x1="${g2x}" y1="${g2y}" x2="${p2.x}" y2="${p2.y}" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linecap="round" opacity="0.92" />
+      <rect x="${mx - 16}" y="${my - 10}" width="32" height="20" rx="3" fill="#4a3826" stroke="#2a1f16" stroke-width="2" />
+      <text x="${mx}" y="${my + 6}" text-anchor="middle" font-size="16">🚪</text>`;
+  }
+  const tramosMuro = [tramoMuro(pTop, pRight), tramoMuro(pRight, pBottom), tramoMuroConPuerta(pBottom, pLeft), tramoMuro(pLeft, pTop)].join("");
+  const torresMuro = [pTop, pRight, pBottom, pLeft]
     .map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${9 + nivelMurallas * 1.5}" fill="#6b6355" stroke="#3a352b" stroke-width="2" />`)
     .join("");
-  const puntoSuperiorMuro = esquinasMuro[0];
   const murallaSvg =
     nivelMurallas > 0
-      ? `<polygon points="${puntosMuro}" fill="none" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linejoin="round" opacity="0.92" />
+      ? `${tramosMuro}
          ${torresMuro}
-         <text x="${puntoSuperiorMuro.x}" y="${puntoSuperiorMuro.y - 14}" text-anchor="middle" class="etiqueta-nivel-iso">Murallas · Nv.${nivelMurallas}</text>`
+         <text x="${pTop.x}" y="${pTop.y - 14}" text-anchor="middle" class="etiqueta-nivel-iso">Murallas · Nv.${nivelMurallas}</text>`
       : "";
 
   const decoracion = DECORACION_RECINTO.map((d) => {

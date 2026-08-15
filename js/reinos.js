@@ -403,17 +403,7 @@ function renderCastillo() {
 // sin recortar, ni siquiera un instante.
 function mostrarImagenRecortada(contenedor, url, iconoPorDefecto) {
   if (!contenedor) return;
-  if (!url) {
-    contenedor.innerHTML = iconoPorDefecto;
-    return;
-  }
-  contenedor.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />`;
-  const urlEnEsteMomento = url;
-  contenedor.dataset.urlOrigen = urlEnEsteMomento;
-  quitarFondoRojo(url).then((sinFondo) => {
-    if (contenedor.dataset.urlOrigen !== urlEnEsteMomento || sinFondo === url) return;
-    contenedor.innerHTML = `<img src="${sinFondo}" style="width:100%; height:100%; object-fit:contain;" />`;
-  });
+  contenedor.innerHTML = url ? `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />` : iconoPorDefecto;
 }
 
 $("btn-mejorar-castillo").addEventListener("click", () => iniciarConstruccion("castillo"));
@@ -664,47 +654,6 @@ function isoAScreen(gx, gy) {
   return { x: (gx - gy) * (ISO_TILE_W / 2), y: (gx + gy) * (ISO_TILE_H / 2) };
 }
 
-// ---------- Quitar el fondo rojo: un recorte simple de verdad, sin
-// inundación ni modelos de IA — un único paso por los píxeles comparando
-// contra rojo puro. Rápido (no bloquea nada) y predecible, a cambio de
-// pedirle a la IA que dibuje el edificio evitando el rojo.
-const cacheImagenesSinFondo = new Map();
-function quitarFondoRojo(url) {
-  if (!url) return Promise.resolve(null);
-  if (cacheImagenesSinFondo.has(url)) return cacheImagenesSinFondo.get(url);
-
-  const promesa = new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        const datos = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = datos.data;
-        const UMBRAL = 105; // distancia a rojo puro (255,0,0) por debajo de la cual se considera fondo
-        for (let i = 0; i < d.length; i += 4) {
-          const dist = Math.sqrt((d[i] - 255) ** 2 + d[i + 1] ** 2 + d[i + 2] ** 2);
-          if (dist < UMBRAL) d[i + 3] = 0;
-        }
-        ctx.putImageData(datos, 0, 0);
-        resolve(canvas.toDataURL("image/png"));
-      } catch (e) {
-        console.warn("No se pudo quitar el fondo rojo, se usa la imagen tal cual:", e.message);
-        resolve(url);
-      }
-    };
-    img.onerror = () => resolve(url);
-    img.src = url;
-  });
-
-  cacheImagenesSinFondo.set(url, promesa);
-  return promesa;
-}
-
 // Árboles/decoración fija en los huecos de la cuadrícula — usan las mismas
 // coordenadas isométricas que los edificios (posiciones intermedias entre
 // casillas), así encajan de verdad con el suelo en vez de flotar sueltos.
@@ -854,17 +803,6 @@ function renderRecinto() {
       ${murallaSvg}
       ${piezas}
     </svg>`;
-
-  claves.forEach((clave) => {
-    const esCastillo = clave === "castillo";
-    const imagenUrlOriginal = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
-    if (!imagenUrlOriginal) return;
-    quitarFondoRojo(imagenUrlOriginal).then((sinFondo) => {
-      if (!sinFondo || sinFondo === imagenUrlOriginal) return;
-      const el = cont.querySelector(`.edificio-iso[data-clave="${clave}"] .img-edificio-iso`);
-      if (el) el.setAttribute("href", sinFondo);
-    });
-  });
 }
 
 // Zoom y paneo del recinto — mismo patrón que el del mapa del mundo, con

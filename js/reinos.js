@@ -363,7 +363,17 @@ function renderCastillo() {
 // sin recortar, ni siquiera un instante.
 function mostrarImagenRecortada(contenedor, url, iconoPorDefecto) {
   if (!contenedor) return;
-  contenedor.innerHTML = url ? `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />` : iconoPorDefecto;
+  if (!url) {
+    contenedor.innerHTML = iconoPorDefecto;
+    return;
+  }
+  contenedor.innerHTML = iconoPorDefecto; // mientras se procesa el recorte
+  const urlEnEsteMomento = url;
+  contenedor.dataset.urlOrigen = urlEnEsteMomento;
+  obtenerImagenTransparente(url).then((transparente) => {
+    if (contenedor.dataset.urlOrigen !== urlEnEsteMomento) return; // llegó una imagen más nueva mientras tanto
+    contenedor.innerHTML = `<img src="${transparente}" style="width:100%; height:100%; object-fit:contain;" />`;
+  });
 }
 
 $("btn-mejorar-castillo").addEventListener("click", () => iniciarConstruccion("castillo"));
@@ -386,7 +396,6 @@ function renderEdificios() {
             ${enConstruccion ? "Construyendo..." : reinoActual.construyendo ? "Espera a que termine lo actual" : `Mejorar (🌾${coste.comida} 🪨${coste.piedra} 🪙${coste.oro}, ${coste.segundos}s)`}
           </button>
           <span id="cuenta-atras-${clave}" class="mono" style="font-size:.7rem; color:var(--amber); margin-left:.4em;"></span>
-          ${nivel > 0 ? `<button class="btn-regenerar-edificio" data-clave="${clave}" style="font-size:.7rem; margin-left:.4em;">🔄 Regenerar imagen</button>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -396,43 +405,11 @@ function renderEdificios() {
   cont.querySelectorAll(".btn-mejorar-edificio").forEach((btn) => {
     btn.addEventListener("click", () => iniciarConstruccion(btn.dataset.clave));
   });
-  cont.querySelectorAll(".btn-regenerar-edificio").forEach((btn) => {
-    btn.addEventListener("click", () => regenerarImagenEdificio(btn.dataset.clave));
-  });
   $("barracones-nivel-texto").textContent = reinoActual.edificios?.barracones?.nivel || 0;
   $("cuadras-nivel-texto").textContent = reinoActual.edificios?.cuadras?.nivel || 0;
   renderNobles();
 }
 
-// Regenerar la imagen sin gastar recursos ni cambiar de nivel — para poder
-// "reintentar" cuando a la IA le sale mal el recorte, sin coste alguno.
-async function regenerarImagenEdificio(clave) {
-  const btn = document.querySelector(`.btn-regenerar-edificio[data-clave="${clave}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = "Generando..."; }
-  try {
-    const nivel = reinoActual.edificios?.[clave]?.nivel || 1;
-    const url = await generarImagenReino("edificio", { nombre: EDIFICIOS_DEF[clave].nombre, nivel });
-    await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), { [`edificios.${clave}.imagenUrl`]: url });
-  } catch (e) {
-    alert(`No se pudo regenerar la imagen: ${e.message}`);
-    if (btn) { btn.disabled = false; btn.textContent = "🔄 Regenerar imagen"; }
-  }
-}
-
-$("btn-regenerar-castillo").addEventListener("click", async () => {
-  const btn = $("btn-regenerar-castillo");
-  btn.disabled = true;
-  btn.textContent = "Generando...";
-  try {
-    const url = await generarImagenReino("castillo", { nivel: reinoActual.castilloNivel || 1 });
-    await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), { castilloImagenUrl: url });
-  } catch (e) {
-    alert(`No se pudo regenerar la imagen: ${e.message}`);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "🔄 Regenerar imagen";
-  }
-});
 // ---------- Nobleza: nombrar nobles y cederles tierras ----------
 $("sel-titulo-noble").innerHTML = TITULOS_NOBLES.map((t) => `<option value="${t.nombre}">${t.nombre} (🪙${t.costeOro})</option>`).join("");
 
@@ -647,97 +624,34 @@ function isoAScreen(gx, gy) {
   return { x: (gx - gy) * (ISO_TILE_W / 2), y: (gx + gy) * (ISO_TILE_H / 2) };
 }
 
-// ---------- Quitar el fondo magenta de los sprites de verdad (no es solo
-// "colocar la imagen encima", se recorta el fondo con un lienzo, dejando
-// transparencia real) ----------
+// ---------- Quitar el fondo de verdad, con un modelo de IA especializado
+// en esto (no un truco de comparar colores) — funciona sea cual sea el
+// fondo que haya generado Flux, ya no depende de pedirle un color plano
+// que muchas veces no respeta bien. ----------
 const cacheImagenesTransparentes = new Map();
+let removeBackgroundFnPromesa = null;
+
+function cargarRemoveBackground() {
+  if (!removeBackgroundFnPromesa) {
+    removeBackgroundFnPromesa = import("https://cdn.jsdelivr.net/npm/@imgly/background-removal/+esm").then((mod) => mod.removeBackground);
+  }
+  return removeBackgroundFnPromesa;
+}
 
 function obtenerImagenTransparente(url) {
   if (!url) return Promise.resolve(null);
   if (cacheImagenesTransparentes.has(url)) return cacheImagenesTransparentes.get(url);
 
-  const promesa = new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const ancho = img.naturalWidth;
-        const alto = img.naturalHeight;
-        canvas.width = ancho;
-        canvas.height = alto;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        const datos = ctx.getImageData(0, 0, ancho, alto);
-        const d = datos.data;
-
-        // Referencia inicial del fondo: promedio de las 4 esquinas.
-        const esquinas = [0, ancho - 1, (alto - 1) * ancho, ancho * alto - 1];
-        let refR = 0, refG = 0, refB = 0;
-        esquinas.forEach((idx) => {
-          refR += d[idx * 4];
-          refG += d[idx * 4 + 1];
-          refB += d[idx * 4 + 2];
-        });
-        refR /= 4; refG /= 4; refB /= 4;
-
-        // Inundación "adaptativa" desde el borde hacia dentro, con dos
-        // límites a la vez: el salto de un píxel al siguiente (sigue bien
-        // un degradado suave) Y la distancia total acumulada desde el
-        // color original de la esquina (nunca se aleja tanto como para
-        // colarse dentro del edificio, aunque el camino haya sido gradual).
-        const UMBRAL_PASO = 26;
-        const UMBRAL_TOTAL = 85;
-        const visitado = new Uint8Array(ancho * alto);
-        const cola = [];
-        const colaPadre = [];
-        for (let x = 0; x < ancho; x++) {
-          cola.push(x, (alto - 1) * ancho + x);
-          colaPadre.push(-1, -1);
-        }
-        for (let y = 0; y < alto; y++) {
-          cola.push(y * ancho, y * ancho + (ancho - 1));
-          colaPadre.push(-1, -1);
-        }
-
-        let colaInicio = 0;
-        while (colaInicio < cola.length) {
-          const idx = cola[colaInicio];
-          const padreIdx = colaPadre[colaInicio];
-          colaInicio++;
-          if (visitado[idx]) continue;
-          const p = idx * 4;
-          let rr, gg, bb;
-          if (padreIdx === -1) {
-            rr = refR; gg = refG; bb = refB;
-          } else {
-            const pp = padreIdx * 4;
-            rr = d[pp]; gg = d[pp + 1]; bb = d[pp + 2];
-          }
-          const distPaso = Math.sqrt((d[p] - rr) ** 2 + (d[p + 1] - gg) ** 2 + (d[p + 2] - bb) ** 2);
-          const distTotal = Math.sqrt((d[p] - refR) ** 2 + (d[p + 1] - refG) ** 2 + (d[p + 2] - refB) ** 2);
-          if (distPaso >= UMBRAL_PASO || distTotal >= UMBRAL_TOTAL) continue;
-          visitado[idx] = 1;
-          d[p + 3] = 0;
-
-          const x = idx % ancho;
-          const y = (idx / ancho) | 0;
-          if (x > 0) { cola.push(idx - 1); colaPadre.push(idx); }
-          if (x < ancho - 1) { cola.push(idx + 1); colaPadre.push(idx); }
-          if (y > 0) { cola.push(idx - ancho); colaPadre.push(idx); }
-          if (y < alto - 1) { cola.push(idx + ancho); colaPadre.push(idx); }
-        }
-
-        ctx.putImageData(datos, 0, 0);
-        resolve(canvas.toDataURL("image/png"));
-      } catch (e) {
-        console.warn("No se pudo recortar el fondo de la imagen, se usa tal cual:", e.message);
-        resolve(url);
-      }
-    };
-    img.onerror = () => resolve(url);
-    img.src = url;
-  });
+  const promesa = (async () => {
+    try {
+      const removeBackground = await cargarRemoveBackground();
+      const blob = await removeBackground(url);
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.warn("No se pudo quitar el fondo con IA, se usa la imagen tal cual:", e.message);
+      return url;
+    }
+  })();
 
   cacheImagenesTransparentes.set(url, promesa);
   return promesa;
@@ -757,9 +671,11 @@ const DECORACION_RECINTO = [
   { gx: 1.5, gy: 2.7, icono: "🌾" },
 ];
 
-function renderRecinto() {
+let tokenRenderRecinto = 0;
+async function renderRecinto() {
   const cont = $("recinto-lienzo");
   if (!cont || !reinoActual) return;
+  const miToken = ++tokenRenderRecinto;
 
   // Orden de dibujado: de atrás (gy bajo) a delante (gy alto), para que lo
   // que está "más cerca de la cámara" tape a lo que está detrás — como en
@@ -845,33 +761,36 @@ function renderRecinto() {
     return `<text x="${x}" y="${y}" text-anchor="middle" font-size="24" opacity="0.85">${d.icono}</text>`;
   }).join("");
 
-  // ---------- Edificios como tarjetas enmarcadas: en vez de intentar
-  // recortar el fondo de la imagen de la IA (poco fiable, depende de que
-  // el modelo obedezca a la perfección), la mostramos tal cual dentro de
-  // un marco redondeado — como una placa o retrato, no un sprite suelto.
-  let defsRecortes = "";
+  // ---------- Edificios como sprites flotando de verdad — con recorte
+  // real por IA, ya no hace falta disimular con una tarjeta enmarcada.
+  const datosPorClave = {};
+  await Promise.all(
+    claves.map(async (clave) => {
+      const esCastillo = clave === "castillo";
+      const imagenUrlOriginal = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
+      datosPorClave[clave] = { imagenUrl: imagenUrlOriginal ? await obtenerImagenTransparente(imagenUrlOriginal) : null };
+    })
+  );
+  if (miToken !== tokenRenderRecinto) return; // llegó una actualización más nueva mientras se recortaba
+
   let piezas = "";
   claves.forEach((clave) => {
     const { gx, gy } = ISO_GRID[clave];
     const { x, y } = isoAScreen(gx, gy);
     const esCastillo = clave === "castillo";
     const nivel = esCastillo ? reinoActual.castilloNivel || 1 : reinoActual.edificios?.[clave]?.nivel || 0;
-    const imagenUrl = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
+    const imagenUrl = datosPorClave[clave].imagenUrl;
     const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
     const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
-    const tam = esCastillo ? 100 : 76;
-    const rx = -tam / 2, ry = -tam - 6;
-
-    if (imagenUrl) defsRecortes += `<clipPath id="clip-${clave}"><rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" /></clipPath>`;
+    const tam = esCastillo ? 110 : 82;
 
     piezas += `
       <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
         <polygon class="losa-iso" points="0,${-ISO_TILE_H / 2} ${ISO_TILE_W / 2},0 0,${ISO_TILE_H / 2} ${-ISO_TILE_W / 2},0" />
         ${
           imagenUrl
-            ? `<g clip-path="url(#clip-${clave})"><image href="${imagenUrl}" x="${rx}" y="${ry}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid slice" /></g>
-               <rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" fill="none" stroke="#c9a227" stroke-width="2.5" />`
-            : `<text x="0" y="${ry + tam / 2 + 8}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
+            ? `<image href="${imagenUrl}" x="${-tam / 2}" y="${-tam - 4}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid meet" />`
+            : `<text x="0" y="${-tam / 2}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
         }
         <text class="etiqueta-nivel-iso" x="0" y="12">${nombre} · Nv.${nivel}</text>
       </g>`;
@@ -884,7 +803,6 @@ function renderRecinto() {
           <stop offset="0%" stop-color="#5c7a42" />
           <stop offset="100%" stop-color="#3a4a2e" />
         </radialGradient>
-        ${defsRecortes}
       </defs>
       <rect x="-320" y="-180" width="640" height="520" fill="url(#suelo-recinto)" />
       ${decoracion}

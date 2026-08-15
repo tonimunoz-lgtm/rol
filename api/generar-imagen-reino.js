@@ -132,9 +132,11 @@ function construirPrompt(tipo, d) {
       `Isometric video game asset illustration of a medieval castle, ${tamano}. Single clear ` +
       `building viewed from a 45-degree top-down isometric angle, in the visual style of a ` +
       `classic real-time-strategy city-builder game — clean readable silhouette, painted game-art ` +
-      `colors, simple uncluttered background so the building itself stands out clearly.`;
+      `colors. Solid bright pure red background (#FF0000), flat and uniform. The building itself ` +
+      `should avoid using red tones (use browns, greys, blues, greens instead) so it stands out ` +
+      `clearly against the red background.`;
     const negativo =
-      `photorealistic, photograph, multiple buildings, collage, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
+      `red roof, red walls, red banners, photorealistic, photograph, multiple buildings, collage, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 
@@ -146,10 +148,11 @@ function construirPrompt(tipo, d) {
       `Isometric video game asset illustration of a medieval ${nombre}, level ${nivel} of ` +
       `development (${desarrollo}). Single standalone building viewed from a 45-degree top-down ` +
       `isometric angle, in the visual style of a classic real-time-strategy city-builder game — ` +
-      `clean readable silhouette, painted game-art colors, simple uncluttered background so the ` +
-      `building itself stands out clearly.`;
+      `clean readable silhouette, painted game-art colors. Solid bright pure red background ` +
+      `(#FF0000), flat and uniform. The building itself should avoid using red tones (use browns, ` +
+      `greys, blues, greens instead) so it stands out clearly against the red background.`;
     const negativo =
-      `photorealistic, photograph, multiple buildings, collage, castle, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
+      `red roof, red walls, red banners, photorealistic, photograph, multiple buildings, collage, castle, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 

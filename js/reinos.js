@@ -363,6 +363,7 @@ function renderEdificios() {
           <button class="btn-mejorar-edificio" data-clave="${clave}" ${enConstruccion || reinoActual.construyendo ? "disabled" : ""} style="font-size:.75rem;">
             ${enConstruccion ? "Construyendo..." : reinoActual.construyendo ? "Espera a que termine lo actual" : `Mejorar (🌾${coste.comida} 🪨${coste.piedra} 🪙${coste.oro}, ${coste.segundos}s)`}
           </button>
+          <span id="cuenta-atras-${clave}" class="mono" style="font-size:.7rem; color:var(--amber); margin-left:.4em;"></span>
         </div>
       </div>`;
   }).join("");
@@ -438,6 +439,33 @@ async function cederTierras(idxNoble) {
     produccionPorHora: calcularProduccionTotal(reinoActual.edificios, nuevosNobles),
   });
 }
+
+// ---------- Cuentas atrás en vivo (construcción y entrenamiento) ----------
+function formatearTiempoRestante(finalizaEn) {
+  const totalSeg = Math.max(0, Math.ceil((finalizaEn - Date.now()) / 1000));
+  const min = Math.floor(totalSeg / 60);
+  const seg = totalSeg % 60;
+  return min > 0 ? `⏳ ${min}m ${seg}s` : `⏳ ${seg}s`;
+}
+
+function actualizarCuentasAtras() {
+  if (!reinoActual) return;
+
+  const elCastillo = $("castillo-cuenta-atras");
+  if (elCastillo) {
+    elCastillo.textContent = reinoActual.construyendo?.clave === "castillo" ? formatearTiempoRestante(reinoActual.construyendo.finalizaEn) : "";
+  }
+  ORDEN_EDIFICIOS.forEach((clave) => {
+    const el = document.getElementById(`cuenta-atras-${clave}`);
+    if (el) el.textContent = reinoActual.construyendo?.clave === clave ? formatearTiempoRestante(reinoActual.construyendo.finalizaEn) : "";
+  });
+
+  const elSoldados = $("entrenar-cuenta-atras");
+  if (elSoldados) elSoldados.textContent = reinoActual.entrenando ? formatearTiempoRestante(reinoActual.entrenando.finalizaEn) : "";
+  const elCaballeria = $("entrenar-caballeria-cuenta-atras");
+  if (elCaballeria) elCaballeria.textContent = reinoActual.entrenandoCaballeria ? formatearTiempoRestante(reinoActual.entrenandoCaballeria.finalizaEn) : "";
+}
+setInterval(actualizarCuentasAtras, 1000);
 
 async function iniciarConstruccion(clave) {
   if (reinoActual.construyendo) return alert("Ya tienes una construcción en marcha. Espera a que termine.");

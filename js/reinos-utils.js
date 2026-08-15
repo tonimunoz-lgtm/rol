@@ -75,7 +75,7 @@ export function defensaConMurallas(reino) {
 export const COSTE_SOLDADO = { comida: 8, piedra: 2, oro: 6, segundos: 6 };
 export const COSTE_CABALLERIA = { comida: 14, piedra: 4, oro: 14, segundos: 10 };
 
-export function calcularProduccionTotal(edificios, nobles) {
+export function calcularProduccionTotal(edificios, nobles, matrimonioActivo) {
   const base = {
     // Antes esto era tan bajo que en una sesión de prueba de pocos minutos
     // no se apreciaba ningún cambio (el redondeo hacía el resto). Ahora la
@@ -85,12 +85,13 @@ export function calcularProduccionTotal(edificios, nobles) {
     piedra: 180 + produccionPorNivel(edificios?.cantera?.nivel) * 6,
     oro: 120 + produccionPorNivel(edificios?.mina?.nivel) * 6,
   };
-  // La iglesia sube la moral (+6%/nivel) y los nobles con tierra gobiernan
-  // bien sus territorios (+3 a +12% cada uno, según su título) — los dos
-  // bonus se acumulan sobre la producción base.
+  // La iglesia sube la moral (+6%/nivel), los nobles con tierra gobiernan
+  // bien sus territorios (+3 a +12% cada uno), y un matrimonio activo suma
+  // un +15% fijo — unir dos reinos por sangre da más que cualquier pacto.
   const bonusIglesia = 1 + (edificios?.iglesia?.nivel || 0) * 0.06;
   const bonusNobles = 1 + bonusProduccionNobles(nobles);
-  const multiplicador = bonusIglesia * bonusNobles;
+  const bonusMatrimonio = matrimonioActivo ? 1.15 : 1;
+  const multiplicador = bonusIglesia * bonusNobles * bonusMatrimonio;
   return {
     comida: Math.round(base.comida * multiplicador),
     piedra: Math.round(base.piedra * multiplicador),

@@ -41,7 +41,8 @@ onAuthStateChanged(auth, async (user) => {
   currentUid = user.uid;
   if (mundoId) {
     try {
-      const reinoSnap = await getDoc(doc(db, "mundos", mundoId, "reinos", currentUid));
+      await esperarAuthListo();
+      const reinoSnap = await conReintentoSiPermisos(() => getDoc(doc(db, "mundos", mundoId, "reinos", currentUid)));
       if (reinoSnap.exists()) {
         arrancarJuego();
         return;
@@ -56,6 +57,38 @@ onAuthStateChanged(auth, async (user) => {
   // Sin mundo guardado (o el reino ya no existe): mostramos la entrada.
   $("reinos-entrada").style.display = "block";
 });
+
+// Espera a que la sesión no solo exista, sino que el token esté de verdad
+// sincronizado con Firestore por dentro — sin esto, la primera consulta
+// justo tras recuperar una sesión anónima guardada puede fallar por
+// permisos aunque las reglas sean correctas (una carrera conocida de
+// Firebase, no un fallo de configuración).
+async function esperarAuthListo() {
+  if (!auth.currentUser) {
+    await new Promise((resolve) => {
+      const unsub = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          unsub();
+          resolve();
+        }
+      });
+    });
+  }
+  await auth.currentUser.getIdToken(); // fuerza la sincronización real
+}
+
+// Reintenta una vez, con una breve espera, si el fallo es justo de
+// permisos — red de seguridad extra para esa misma carrera, por si el
+// primer intento cae en el peor momento posible.
+async function conReintentoSiPermisos(fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!String(e?.message || "").toLowerCase().includes("permission")) throw e;
+    await new Promise((r) => setTimeout(r, 700));
+    return await fn();
+  }
+}
 
 async function generarImagenReino(tipo, datos) {
   const idToken = await auth.currentUser.getIdToken();
@@ -82,7 +115,7 @@ $("btn-crear-mundo").addEventListener("click", async () => {
   boton.disabled = true;
   status.textContent = "Generando el mapa del mundo con IA (puede tardar unos segundos)...";
   try {
-    if (!auth.currentUser) await new Promise((r) => { const u = onAuthStateChanged(auth, () => { u(); r(); }); });
+    await esperarAuthListo();
     const codigo = generarCodigoMundo();
 
     let mapaFondoUrl = "";
@@ -122,8 +155,8 @@ $("btn-unirse-mundo").addEventListener("click", async () => {
   boton.disabled = true;
   status.textContent = "Buscando el mundo...";
   try {
-    if (!auth.currentUser) await new Promise((r) => { const u = onAuthStateChanged(auth, () => { u(); r(); }); });
-    const snap = await getDoc(doc(db, "mundos", codigo));
+    await esperarAuthListo();
+    const snap = await conReintentoSiPermisos(() => getDoc(doc(db, "mundos", codigo)));
     if (!snap.exists()) {
       status.textContent = "No existe ningún mundo con ese código.";
       boton.disabled = false;

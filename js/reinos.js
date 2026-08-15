@@ -29,6 +29,7 @@ let casillaSeleccionada = null;
 let pactosActuales = [];
 let ataquesConjuntosActuales = [];
 let rescatesActuales = [];
+let comerciosActuales = [];
 let ladronObjetivoSeleccionado = null;
 
 // ---------- Arranque / sesión ----------
@@ -279,6 +280,11 @@ function arrancarJuego() {
     rescatesActuales = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderPrisioneros();
     renderRescatesPorMiGente();
+  });
+
+  onSnapshot(collection(db, "mundos", mundoId, "comercios"), (snap) => {
+    comerciosActuales = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderComerciosRecibidos();
   });
 
   setInterval(() => {
@@ -1434,6 +1440,8 @@ function renderOtrosReinos() {
           <div style="display:flex; gap:.4em; flex-wrap:wrap; justify-content:flex-end;">
             ${botonAlianza}
             <button class="btn-elegir-ladron" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🕵️ Ladrón</button>
+            <button class="btn-abrir-comercio" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">💱 Comerciar</button>
+            <button class="btn-abrir-donar" data-uid="${uid}" data-nombre="${reino.nombreReino}" style="font-size:.7rem;">🎁 Donar</button>
           </div>
         </div>`;
     })
@@ -1452,6 +1460,12 @@ function renderOtrosReinos() {
   );
   cont.querySelectorAll(".btn-elegir-ladron").forEach((btn) =>
     btn.addEventListener("click", () => elegirObjetivoLadron(btn.dataset.uid, btn.dataset.nombre))
+  );
+  cont.querySelectorAll(".btn-abrir-comercio").forEach((btn) =>
+    btn.addEventListener("click", () => abrirComercio(btn.dataset.uid, btn.dataset.nombre))
+  );
+  cont.querySelectorAll(".btn-abrir-donar").forEach((btn) =>
+    btn.addEventListener("click", () => abrirDonar(btn.dataset.uid, btn.dataset.nombre))
   );
 }
 
@@ -2005,3 +2019,197 @@ async function pagarRescate(rescateId) {
     alert(`No se pudo pagar el rescate: ${e.message}`);
   }
 }
+
+// ---------- Comercio entre reinos ----------
+let comercioObjetivo = null; // { uid, nombre }
+
+function abrirComercio(uid, nombre) {
+  comercioObjetivo = { uid, nombre };
+  $("comercio-titulo").textContent = `💱 Comerciar con ${nombre}`;
+  ["ofrece-comida", "ofrece-piedra", "ofrece-oro", "pide-comida", "pide-piedra", "pide-oro"].forEach((id) => ($(`in-${id}`).value = 0));
+  $("comercio-modal").classList.add("visible");
+}
+$("btn-cancelar-comercio").addEventListener("click", () => $("comercio-modal").classList.remove("visible"));
+
+$("btn-confirmar-comercio").addEventListener("click", async () => {
+  if (!comercioObjetivo) return;
+  const ofrece = {
+    comida: Math.max(0, Number($("in-ofrece-comida").value) || 0),
+    piedra: Math.max(0, Number($("in-ofrece-piedra").value) || 0),
+    oro: Math.max(0, Number($("in-ofrece-oro").value) || 0),
+  };
+  const pide = {
+    comida: Math.max(0, Number($("in-pide-comida").value) || 0),
+    piedra: Math.max(0, Number($("in-pide-piedra").value) || 0),
+    oro: Math.max(0, Number($("in-pide-oro").value) || 0),
+  };
+  const totalOfrece = ofrece.comida + ofrece.piedra + ofrece.oro;
+  const totalPide = pide.comida + pide.piedra + pide.oro;
+  if (totalOfrece === 0 && totalPide === 0) return alert("Pon algo que ofrezcas o que pidas, al menos.");
+
+  const recursos = await sincronizarRecursos();
+  if (recursos.comida < ofrece.comida || recursos.piedra < ofrece.piedra || recursos.oro < ofrece.oro) {
+    return alert("No tienes suficientes recursos para ofrecer eso.");
+  }
+
+  await addDoc(collection(db, "mundos", mundoId, "comercios"), {
+    proponenteUid: currentUid,
+    proponenteNombre: reinoActual.nombreReino,
+    destinatarioUid: comercioObjetivo.uid,
+    destinatarioNombre: comercioObjetivo.nombre,
+    ofrece,
+    pide,
+    estado: "pendiente",
+    creadoEn: serverTimestamp(),
+  });
+
+  comercioObjetivo = null;
+  $("comercio-modal").classList.remove("visible");
+});
+
+function textoRecursos(r) {
+  const partes = [r.comida ? `🌾${r.comida}` : "", r.piedra ? `🪨${r.piedra}` : "", r.oro ? `🪙${r.oro}` : ""].filter(Boolean);
+  return partes.length > 0 ? partes.join(" ") : "nada";
+}
+
+function renderComerciosRecibidos() {
+  const cont = $("lista-comercios-recibidos");
+  if (!cont) return;
+  const recibidos = comerciosActuales.filter((c) => c.destinatarioUid === currentUid && c.estado === "pendiente");
+  const enviados = comerciosActuales.filter((c) => c.proponenteUid === currentUid && c.estado === "pendiente");
+
+  let html = "";
+  if (recibidos.length === 0 && enviados.length === 0) {
+    html = `<p style="color:var(--parchment-dim); font-size:.85rem;">No tienes ninguna oferta de comercio pendiente.</p>`;
+  }
+  html += recibidos
+    .map(
+      (c) => `
+      <div class="reino-card" style="flex-direction:column; align-items:stretch; gap:.4em;">
+        <span>${c.proponenteNombre} te ofrece ${textoRecursos(c.ofrece)} a cambio de ${textoRecursos(c.pide)}</span>
+        <div style="display:flex; gap:.4em;">
+          <button class="btn-aceptar-comercio" data-id="${c.id}" style="font-size:.7rem;">✅ Aceptar</button>
+          <button class="btn-rechazar-comercio" data-id="${c.id}" style="font-size:.7rem;">❌ Rechazar</button>
+        </div>
+      </div>`
+    )
+    .join("");
+  html += enviados
+    .map(
+      (c) => `<p style="color:var(--parchment-dim); font-size:.8rem;">⏳ Esperando que ${c.destinatarioNombre} responda a tu oferta (${textoRecursos(c.ofrece)} por ${textoRecursos(c.pide)})...</p>`
+    )
+    .join("");
+  cont.innerHTML = html;
+
+  cont.querySelectorAll(".btn-aceptar-comercio").forEach((btn) => btn.addEventListener("click", () => aceptarComercio(btn.dataset.id)));
+  cont.querySelectorAll(".btn-rechazar-comercio").forEach((btn) =>
+    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "comercios", btn.dataset.id), { estado: "rechazado" }))
+  );
+}
+
+async function aceptarComercio(comercioId) {
+  try {
+    await runTransaction(db, async (tx) => {
+      const comercioRef = doc(db, "mundos", mundoId, "comercios", comercioId);
+      const comercioSnap = await tx.get(comercioRef);
+      const c = comercioSnap.data();
+      if (!c || c.estado !== "pendiente") return;
+
+      const proponenteRef = doc(db, "mundos", mundoId, "reinos", c.proponenteUid);
+      const destinatarioRef = doc(db, "mundos", mundoId, "reinos", c.destinatarioUid);
+      const proponenteSnap = await tx.get(proponenteRef);
+      const destinatarioSnap = await tx.get(destinatarioRef);
+      const proponente = proponenteSnap.data();
+      const destinatario = destinatarioSnap.data();
+
+      const recursosProponente = recursosActuales(proponente);
+      const recursosDestinatario = recursosActuales(destinatario);
+
+      if (recursosProponente.comida < c.ofrece.comida || recursosProponente.piedra < c.ofrece.piedra || recursosProponente.oro < c.ofrece.oro) {
+        throw new Error(`${c.proponenteNombre} ya no tiene suficientes recursos para cumplir su parte.`);
+      }
+      if (recursosDestinatario.comida < c.pide.comida || recursosDestinatario.piedra < c.pide.piedra || recursosDestinatario.oro < c.pide.oro) {
+        throw new Error("No tienes suficientes recursos para dar lo que pedían a cambio.");
+      }
+
+      tx.update(proponenteRef, {
+        recursos: {
+          comida: recursosProponente.comida - c.ofrece.comida + c.pide.comida,
+          piedra: recursosProponente.piedra - c.ofrece.piedra + c.pide.piedra,
+          oro: recursosProponente.oro - c.ofrece.oro + c.pide.oro,
+        },
+        ultimaActualizacionRecursos: serverTimestamp(),
+      });
+      tx.update(destinatarioRef, {
+        recursos: {
+          comida: recursosDestinatario.comida - c.pide.comida + c.ofrece.comida,
+          piedra: recursosDestinatario.piedra - c.pide.piedra + c.ofrece.piedra,
+          oro: recursosDestinatario.oro - c.pide.oro + c.ofrece.oro,
+        },
+        ultimaActualizacionRecursos: serverTimestamp(),
+      });
+      tx.update(comercioRef, { estado: "aceptado" });
+    });
+    await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+      autorUid: "sistema",
+      autorNombre: "📯 Heraldo",
+      texto: `💱 ${reinoActual.nombreReino} cierra un trato comercial.`,
+      timestamp: serverTimestamp(),
+    });
+  } catch (e) {
+    alert(`No se pudo aceptar el comercio: ${e.message}`);
+  }
+}
+
+// ---------- Donaciones: transferencia instantánea, sin condiciones ----------
+let donarObjetivo = null; // { uid, nombre }
+
+function abrirDonar(uid, nombre) {
+  donarObjetivo = { uid, nombre };
+  $("donar-titulo").textContent = `🎁 Donar a ${nombre}`;
+  $("in-cantidad-donar").value = 100;
+  $("donar-modal").classList.add("visible");
+}
+$("btn-cancelar-donar").addEventListener("click", () => $("donar-modal").classList.remove("visible"));
+
+$("btn-confirmar-donar").addEventListener("click", async () => {
+  if (!donarObjetivo) return;
+  const recurso = $("sel-recurso-donar").value; // "comida" | "piedra" | "oro"
+  const cantidad = Math.max(1, Number($("in-cantidad-donar").value) || 0);
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const miRef = doc(db, "mundos", mundoId, "reinos", currentUid);
+      const otroRef = doc(db, "mundos", mundoId, "reinos", donarObjetivo.uid);
+      const miSnap = await tx.get(miRef);
+      const otroSnap = await tx.get(otroRef);
+      const mi = miSnap.data();
+      const otro = otroSnap.data();
+
+      const recursosMios = recursosActuales(mi);
+      if (recursosMios[recurso] < cantidad) throw new Error("No tienes suficiente para donar esa cantidad.");
+      const recursosOtro = recursosActuales(otro);
+
+      tx.update(miRef, {
+        recursos: { ...recursosMios, [recurso]: recursosMios[recurso] - cantidad },
+        ultimaActualizacionRecursos: serverTimestamp(),
+      });
+      tx.update(otroRef, {
+        recursos: { ...recursosOtro, [recurso]: recursosOtro[recurso] + cantidad },
+        ultimaActualizacionRecursos: serverTimestamp(),
+      });
+    });
+
+    const emoji = { comida: "🌾", piedra: "🪨", oro: "🪙" }[recurso];
+    await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+      autorUid: "sistema",
+      autorNombre: "📯 Heraldo",
+      texto: `🎁 ${reinoActual.nombreReino} dona ${emoji}${cantidad} a ${donarObjetivo.nombre}. Un gesto generoso.`,
+      timestamp: serverTimestamp(),
+    });
+    donarObjetivo = null;
+    $("donar-modal").classList.remove("visible");
+  } catch (e) {
+    alert(`No se pudo donar: ${e.message}`);
+  }
+});

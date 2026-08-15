@@ -116,6 +116,50 @@
   </div>
 </div>
 
+<!-- Comerciar: propones un intercambio (lo que ofreces vs lo que pides) -->
+<div id="comercio-modal" class="modal-overlay">
+  <div class="card" style="max-width:420px; width:90%;">
+    <h2 class="display" style="font-size:1.1rem;" id="comercio-titulo">💱 Comerciar</h2>
+    <p style="color:var(--parchment-dim); font-size:.8rem;">Lo que ofreces:</p>
+    <div style="display:flex; gap:.4em;">
+      <div class="field" style="flex:1;"><label>🌾 Comida</label><input id="in-ofrece-comida" type="number" min="0" value="0" /></div>
+      <div class="field" style="flex:1;"><label>🪨 Piedra</label><input id="in-ofrece-piedra" type="number" min="0" value="0" /></div>
+      <div class="field" style="flex:1;"><label>🪙 Oro</label><input id="in-ofrece-oro" type="number" min="0" value="0" /></div>
+    </div>
+    <p style="color:var(--parchment-dim); font-size:.8rem;">Lo que pides a cambio:</p>
+    <div style="display:flex; gap:.4em;">
+      <div class="field" style="flex:1;"><label>🌾 Comida</label><input id="in-pide-comida" type="number" min="0" value="0" /></div>
+      <div class="field" style="flex:1;"><label>🪨 Piedra</label><input id="in-pide-piedra" type="number" min="0" value="0" /></div>
+      <div class="field" style="flex:1;"><label>🪙 Oro</label><input id="in-pide-oro" type="number" min="0" value="0" /></div>
+    </div>
+    <div style="display:flex; gap:.5em; margin-top:.4em;">
+      <button id="btn-confirmar-comercio" class="primary">Proponer</button>
+      <button id="btn-cancelar-comercio">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Donar: transferencia instantánea, sin condiciones -->
+<div id="donar-modal" class="modal-overlay">
+  <div class="card" style="max-width:380px; width:90%;">
+    <h2 class="display" style="font-size:1.1rem;" id="donar-titulo">🎁 Donar</h2>
+    <div class="field">
+      <label>Recurso</label>
+      <select id="sel-recurso-donar">
+        <option value="comida">🌾 Comida</option>
+        <option value="piedra">🪨 Piedra</option>
+        <option value="oro">🪙 Oro</option>
+      </select>
+    </div>
+    <div class="field"><label>Cantidad</label><input id="in-cantidad-donar" type="number" min="1" value="100" /></div>
+    <div style="display:flex; gap:.5em;">
+      <button id="btn-confirmar-donar" class="primary">Donar</button>
+      <button id="btn-cancelar-donar">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+
 <div id="reinos-app">
 
   <!-- Pantalla de entrada: crear un mundo nuevo o unirse a uno existente -->
@@ -265,6 +309,8 @@
       <div id="lista-pactos-pendientes"></div>
       <div id="lista-ataques-conjuntos"></div>
       <div id="lista-otros-reinos"></div>
+      <h3 style="font-size:1rem; margin-top:1em;">Ofertas de comercio recibidas</h3>
+      <div id="lista-comercios-recibidos"></div>
 
       <div id="ladron-panel" class="card" style="display:none; margin-top:.8em;">
         <p id="ladron-info" style="font-size:.85rem;"></p>

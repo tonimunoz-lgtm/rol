@@ -129,14 +129,11 @@ function construirPrompt(tipo, d) {
             ? "a proper stone castle with towers and a curtain wall"
             : "a grand, imposing fortress-castle with tall towers, multiple wall rings and banners";
     const prompt =
-      `Product photography of a single medieval castle miniature model, ${tamano}, isometric video ` +
-      `game asset style — painted game-art colors, clean readable silhouette. Photographed like an ` +
-      `e-commerce product listing: single object centered on a plain solid bright red background ` +
-      `(#FF0000), flat studio backdrop, no other objects, no scenery. The castle itself should ` +
-      `avoid red tones (use browns, greys, blues, greens instead) so it stands out clearly against ` +
-      `the red backdrop.`;
-    const negativo =
-      `red roof, red walls, red banners, photorealistic photograph of a real building, landscape, sky, multiple buildings, collage, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
+      `Isometric video game asset illustration of a medieval castle, ${tamano}. Single clear ` +
+      `building viewed from a 45-degree top-down isometric angle, in the visual style of a ` +
+      `classic real-time-strategy city-builder game — clean readable silhouette, painted game-art ` +
+      `colors, natural varied color palette.`;
+    const negativo = `photorealistic, photograph, multiple buildings, collage, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 
@@ -150,14 +147,11 @@ function construirPrompt(tipo, d) {
         `fortification wall, NOT a house or standalone building`
       : `a medieval ${nombre}`;
     const prompt =
-      `Product photography of a single ${descripcionObjeto} miniature model, level ${nivel} of ` +
-      `development (${desarrollo}), isometric video game asset style — painted game-art colors, ` +
-      `clean readable silhouette. Photographed like an e-commerce product listing: single object ` +
-      `centered on a plain solid bright red background (#FF0000), flat studio backdrop, no other ` +
-      `objects, no scenery. The object itself should avoid red tones (use browns, greys, blues, ` +
-      `greens instead) so it stands out clearly against the red backdrop.`;
-    const negativo =
-      `red roof, red walls, red banners, photorealistic photograph of a real building, landscape, sky, multiple buildings, collage, castle, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
+      `Isometric video game asset illustration of ${descripcionObjeto}, level ${nivel} of ` +
+      `development (${desarrollo}). Single standalone object viewed from a 45-degree top-down ` +
+      `isometric angle, in the visual style of a classic real-time-strategy city-builder game — ` +
+      `clean readable silhouette, painted game-art colors, natural varied color palette.`;
+    const negativo = `photorealistic, photograph, multiple buildings, collage, castle, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 

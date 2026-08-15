@@ -396,6 +396,7 @@ function renderEdificios() {
             ${enConstruccion ? "Construyendo..." : reinoActual.construyendo ? "Espera a que termine lo actual" : `Mejorar (🌾${coste.comida} 🪨${coste.piedra} 🪙${coste.oro}, ${coste.segundos}s)`}
           </button>
           <span id="cuenta-atras-${clave}" class="mono" style="font-size:.7rem; color:var(--amber); margin-left:.4em;"></span>
+          ${nivel > 0 ? `<button class="btn-regenerar-edificio" data-clave="${clave}" style="font-size:.7rem; margin-left:.4em;">🔄 Regenerar imagen</button>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -405,11 +406,44 @@ function renderEdificios() {
   cont.querySelectorAll(".btn-mejorar-edificio").forEach((btn) => {
     btn.addEventListener("click", () => iniciarConstruccion(btn.dataset.clave));
   });
+  cont.querySelectorAll(".btn-regenerar-edificio").forEach((btn) => {
+    btn.addEventListener("click", () => regenerarImagenEdificio(btn.dataset.clave));
+  });
   $("barracones-nivel-texto").textContent = reinoActual.edificios?.barracones?.nivel || 0;
   $("cuadras-nivel-texto").textContent = reinoActual.edificios?.cuadras?.nivel || 0;
   renderNobles();
 }
 
+// Regenerar la imagen sin gastar recursos ni cambiar de nivel — para poder
+// "reintentar" cuando a la IA le sale mal el recorte, sin coste alguno.
+async function regenerarImagenEdificio(clave) {
+  const btn = document.querySelector(`.btn-regenerar-edificio[data-clave="${clave}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = "Generando..."; }
+  try {
+    const nivel = reinoActual.edificios?.[clave]?.nivel || 1;
+    const url = await generarImagenReino("edificio", { nombre: EDIFICIOS_DEF[clave].nombre, nivel });
+    cacheImagenesTransparentes.delete(reinoActual.edificios?.[clave]?.imagenUrl); // no reutilizar recorte viejo
+    await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), { [`edificios.${clave}.imagenUrl`]: url });
+  } catch (e) {
+    alert(`No se pudo regenerar la imagen: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.textContent = "🔄 Regenerar imagen"; }
+  }
+}
+
+$("btn-regenerar-castillo").addEventListener("click", async () => {
+  const btn = $("btn-regenerar-castillo");
+  btn.disabled = true;
+  btn.textContent = "Generando...";
+  try {
+    const url = await generarImagenReino("castillo", { nivel: reinoActual.castilloNivel || 1 });
+    await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), { castilloImagenUrl: url });
+  } catch (e) {
+    alert(`No se pudo regenerar la imagen: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 Regenerar imagen";
+  }
+});
 // ---------- Nobleza: nombrar nobles y cederles tierras ----------
 $("sel-titulo-noble").innerHTML = TITULOS_NOBLES.map((t) => `<option value="${t.nombre}">${t.nombre} (🪙${t.costeOro})</option>`).join("");
 

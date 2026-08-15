@@ -595,14 +595,95 @@ function isoAScreen(gx, gy) {
   return { x: (gx - gy) * (ISO_TILE_W / 2), y: (gx + gy) * (ISO_TILE_H / 2) };
 }
 
-function renderRecinto() {
+// ---------- Quitar el fondo magenta de los sprites de verdad (no es solo
+// "colocar la imagen encima", se recorta el fondo con un lienzo, dejando
+// transparencia real) ----------
+const cacheImagenesTransparentes = new Map();
+
+function obtenerImagenTransparente(url) {
+  if (!url) return Promise.resolve(null);
+  if (cacheImagenesTransparentes.has(url)) return cacheImagenesTransparentes.get(url);
+
+  const promesa = new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const datos = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = datos.data;
+        for (let i = 0; i < d.length; i += 4) {
+          // Magenta puro y sus variantes cercanas (rojo y azul altos, verde bajo).
+          if (d[i] > 170 && d[i + 2] > 170 && d[i + 1] < 110) d[i + 3] = 0;
+        }
+        ctx.putImageData(datos, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (e) {
+        console.warn("No se pudo recortar el fondo de la imagen, se usa tal cual:", e.message);
+        resolve(url);
+      }
+    };
+    img.onerror = () => resolve(url);
+    img.src = url;
+  });
+
+  cacheImagenesTransparentes.set(url, promesa);
+  return promesa;
+}
+
+// Árboles/decoración fija en los huecos entre edificios — puramente
+// visual, para que el recinto no se vea vacío entre una losa y otra.
+const DECORACION_RECINTO = [
+  { x: -210, y: -20, icono: "🌳" },
+  { x: 210, y: -20, icono: "🌳" },
+  { x: -260, y: 90, icono: "🌲" },
+  { x: 260, y: 90, icono: "🌲" },
+  { x: 0, y: -60, icono: "🌿" },
+  { x: -140, y: 170, icono: "🌾" },
+  { x: 140, y: 170, icono: "🌾" },
+];
+
+let tokenRenderRecinto = 0;
+async function renderRecinto() {
   const cont = $("recinto-lienzo");
   if (!cont || !reinoActual) return;
+  const miToken = ++tokenRenderRecinto;
 
   // Orden de dibujado: de atrás (gy bajo) a delante (gy alto), para que lo
   // que está "más cerca de la cámara" tape a lo que está detrás — como en
   // cualquier vista isométrica de verdad.
   const claves = Object.keys(ISO_GRID).sort((a, b) => ISO_GRID[a].gy - ISO_GRID[b].gy || ISO_GRID[a].gx - ISO_GRID[b].gx);
+  const centroCastillo = isoAScreen(ISO_GRID.castillo.gx, ISO_GRID.castillo.gy);
+
+  // Recortamos el fondo magenta de cada sprite en paralelo antes de montar
+  // el SVG — así no aparece medio edificio mientras se procesa el resto.
+  const datosPorClave = {};
+  await Promise.all(
+    claves.map(async (clave) => {
+      const esCastillo = clave === "castillo";
+      const imagenUrlOriginal = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
+      datosPorClave[clave] = {
+        imagenUrl: imagenUrlOriginal ? await obtenerImagenTransparente(imagenUrlOriginal) : null,
+      };
+    })
+  );
+  if (miToken !== tokenRenderRecinto) return; // llegó una actualización más nueva mientras recortábamos
+
+  // Caminos de tierra desde el castillo hasta cada edificio — refuerzan la
+  // sensación de recinto habitado, no solo piezas sueltas flotando.
+  let caminos = "";
+  claves.forEach((clave) => {
+    if (clave === "castillo") return;
+    const { gx, gy } = ISO_GRID[clave];
+    const { x, y } = isoAScreen(gx, gy);
+    caminos += `<line x1="${centroCastillo.x}" y1="${centroCastillo.y}" x2="${x}" y2="${y}" stroke="#8a6d4a" stroke-width="7" stroke-linecap="round" opacity="0.55" />`;
+  });
+
+  const decoracion = DECORACION_RECINTO.map((d) => `<text x="${d.x}" y="${d.y}" text-anchor="middle" font-size="26" opacity="0.85">${d.icono}</text>`).join("");
 
   let piezas = "";
   claves.forEach((clave) => {
@@ -610,25 +691,37 @@ function renderRecinto() {
     const { x, y } = isoAScreen(gx, gy);
     const esCastillo = clave === "castillo";
     const nivel = esCastillo ? reinoActual.castilloNivel || 1 : reinoActual.edificios?.[clave]?.nivel || 0;
-    const imagenUrl = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
+    const imagenUrl = datosPorClave[clave].imagenUrl;
     const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
     const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
-    const anchoImg = esCastillo ? 130 : 96;
-    const altoImg = esCastillo ? 130 : 96;
+    const anchoImg = esCastillo ? 100 : 74;
+    const altoImg = esCastillo ? 100 : 74;
 
     piezas += `
       <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
         <polygon class="losa-iso" points="0,${-ISO_TILE_H / 2} ${ISO_TILE_W / 2},0 0,${ISO_TILE_H / 2} ${-ISO_TILE_W / 2},0" />
         ${
           imagenUrl
-            ? `<image href="${imagenUrl}" x="${-anchoImg / 2}" y="${-altoImg - 6}" width="${anchoImg}" height="${altoImg}" preserveAspectRatio="xMidYMid meet" />`
-            : `<text x="0" y="${-altoImg / 2}" text-anchor="middle" font-size="${esCastillo ? 44 : 30}">${icono}</text>`
+            ? `<image href="${imagenUrl}" x="${-anchoImg / 2}" y="${-altoImg - 4}" width="${anchoImg}" height="${altoImg}" preserveAspectRatio="xMidYMid meet" />`
+            : `<text x="0" y="${-altoImg / 2}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
         }
-        <text class="etiqueta-nivel-iso" x="0" y="14">${nombre} · Nv.${nivel}</text>
+        <text class="etiqueta-nivel-iso" x="0" y="12">${nombre} · Nv.${nivel}</text>
       </g>`;
   });
 
-  cont.innerHTML = `<svg id="recinto-svg" viewBox="-320 -160 640 400" xmlns="http://www.w3.org/2000/svg">${piezas}</svg>`;
+  cont.innerHTML = `
+    <svg id="recinto-svg" viewBox="-320 -160 640 400" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="suelo-recinto" cx="50%" cy="45%" r="75%">
+          <stop offset="0%" stop-color="#5c7a42" />
+          <stop offset="100%" stop-color="#3a4a2e" />
+        </radialGradient>
+      </defs>
+      <rect x="-320" y="-160" width="640" height="400" fill="url(#suelo-recinto)" />
+      ${decoracion}
+      ${caminos}
+      ${piezas}
+    </svg>`;
   cont.querySelectorAll(".edificio-iso").forEach((el) => {
     el.addEventListener("click", () => {
       document.querySelector('.reinos-tab-btn[data-tab="castillo"]').click();

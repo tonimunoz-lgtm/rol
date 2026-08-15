@@ -960,6 +960,12 @@ async function ejecutarComandoSuperadmin(texto) {
     return false;
   }
 
+  // Solo el creador del mundo puede usarlo — aunque alguien encuentre la
+  // frase mirando el código, no le sirve de nada si no es él.
+  if (!mundoActual || mundoActual.creadoPor !== currentUid) {
+    return false;
+  }
+
   const reinoRef = doc(db, "mundos", mundoId, "reinos", currentUid);
 
   await runTransaction(db, async (tx) => {
@@ -1023,8 +1029,9 @@ $("btn-enviar-chat").addEventListener("click", async () => {
   const texto = $("in-chat-texto").value.trim();
   if (!texto || !reinoActual) return;
 
-  // Comando secreto de desarrollo.
-  // No se publica en el chat.
+  // Comando secreto de desarrollo (solo tiene efecto si eres el creador
+  // del mundo — para cualquier otro jugador, esto se comporta como un
+  // mensaje de chat normal). No se publica en el chat.
   if (await ejecutarComandoSuperadmin(texto)) {
     $("in-chat-texto").value = "";
     return;

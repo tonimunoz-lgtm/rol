@@ -588,8 +588,8 @@ const ISO_GRID = {
   iglesia: { gx: 1, gy: 2 },
   biblioteca: { gx: 2, gy: 2 },
 };
-const ISO_TILE_W = 140;
-const ISO_TILE_H = 70;
+const ISO_TILE_W = 220;
+const ISO_TILE_H = 130;
 
 function isoAScreen(gx, gy) {
   return { x: (gx - gy) * (ISO_TILE_W / 2), y: (gx + gy) * (ISO_TILE_H / 2) };
@@ -616,9 +616,14 @@ function obtenerImagenTransparente(url) {
         ctx.drawImage(img, 0, 0);
         const datos = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = datos.data;
+        // Tomamos el color real de la esquina como referencia del fondo
+        // (en vez de asumir un magenta exacto) — así funciona aunque la
+        // IA no saque el tono pedido exactamente igual.
+        const refR = d[0], refG = d[1], refB = d[2];
+        const UMBRAL = 70;
         for (let i = 0; i < d.length; i += 4) {
-          // Magenta puro y sus variantes cercanas (rojo y azul altos, verde bajo).
-          if (d[i] > 170 && d[i + 2] > 170 && d[i + 1] < 110) d[i + 3] = 0;
+          const dist = Math.sqrt((d[i] - refR) ** 2 + (d[i + 1] - refG) ** 2 + (d[i + 2] - refB) ** 2);
+          if (dist < UMBRAL) d[i + 3] = 0;
         }
         ctx.putImageData(datos, 0, 0);
         resolve(canvas.toDataURL("image/png"));
@@ -635,16 +640,18 @@ function obtenerImagenTransparente(url) {
   return promesa;
 }
 
-// Árboles/decoración fija en los huecos entre edificios — puramente
-// visual, para que el recinto no se vea vacío entre una losa y otra.
+// Árboles/decoración fija en los huecos de la cuadrícula — usan las mismas
+// coordenadas isométricas que los edificios (posiciones intermedias entre
+// casillas), así encajan de verdad con el suelo en vez de flotar sueltos.
 const DECORACION_RECINTO = [
-  { x: -210, y: -20, icono: "🌳" },
-  { x: 210, y: -20, icono: "🌳" },
-  { x: -260, y: 90, icono: "🌲" },
-  { x: 260, y: 90, icono: "🌲" },
-  { x: 0, y: -60, icono: "🌿" },
-  { x: -140, y: 170, icono: "🌾" },
-  { x: 140, y: 170, icono: "🌾" },
+  { gx: 0.5, gy: -0.7, icono: "🌳" },
+  { gx: 1.5, gy: -0.7, icono: "🌳" },
+  { gx: -0.7, gy: 0.5, icono: "🌲" },
+  { gx: 2.7, gy: 0.5, icono: "🌲" },
+  { gx: -0.7, gy: 1.5, icono: "🌿" },
+  { gx: 2.7, gy: 1.5, icono: "🌿" },
+  { gx: 0.5, gy: 2.7, icono: "🌾" },
+  { gx: 1.5, gy: 2.7, icono: "🌾" },
 ];
 
 let tokenRenderRecinto = 0;
@@ -683,7 +690,10 @@ async function renderRecinto() {
     caminos += `<line x1="${centroCastillo.x}" y1="${centroCastillo.y}" x2="${x}" y2="${y}" stroke="#8a6d4a" stroke-width="7" stroke-linecap="round" opacity="0.55" />`;
   });
 
-  const decoracion = DECORACION_RECINTO.map((d) => `<text x="${d.x}" y="${d.y}" text-anchor="middle" font-size="26" opacity="0.85">${d.icono}</text>`).join("");
+  const decoracion = DECORACION_RECINTO.map((d) => {
+    const { x, y } = isoAScreen(d.gx, d.gy);
+    return `<text x="${x}" y="${y}" text-anchor="middle" font-size="24" opacity="0.85">${d.icono}</text>`;
+  }).join("");
 
   let piezas = "";
   claves.forEach((clave) => {
@@ -694,8 +704,8 @@ async function renderRecinto() {
     const imagenUrl = datosPorClave[clave].imagenUrl;
     const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
     const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
-    const anchoImg = esCastillo ? 100 : 74;
-    const altoImg = esCastillo ? 100 : 74;
+    const anchoImg = esCastillo ? 130 : 90;
+    const altoImg = esCastillo ? 130 : 90;
 
     piezas += `
       <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
@@ -710,23 +720,18 @@ async function renderRecinto() {
   });
 
   cont.innerHTML = `
-    <svg id="recinto-svg" viewBox="-320 -160 640 400" xmlns="http://www.w3.org/2000/svg">
+    <svg id="recinto-svg" viewBox="-320 -180 640 520" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <radialGradient id="suelo-recinto" cx="50%" cy="45%" r="75%">
           <stop offset="0%" stop-color="#5c7a42" />
           <stop offset="100%" stop-color="#3a4a2e" />
         </radialGradient>
       </defs>
-      <rect x="-320" y="-160" width="640" height="400" fill="url(#suelo-recinto)" />
+      <rect x="-320" y="-180" width="640" height="520" fill="url(#suelo-recinto)" />
       ${decoracion}
       ${caminos}
       ${piezas}
     </svg>`;
-  cont.querySelectorAll(".edificio-iso").forEach((el) => {
-    el.addEventListener("click", () => {
-      document.querySelector('.reinos-tab-btn[data-tab="castillo"]').click();
-    });
-  });
 }
 
 // Zoom y paneo del recinto — mismo patrón que el del mapa del mundo, con
@@ -757,11 +762,14 @@ $("btn-recinto-centrar").addEventListener("click", centrarRecinto);
 const punterosRecinto = new Map();
 let distanciaPinchInicialRecinto = null;
 let escalaPinchInicialRecinto = 1;
+let inicioToqueRecinto = null;
 const viewportRecinto = $("recinto-viewport");
 viewportRecinto.addEventListener("pointerdown", (e) => {
   viewportRecinto.setPointerCapture(e.pointerId);
   punterosRecinto.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (punterosRecinto.size === 1) inicioToqueRecinto = { x: e.clientX, y: e.clientY };
   if (punterosRecinto.size === 2) {
+    inicioToqueRecinto = null;
     const [p1, p2] = Array.from(punterosRecinto.values());
     distanciaPinchInicialRecinto = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     escalaPinchInicialRecinto = zoomRecinto;
@@ -783,6 +791,18 @@ viewportRecinto.addEventListener("pointermove", (e) => {
   }
 });
 function soltarPunteroRecinto(e) {
+  // Mismo motivo que en el mapa del mundo: con el puntero capturado para
+  // arrastrar, el clic nativo del navegador no llega bien al edificio en
+  // escritorio. Detectamos el toque nosotros mismos.
+  if (inicioToqueRecinto && punterosRecinto.size === 1) {
+    const distancia = Math.hypot(e.clientX - inicioToqueRecinto.x, e.clientY - inicioToqueRecinto.y);
+    if (distancia < 8) {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const grupo = el?.closest?.(".edificio-iso");
+      if (grupo) document.querySelector('.reinos-tab-btn[data-tab="castillo"]').click();
+    }
+  }
+  inicioToqueRecinto = null;
   punterosRecinto.delete(e.pointerId);
   if (punterosRecinto.size < 2) distanciaPinchInicialRecinto = null;
 }
@@ -997,9 +1017,6 @@ function renderMapaMundo() {
     : `<rect x="0" y="0" width="100" height="100" fill="#6b8f4e" />`;
 
   cont.innerHTML = `<svg id="mundo-mapa-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${fondo}${celdas}${castillos}</svg>`;
-  cont.querySelectorAll(".celda-mapa").forEach((el) => {
-    el.addEventListener("click", () => seleccionarCasilla(Number(el.dataset.f), Number(el.dataset.c)));
-  });
 }
 
 $("btn-regenerar-mapa").addEventListener("click", async () => {
@@ -1050,10 +1067,13 @@ let distanciaPinchInicialMundo = null;
 let escalaPinchInicialMundo = 1;
 
 const viewportMundo = $("mundo-mapa-viewport");
+let inicioToqueMundo = null;
 viewportMundo.addEventListener("pointerdown", (e) => {
   viewportMundo.setPointerCapture(e.pointerId);
   punterosMapaMundo.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (punterosMapaMundo.size === 1) inicioToqueMundo = { x: e.clientX, y: e.clientY };
   if (punterosMapaMundo.size === 2) {
+    inicioToqueMundo = null; // dos dedos: es un pellizco, no una selección
     const [p1, p2] = Array.from(punterosMapaMundo.values());
     distanciaPinchInicialMundo = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     escalaPinchInicialMundo = zoomMapa;
@@ -1076,6 +1096,20 @@ viewportMundo.addEventListener("pointermove", (e) => {
   }
 });
 function soltarPunteroMapaMundo(e) {
+  // Con el puntero "capturado" para poder arrastrar, el clic nativo del
+  // navegador sobre la casilla concreta no llega bien en escritorio (en
+  // móvil, por cómo se sintetiza el toque, sí colaba). Así que detectamos
+  // el toque nosotros mismos: si apenas se movió el dedo/ratón entre
+  // bajar y soltar, es una selección de verdad, no un arrastre.
+  if (inicioToqueMundo && punterosMapaMundo.size === 1) {
+    const distancia = Math.hypot(e.clientX - inicioToqueMundo.x, e.clientY - inicioToqueMundo.y);
+    if (distancia < 8) {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const celda = el?.closest?.(".celda-mapa");
+      if (celda) seleccionarCasilla(Number(celda.dataset.f), Number(celda.dataset.c));
+    }
+  }
+  inicioToqueMundo = null;
   punterosMapaMundo.delete(e.pointerId);
   if (punterosMapaMundo.size < 2) distanciaPinchInicialMundo = null;
 }

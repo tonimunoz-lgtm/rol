@@ -403,17 +403,7 @@ function renderCastillo() {
 // sin recortar, ni siquiera un instante.
 function mostrarImagenRecortada(contenedor, url, iconoPorDefecto) {
   if (!contenedor) return;
-  if (!url) {
-    contenedor.innerHTML = iconoPorDefecto;
-    return;
-  }
-  contenedor.innerHTML = iconoPorDefecto; // mientras se procesa el recorte
-  const urlEnEsteMomento = url;
-  contenedor.dataset.urlOrigen = urlEnEsteMomento;
-  obtenerImagenTransparente(url).then((transparente) => {
-    if (contenedor.dataset.urlOrigen !== urlEnEsteMomento) return; // llegó una imagen más nueva mientras tanto
-    contenedor.innerHTML = `<img src="${transparente}" style="width:100%; height:100%; object-fit:contain;" />`;
-  });
+  contenedor.innerHTML = url ? `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />` : iconoPorDefecto;
 }
 
 $("btn-mejorar-castillo").addEventListener("click", () => iniciarConstruccion("castillo"));
@@ -664,46 +654,6 @@ function isoAScreen(gx, gy) {
   return { x: (gx - gy) * (ISO_TILE_W / 2), y: (gx + gy) * (ISO_TILE_H / 2) };
 }
 
-// ---------- Quitar el fondo de verdad, con un modelo de IA especializado
-// en esto (no un truco de comparar colores) — funciona sea cual sea el
-// fondo que haya generado Flux, ya no depende de pedirle un color plano
-// que muchas veces no respeta bien. ----------
-const cacheImagenesTransparentes = new Map();
-let removeBackgroundFnPromesa = null;
-
-function cargarRemoveBackground() {
-  if (!removeBackgroundFnPromesa) {
-    removeBackgroundFnPromesa = import("https://cdn.jsdelivr.net/npm/@imgly/background-removal/+esm").then((mod) => mod.removeBackground);
-  }
-  return removeBackgroundFnPromesa;
-}
-
-function conTopeDeTiempo(promesa, ms) {
-  return Promise.race([
-    promesa,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("tiempo de espera agotado")), ms)),
-  ]);
-}
-
-function obtenerImagenTransparente(url) {
-  if (!url) return Promise.resolve(null);
-  if (cacheImagenesTransparentes.has(url)) return cacheImagenesTransparentes.get(url);
-
-  const promesa = (async () => {
-    try {
-      const removeBackground = await conTopeDeTiempo(cargarRemoveBackground(), 15000);
-      const blob = await conTopeDeTiempo(removeBackground(url), 20000);
-      return URL.createObjectURL(blob);
-    } catch (e) {
-      console.warn("No se pudo quitar el fondo con IA, se usa la imagen tal cual:", e.message);
-      return url;
-    }
-  })();
-
-  cacheImagenesTransparentes.set(url, promesa);
-  return promesa;
-}
-
 // Árboles/decoración fija en los huecos de la cuadrícula — usan las mismas
 // coordenadas isométricas que los edificios (posiciones intermedias entre
 // casillas), así encajan de verdad con el suelo en vez de flotar sueltos.
@@ -718,11 +668,9 @@ const DECORACION_RECINTO = [
   { gx: 1.5, gy: 2.7, icono: "🌾" },
 ];
 
-let tokenRenderRecinto = 0;
 function renderRecinto() {
   const cont = $("recinto-lienzo");
   if (!cont || !reinoActual) return;
-  const miToken = ++tokenRenderRecinto;
 
   // Orden de dibujado: de atrás (gy bajo) a delante (gy alto), para que lo
   // que está "más cerca de la cámara" tape a lo que está detrás — como en
@@ -808,9 +756,10 @@ function renderRecinto() {
     return `<text x="${x}" y="${y}" text-anchor="middle" font-size="24" opacity="0.85">${d.icono}</text>`;
   }).join("");
 
-  // ---------- Edificios como sprites flotando — se pintan YA MISMO con la
-  // imagen tal cual (nunca se espera a nada), y si el recorte con IA
-  // termina a tiempo, se sustituye sola por detrás sin recargar nada.
+  // ---------- Edificios como tarjetas enmarcadas: la imagen tal cual,
+  // dentro de un marco redondeado — fiable y rápido, sin depender de
+  // ningún recorte de fondo (ni por color ni por IA).
+  let defsRecortes = "";
   let piezas = "";
   claves.forEach((clave) => {
     const { gx, gy } = ISO_GRID[clave];
@@ -820,15 +769,19 @@ function renderRecinto() {
     const imagenUrl = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
     const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
     const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
-    const tam = esCastillo ? 110 : 82;
+    const tam = esCastillo ? 100 : 76;
+    const rx = -tam / 2, ry = -tam - 6;
+
+    if (imagenUrl) defsRecortes += `<clipPath id="clip-${clave}"><rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" /></clipPath>`;
 
     piezas += `
       <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
         <polygon class="losa-iso" points="0,${-ISO_TILE_H / 2} ${ISO_TILE_W / 2},0 0,${ISO_TILE_H / 2} ${-ISO_TILE_W / 2},0" />
         ${
           imagenUrl
-            ? `<image class="img-edificio-iso" href="${imagenUrl}" x="${-tam / 2}" y="${-tam - 4}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid meet" />`
-            : `<text x="0" y="${-tam / 2}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
+            ? `<g clip-path="url(#clip-${clave})"><image href="${imagenUrl}" x="${rx}" y="${ry}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid slice" /></g>
+               <rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" fill="none" stroke="#c9a227" stroke-width="2.5" />`
+            : `<text x="0" y="${ry + tam / 2 + 8}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
         }
         <text class="etiqueta-nivel-iso" x="0" y="12">${nombre} · Nv.${nivel}</text>
       </g>`;
@@ -841,6 +794,7 @@ function renderRecinto() {
           <stop offset="0%" stop-color="#5c7a42" />
           <stop offset="100%" stop-color="#3a4a2e" />
         </radialGradient>
+        ${defsRecortes}
       </defs>
       <rect x="-320" y="-180" width="640" height="520" fill="url(#suelo-recinto)" />
       ${decoracion}
@@ -848,22 +802,6 @@ function renderRecinto() {
       ${murallaSvg}
       ${piezas}
     </svg>`;
-
-  // Mejora en segundo plano: si el recorte de una imagen concreta tiene
-  // éxito a tiempo, sustituimos solo esa — si tarda o falla, esa imagen se
-  // queda tal cual estaba, sin afectar a las demás ni bloquear la vista.
-  claves.forEach((clave) => {
-    const esCastillo = clave === "castillo";
-    const imagenUrlOriginal = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
-    if (!imagenUrlOriginal) return;
-    obtenerImagenTransparente(imagenUrlOriginal)
-      .then((transparente) => {
-        if (miToken !== tokenRenderRecinto || !transparente || transparente === imagenUrlOriginal) return;
-        const el = cont.querySelector(`.edificio-iso[data-clave="${clave}"] .img-edificio-iso`);
-        if (el) el.setAttribute("href", transparente);
-      })
-      .catch(() => {});
-  });
 }
 
 // Zoom y paneo del recinto — mismo patrón que el del mapa del mundo, con

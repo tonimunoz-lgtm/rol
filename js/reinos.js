@@ -168,7 +168,7 @@ function valoresIniciales(nombreReino, colorAsignado, posicion) {
     castilloImagenUrl: "",
     edificios: edificiosIniciales,
     recursos: { comida: 150, piedra: 150, oro: 100 },
-    produccionPorHora: calcularProduccionTotal(edificiosIniciales, []),
+    produccionPorHora: calcularProduccionTotal(edificiosIniciales, [], false),
     nobles: [],
     ultimaActualizacionRecursos: serverTimestamp(),
     construyendo: null,
@@ -387,6 +387,17 @@ function renderEdificios() {
 // ---------- Nobleza: nombrar nobles y cederles tierras ----------
 $("sel-titulo-noble").innerHTML = TITULOS_NOBLES.map((t) => `<option value="${t.nombre}">${t.nombre} (🪙${t.costeOro})</option>`).join("");
 
+let nobleEnJuicioIdx = null;
+let acusacionActual = "";
+const ACUSACIONES_NOBLES = [
+  "malversar impuestos del pueblo",
+  "conspirar en secreto con un reino rival",
+  "abandonar sus tierras en tiempos de necesidad",
+  "cobrar tributos ilegales a los campesinos",
+  "negociar a escondidas con mercaderes extranjeros",
+  "desobedecer una orden directa del trono",
+];
+
 function renderNobles() {
   const cont = $("lista-nobles");
   const nobles = reinoActual.nobles || [];
@@ -400,24 +411,105 @@ function renderNobles() {
   cont.innerHTML = nobles
     .map((n, idx) => {
       const bonus = Math.round((TITULOS_NOBLES.find((t) => t.nombre === n.titulo)?.bonusProduccion || 0) * 100);
-      if (n.territorioAsignado) {
-        return `<div class="reino-card"><span>👑 ${n.nombre}, ${n.titulo} de (${n.territorioAsignado.f},${n.territorioAsignado.c}) — +${bonus}% producción</span></div>`;
-      }
       const opcionesTierras = territoriosLibres.map((t) => `<option value="${t.f},${t.c}">(${t.f},${t.c})</option>`).join("");
+      const infoTierras = n.territorioAsignado
+        ? `de (${n.territorioAsignado.f},${n.territorioAsignado.c}) — +${bonus}% producción`
+        : "sin tierras todavía";
+
+      if (nobleEnJuicioIdx === idx) {
+        return `
+          <div class="reino-card" style="flex-direction:column; align-items:stretch; gap:.4em; border-color:var(--rust);">
+            <span>⚖️ Juicio a ${n.nombre} — acusado de ${acusacionActual}. El rey decide:</span>
+            <div style="display:flex; gap:.4em; flex-wrap:wrap;">
+              <button class="btn-veredicto" data-idx="${idx}" data-veredicto="perdonar" style="font-size:.7rem;">🕊️ Perdonar</button>
+              ${n.territorioAsignado ? `<button class="btn-veredicto" data-idx="${idx}" data-veredicto="despojar" style="font-size:.7rem;">📜 Despojar de tierras</button>` : ""}
+              <button class="btn-veredicto" data-idx="${idx}" data-veredicto="ejecutar" style="font-size:.7rem; color:var(--rust);">⚔️ Ejecutar</button>
+              <button class="btn-cancelar-juicio" style="font-size:.7rem;">Cancelar juicio</button>
+            </div>
+          </div>`;
+      }
+
       return `
         <div class="reino-card">
-          <span>👑 ${n.nombre}, ${n.titulo} (sin tierras todavía)</span>
-          ${
-            territoriosLibres.length > 0
-              ? `<div style="display:flex; gap:.3em;"><select class="sel-tierra-noble" data-idx="${idx}">${opcionesTierras}</select><button class="btn-ceder-tierras" data-idx="${idx}" style="font-size:.7rem;">Ceder tierras</button></div>`
-              : `<span class="mono" style="font-size:.7rem; color:var(--parchment-dim);">Sin territorio libre que ceder</span>`
-          }
+          <span>👑 ${n.nombre}, ${n.titulo} ${infoTierras}</span>
+          <div style="display:flex; gap:.3em; flex-wrap:wrap;">
+            ${
+              !n.territorioAsignado && territoriosLibres.length > 0
+                ? `<select class="sel-tierra-noble" data-idx="${idx}">${opcionesTierras}</select><button class="btn-ceder-tierras" data-idx="${idx}" style="font-size:.7rem;">Ceder tierras</button>`
+                : ""
+            }
+            <button class="btn-abrir-juicio" data-idx="${idx}" style="font-size:.7rem;">⚖️ Juicio</button>
+          </div>
         </div>`;
     })
     .join("");
   cont.querySelectorAll(".btn-ceder-tierras").forEach((btn) =>
     btn.addEventListener("click", () => cederTierras(Number(btn.dataset.idx)))
   );
+  cont.querySelectorAll(".btn-abrir-juicio").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      nobleEnJuicioIdx = Number(btn.dataset.idx);
+      acusacionActual = ACUSACIONES_NOBLES[Math.floor(Math.random() * ACUSACIONES_NOBLES.length)];
+      renderNobles();
+    })
+  );
+  cont.querySelectorAll(".btn-cancelar-juicio").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      nobleEnJuicioIdx = null;
+      renderNobles();
+    })
+  );
+  cont.querySelectorAll(".btn-veredicto").forEach((btn) =>
+    btn.addEventListener("click", () => dictarVeredicto(Number(btn.dataset.idx), btn.dataset.veredicto))
+  );
+}
+
+async function dictarVeredicto(idx, veredicto) {
+  const nobles = reinoActual.nobles || [];
+  const noble = nobles[idx];
+  if (!noble) return;
+
+  if (veredicto === "perdonar") {
+    await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+      reputacion: Math.min(100, (reinoActual.reputacion ?? 100) + 2),
+    });
+    await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+      autorUid: "sistema",
+      autorNombre: "📯 Heraldo",
+      texto: `🕊️ El rey de ${reinoActual.nombreReino} perdona a ${noble.titulo} ${noble.nombre}, acusado de ${acusacionActual}. Un gesto de clemencia.`,
+      timestamp: serverTimestamp(),
+    });
+  } else if (veredicto === "despojar") {
+    const nuevosNobles = nobles.map((n, i) => (i === idx ? { ...n, territorioAsignado: null } : n));
+    await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+      nobles: nuevosNobles,
+      produccionPorHora: calcularProduccionTotal(reinoActual.edificios, nuevosNobles, matrimonioActivoCon(currentUid)),
+    });
+    await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+      autorUid: "sistema",
+      autorNombre: "📯 Heraldo",
+      texto: `📜 El rey de ${reinoActual.nombreReino} despoja de sus tierras a ${noble.titulo} ${noble.nombre}, por ${acusacionActual}.`,
+      timestamp: serverTimestamp(),
+    });
+  } else if (veredicto === "ejecutar") {
+    if (!confirm(`¿Seguro que quieres ejecutar a ${noble.nombre}? Perderás bastante reputación.`)) {
+      return;
+    }
+    const nuevosNobles = nobles.filter((_, i) => i !== idx);
+    await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+      nobles: nuevosNobles,
+      reputacion: Math.max(0, (reinoActual.reputacion ?? 100) - 15),
+      produccionPorHora: calcularProduccionTotal(reinoActual.edificios, nuevosNobles, matrimonioActivoCon(currentUid)),
+    });
+    await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+      autorUid: "sistema",
+      autorNombre: "📯 Heraldo",
+      texto: `⚔️💀 El rey de ${reinoActual.nombreReino} ordena ejecutar a ${noble.titulo} ${noble.nombre}, culpable de ${acusacionActual}. La corte queda en silencio.`,
+      timestamp: serverTimestamp(),
+    });
+  }
+
+  nobleEnJuicioIdx = null;
 }
 
 $("btn-nombrar-noble").addEventListener("click", async () => {
@@ -445,7 +537,7 @@ async function cederTierras(idxNoble) {
   nuevosNobles[idxNoble] = { ...nuevosNobles[idxNoble], territorioAsignado: { f, c } };
   await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
     nobles: nuevosNobles,
-    produccionPorHora: calcularProduccionTotal(reinoActual.edificios, nuevosNobles),
+    produccionPorHora: calcularProduccionTotal(reinoActual.edificios, nuevosNobles, matrimonioActivoCon(currentUid)),
   });
 }
 
@@ -515,7 +607,7 @@ async function intentarFinalizarConstruccion() {
       else cambios[`edificios.${clave}.nivel`] = nivelObjetivo;
       const nuevosEdificios = { ...data.edificios };
       if (clave !== "castillo") nuevosEdificios[clave] = { ...nuevosEdificios[clave], nivel: nivelObjetivo };
-      cambios.produccionPorHora = calcularProduccionTotal(clave === "castillo" ? data.edificios : nuevosEdificios, data.nobles);
+      cambios.produccionPorHora = calcularProduccionTotal(clave === "castillo" ? data.edificios : nuevosEdificios, data.nobles, matrimonioActivoCon(currentUid));
       tx.update(ref, cambios);
     });
 
@@ -1117,7 +1209,12 @@ function aliadoActivo() {
   return { uid: uidAliado, nombre: pacto.nombres?.[uidAliado] || "tu aliado" };
 }
 
-const ETIQUETAS_TIPO_PACTO = { no_agresion: "🕊️ No agresión", alianza_militar: "⚔️ Alianza militar" };
+const ETIQUETAS_TIPO_PACTO = { no_agresion: "🕊️ No agresión", alianza_militar: "⚔️ Alianza militar", matrimonio: "💍 Matrimonio" };
+
+// ¿Tiene este reino un matrimonio sellado activo ahora mismo?
+function matrimonioActivoCon(uid) {
+  return pactosActuales.some((p) => p.estado === "aceptado" && p.tipo === "matrimonio" && p.jugadores.includes(uid));
+}
 
 // ---------- Alerta central: aparece sola cuando alguien espera tu respuesta ----------
 let pactoEnNegociacion = null;
@@ -1128,7 +1225,8 @@ function mostrarAlertaNegociacion(pacto) {
   const otroNombre = pacto.nombres?.[otroUid] || "Un reino";
   $("negociacion-titulo").textContent = "🤝 Propuesta diplomática";
   $("negociacion-texto").textContent =
-    `${otroNombre} propone: ${ETIQUETAS_TIPO_PACTO[pacto.tipo] || pacto.tipo}.` + (pacto.mensaje ? ` "${pacto.mensaje}"` : "");
+    `${otroNombre} propone: ${ETIQUETAS_TIPO_PACTO[pacto.tipo] || pacto.tipo}${pacto.tipo === "matrimonio" ? ` (dote: 🪙${pacto.dote || 0})` : ""}.` +
+    (pacto.mensaje ? ` "${pacto.mensaje}"` : "");
   const historial = pacto.historial || [];
   if (historial.length > 1) {
     $("negociacion-historial").style.display = "block";
@@ -1154,13 +1252,63 @@ function comprobarNegociacionesPendientes() {
 
 $("btn-negociacion-aceptar").addEventListener("click", async () => {
   if (!pactoEnNegociacion) return;
-  await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoEnNegociacion.id), { estado: "aceptado" });
-  await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
-    autorUid: "sistema",
-    autorNombre: "📯 Heraldo",
-    texto: `🤝 ${reinoActual.nombreReino} y ${pactoEnNegociacion.nombres[pactoEnNegociacion.jugadores.find((u) => u !== currentUid)]} han sellado un pacto de ${ETIQUETAS_TIPO_PACTO[pactoEnNegociacion.tipo]}.`,
-    timestamp: serverTimestamp(),
-  });
+  const pacto = pactoEnNegociacion;
+  const otroUid = pacto.jugadores.find((u) => u !== currentUid);
+  const otroNombre = pacto.nombres?.[otroUid] || "otro reino";
+
+  if (pacto.tipo === "matrimonio") {
+    // El matrimonio mueve oro de verdad (la dote) y sube la producción de
+    // AMBOS reinos — no solo el propio, hay que tocar el otro también.
+    try {
+      await runTransaction(db, async (tx) => {
+        const pagadorUid = pacto.ultimaPropuestaPor; // quien propuso paga la dote
+        const receptorUid = pagadorUid === currentUid ? otroUid : currentUid;
+        const pagadorRef = doc(db, "mundos", mundoId, "reinos", pagadorUid);
+        const receptorRef = doc(db, "mundos", mundoId, "reinos", receptorUid);
+        const pagadorSnap = await tx.get(pagadorRef);
+        const receptorSnap = await tx.get(receptorRef);
+        const pagador = pagadorSnap.data();
+        const receptor = receptorSnap.data();
+        const dote = pacto.dote || 0;
+
+        const recursosPagador = recursosActuales(pagador);
+        const recursosReceptor = recursosActuales(receptor);
+        if (recursosPagador.oro < dote) {
+          throw new Error(`Quien propuso la unión ya no tiene suficiente oro para pagar la dote (🪙${dote}).`);
+        }
+
+        tx.update(pagadorRef, {
+          recursos: { ...recursosPagador, oro: recursosPagador.oro - dote },
+          ultimaActualizacionRecursos: serverTimestamp(),
+          produccionPorHora: calcularProduccionTotal(pagador.edificios, pagador.nobles, true),
+        });
+        tx.update(receptorRef, {
+          recursos: { ...recursosReceptor, oro: recursosReceptor.oro + dote },
+          ultimaActualizacionRecursos: serverTimestamp(),
+          produccionPorHora: calcularProduccionTotal(receptor.edificios, receptor.nobles, true),
+        });
+        tx.update(doc(db, "mundos", mundoId, "pactos", pacto.id), { estado: "aceptado" });
+      });
+      await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+        autorUid: "sistema",
+        autorNombre: "📯 Heraldo",
+        texto: `💍 ¡${reinoActual.nombreReino} y ${otroNombre} se unen en matrimonio! Sus reinos crecen más fuertes juntos.`,
+        timestamp: serverTimestamp(),
+      });
+    } catch (e) {
+      alert(`No se pudo sellar el matrimonio: ${e.message}`);
+      $("negociacion-modal").classList.remove("visible");
+      return;
+    }
+  } else {
+    await updateDoc(doc(db, "mundos", mundoId, "pactos", pacto.id), { estado: "aceptado" });
+    await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+      autorUid: "sistema",
+      autorNombre: "📯 Heraldo",
+      texto: `🤝 ${reinoActual.nombreReino} y ${otroNombre} han sellado un pacto de ${ETIQUETAS_TIPO_PACTO[pacto.tipo]}.`,
+      timestamp: serverTimestamp(),
+    });
+  }
   $("negociacion-modal").classList.remove("visible");
 });
 
@@ -1183,11 +1331,18 @@ $("btn-negociacion-contraofertar").addEventListener("click", () => {
 // ---------- Proponer o contraofertar ----------
 let pactoObjetivoParaProponer = null; // { uid, nombre, pactoExistente }
 
+function actualizarVisibilidadDote() {
+  $("campo-dote").style.display = $("sel-tipo-pacto").value === "matrimonio" ? "block" : "none";
+}
+$("sel-tipo-pacto").addEventListener("change", actualizarVisibilidadDote);
+
 function abrirProponerPacto(uid, nombre, pactoExistente = null) {
   pactoObjetivoParaProponer = { uid, nombre, pactoExistente };
   $("proponer-pacto-titulo").textContent = pactoExistente ? `Contraofertar a ${nombre}` : `Proponer pacto a ${nombre}`;
   $("sel-tipo-pacto").value = pactoExistente?.tipo || "no_agresion";
   $("in-mensaje-pacto").value = "";
+  $("in-dote-pacto").value = pactoExistente?.dote || 100;
+  actualizarVisibilidadDote();
   $("proponer-pacto-modal").classList.add("visible");
 }
 $("btn-cancelar-pacto").addEventListener("click", () => $("proponer-pacto-modal").classList.remove("visible"));
@@ -1197,12 +1352,14 @@ $("btn-confirmar-pacto").addEventListener("click", async () => {
   const { uid, nombre, pactoExistente } = pactoObjetivoParaProponer;
   const tipo = $("sel-tipo-pacto").value;
   const mensaje = $("in-mensaje-pacto").value.trim().slice(0, 200);
+  const dote = tipo === "matrimonio" ? Math.max(0, Number($("in-dote-pacto").value) || 0) : 0;
   const entradaHistorial = { uid: currentUid, nombre: reinoActual.nombreReino, tipo, mensaje, timestamp: Date.now() };
 
   if (pactoExistente) {
     await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoExistente.id), {
       tipo,
       mensaje,
+      dote,
       ultimaPropuestaPor: currentUid,
       estado: "pendiente",
       historial: [...(pactoExistente.historial || []), entradaHistorial],
@@ -1215,6 +1372,7 @@ $("btn-confirmar-pacto").addEventListener("click", async () => {
       ultimaPropuestaPor: currentUid,
       tipo,
       mensaje,
+      dote,
       estado: "pendiente",
       historial: [entradaHistorial],
       actualizadoEn: serverTimestamp(),
@@ -1284,9 +1442,7 @@ function renderOtrosReinos() {
   cont.querySelectorAll(".btn-proponer-pacto").forEach((btn) =>
     btn.addEventListener("click", () => abrirProponerPacto(btn.dataset.uid, btn.dataset.nombre))
   );
-  cont.querySelectorAll(".btn-romper-pacto").forEach((btn) =>
-    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "pactos", btn.dataset.id), { estado: "roto" }))
-  );
+  cont.querySelectorAll(".btn-romper-pacto").forEach((btn) => btn.addEventListener("click", () => romperPacto(btn.dataset.id)));
   cont.querySelectorAll(".btn-traicionar").forEach((btn) => btn.addEventListener("click", () => traicionar(btn.dataset.id, btn.dataset.uid, btn.dataset.nombre)));
   cont.querySelectorAll(".btn-responder-pacto").forEach((btn) =>
     btn.addEventListener("click", () => {
@@ -1299,16 +1455,66 @@ function renderOtrosReinos() {
   );
 }
 
+// ---------- Romper un pacto: si es un matrimonio, hay que recalcular la
+// producción de ambos reinos (se pierde el bonus) y penaliza más la
+// reputación que romper un pacto normal — es un divorcio, no un desaire. ----------
+async function romperPacto(pactoId) {
+  const pacto = pactosActuales.find((p) => p.id === pactoId);
+  if (!pacto) return;
+
+  if (pacto.tipo !== "matrimonio") {
+    await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoId), { estado: "roto" });
+    return;
+  }
+
+  if (!confirm("¿Seguro que quieres romper este matrimonio? Perderéis el bonus de producción en ambos reinos, y tu reputación bajará por el divorcio.")) return;
+
+  const otroUid = pacto.jugadores.find((u) => u !== currentUid);
+  try {
+    await runTransaction(db, async (tx) => {
+      const miRef = doc(db, "mundos", mundoId, "reinos", currentUid);
+      const otroRef = doc(db, "mundos", mundoId, "reinos", otroUid);
+      const miSnap = await tx.get(miRef);
+      const otroSnap = await tx.get(otroRef);
+      const mi = miSnap.data();
+      const otro = otroSnap.data();
+
+      tx.update(miRef, {
+        produccionPorHora: calcularProduccionTotal(mi.edificios, mi.nobles, false),
+        reputacion: Math.max(0, (mi.reputacion ?? 100) - 15),
+      });
+      tx.update(otroRef, { produccionPorHora: calcularProduccionTotal(otro.edificios, otro.nobles, false) });
+      tx.update(doc(db, "mundos", mundoId, "pactos", pactoId), { estado: "roto" });
+    });
+    await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+      autorUid: "sistema",
+      autorNombre: "📯 Heraldo",
+      texto: `💔 ${reinoActual.nombreReino} rompe su matrimonio con ${pacto.nombres?.[otroUid] || "otro reino"}. Ambos reinos pierden el bonus de la unión.`,
+      timestamp: serverTimestamp(),
+    });
+  } catch (e) {
+    alert(`No se pudo romper el matrimonio: ${e.message}`);
+  }
+}
+
 // ---------- Traición: rompes la alianza para siempre a cambio de una
 // ventaja táctica puntual, pero todo el mundo se entera. ----------
 async function traicionar(pactoId, uidVictima, nombreVictima) {
   if (!confirm(`¿Seguro que quieres traicionar a ${nombreVictima}? Perderás reputación y todo el mundo lo sabrá — pero tu próximo ataque contra ellos será una emboscada (+25% de fuerza) durante 5 minutos.`)) return;
 
-  await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoId), { estado: "roto" });
-  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+  const pacto = pactosActuales.find((p) => p.id === pactoId);
+  const cambiosPropios = {
     reputacion: Math.max(0, (reinoActual.reputacion ?? 100) - 30),
     sorpresaDisponibleContra: { uid: uidVictima, expiraEn: Date.now() + 5 * 60 * 1000 },
-  });
+  };
+  // Si era un matrimonio, el traidor pierde el bonus de producción — la
+  // otra parte, la víctima, no tiene por qué perder nada por esto.
+  if (pacto?.tipo === "matrimonio") {
+    cambiosPropios.produccionPorHora = calcularProduccionTotal(reinoActual.edificios, reinoActual.nobles, false);
+  }
+
+  await updateDoc(doc(db, "mundos", mundoId, "pactos", pactoId), { estado: "roto" });
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), cambiosPropios);
   await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
     autorUid: "sistema",
     autorNombre: "📯 Heraldo",

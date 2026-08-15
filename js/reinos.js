@@ -600,13 +600,23 @@ const ISO_GRID = {
   granja: { gx: 0, gy: 0 },
   cantera: { gx: 1, gy: 0 },
   mina: { gx: 2, gy: 0 },
-  murallas: { gx: 0, gy: 1 },
   castillo: { gx: 1, gy: 1 },
   cuadras: { gx: 2, gy: 1 },
   barracones: { gx: 0, gy: 2 },
   iglesia: { gx: 1, gy: 2 },
   biblioteca: { gx: 2, gy: 2 },
 };
+// Solo pares REALMENTE vecinos en la cuadrícula — así el camino nunca
+// atraviesa por encima de otro edificio que no sea el destino.
+const CONEXIONES_CAMINOS = [
+  ["castillo", "cantera"],
+  ["castillo", "cuadras"],
+  ["castillo", "iglesia"],
+  ["cantera", "granja"],
+  ["cantera", "mina"],
+  ["iglesia", "barracones"],
+  ["iglesia", "biblioteca"],
+];
 const ISO_TILE_W = 220;
 const ISO_TILE_H = 130;
 
@@ -638,8 +648,7 @@ function obtenerImagenTransparente(url) {
         const datos = ctx.getImageData(0, 0, ancho, alto);
         const d = datos.data;
 
-        // Referencia del fondo: promedio de las 4 esquinas (más fiable que
-        // una sola esquina, por si hay algo de ruido).
+        // Referencia inicial del fondo: promedio de las 4 esquinas.
         const esquinas = [0, ancho - 1, (alto - 1) * ancho, ancho * alto - 1];
         let refR = 0, refG = 0, refB = 0;
         esquinas.forEach((idx) => {
@@ -648,41 +657,52 @@ function obtenerImagenTransparente(url) {
           refB += d[idx * 4 + 2];
         });
         refR /= 4; refG /= 4; refB /= 4;
-        const UMBRAL = 45;
 
-        // Solo borramos el fondo que está CONECTADO al borde de la imagen
-        // (inundación desde fuera hacia dentro) — así, aunque el propio
-        // edificio tenga algún tono parecido al fondo, nunca se toca,
-        // porque esos píxeles no están unidos al borde por un camino de
-        // color de fondo.
+        // Inundación "adaptativa" desde el borde hacia dentro: cada píxel
+        // se compara con el color del píxel que lo descubrió (no siempre
+        // con la referencia original), así se sigue bien un degradado
+        // suave en el fondo sin dejar un halo a medio recortar — pero
+        // nunca se cuela dentro del edificio, porque su contorno supone
+        // un salto de color demasiado brusco para el umbral, tan ajustado
+        // paso a paso.
+        const UMBRAL_PASO = 32;
         const visitado = new Uint8Array(ancho * alto);
-        const cola = new Int32Array(ancho * alto);
-        let colaFin = 0;
+        const cola = [];
+        const colaPadre = [];
         for (let x = 0; x < ancho; x++) {
-          cola[colaFin++] = x;
-          cola[colaFin++] = (alto - 1) * ancho + x;
+          cola.push(x, (alto - 1) * ancho + x);
+          colaPadre.push(-1, -1);
         }
         for (let y = 0; y < alto; y++) {
-          cola[colaFin++] = y * ancho;
-          cola[colaFin++] = y * ancho + (ancho - 1);
+          cola.push(y * ancho, y * ancho + (ancho - 1));
+          colaPadre.push(-1, -1);
         }
 
         let colaInicio = 0;
-        while (colaInicio < colaFin) {
-          const idx = cola[colaInicio++];
+        while (colaInicio < cola.length) {
+          const idx = cola[colaInicio];
+          const padreIdx = colaPadre[colaInicio];
+          colaInicio++;
           if (visitado[idx]) continue;
           const p = idx * 4;
-          const dist = Math.sqrt((d[p] - refR) ** 2 + (d[p + 1] - refG) ** 2 + (d[p + 2] - refB) ** 2);
-          if (dist >= UMBRAL) continue;
+          let rr, gg, bb;
+          if (padreIdx === -1) {
+            rr = refR; gg = refG; bb = refB;
+          } else {
+            const pp = padreIdx * 4;
+            rr = d[pp]; gg = d[pp + 1]; bb = d[pp + 2];
+          }
+          const dist = Math.sqrt((d[p] - rr) ** 2 + (d[p + 1] - gg) ** 2 + (d[p + 2] - bb) ** 2);
+          if (dist >= UMBRAL_PASO) continue;
           visitado[idx] = 1;
           d[p + 3] = 0;
 
           const x = idx % ancho;
           const y = (idx / ancho) | 0;
-          if (x > 0) cola[colaFin++] = idx - 1;
-          if (x < ancho - 1) cola[colaFin++] = idx + 1;
-          if (y > 0) cola[colaFin++] = idx - ancho;
-          if (y < alto - 1) cola[colaFin++] = idx + ancho;
+          if (x > 0) { cola.push(idx - 1); colaPadre.push(idx); }
+          if (x < ancho - 1) { cola.push(idx + 1); colaPadre.push(idx); }
+          if (y > 0) { cola.push(idx - ancho); colaPadre.push(idx); }
+          if (y < alto - 1) { cola.push(idx + ancho); colaPadre.push(idx); }
         }
 
         ctx.putImageData(datos, 0, 0);
@@ -724,7 +744,6 @@ async function renderRecinto() {
   // que está "más cerca de la cámara" tape a lo que está detrás — como en
   // cualquier vista isométrica de verdad.
   const claves = Object.keys(ISO_GRID).sort((a, b) => ISO_GRID[a].gy - ISO_GRID[b].gy || ISO_GRID[a].gx - ISO_GRID[b].gx);
-  const centroCastillo = isoAScreen(ISO_GRID.castillo.gx, ISO_GRID.castillo.gy);
 
   // Recortamos el fondo magenta de cada sprite en paralelo antes de montar
   // el SVG — así no aparece medio edificio mientras se procesa el resto.
@@ -742,13 +761,35 @@ async function renderRecinto() {
 
   // Caminos de tierra desde el castillo hasta cada edificio — refuerzan la
   // sensación de recinto habitado, no solo piezas sueltas flotando.
-  let caminos = "";
-  claves.forEach((clave) => {
-    if (clave === "castillo") return;
-    const { gx, gy } = ISO_GRID[clave];
-    const { x, y } = isoAScreen(gx, gy);
-    caminos += `<line x1="${centroCastillo.x}" y1="${centroCastillo.y}" x2="${x}" y2="${y}" stroke="#8a6d4a" stroke-width="7" stroke-linecap="round" opacity="0.55" />`;
-  });
+  const caminos = CONEXIONES_CAMINOS.map(([a, b]) => {
+    const pa = isoAScreen(ISO_GRID[a].gx, ISO_GRID[a].gy);
+    const pb = isoAScreen(ISO_GRID[b].gx, ISO_GRID[b].gy);
+    return `<line x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}" stroke="#8a6d4a" stroke-width="7" stroke-linecap="round" opacity="0.55" />`;
+  }).join("");
+
+  // Las murallas ya no son "un edificio más" — es un perímetro real que
+  // rodea todo el recinto, con torres en las esquinas, que crece con el
+  // nivel (más grosor, más presencia).
+  const nivelMurallas = reinoActual.edificios?.murallas?.nivel || 0;
+  const margen = 0.42;
+  const esquinasMuro = [
+    isoAScreen(-margen, -margen),
+    isoAScreen(2 + margen, -margen),
+    isoAScreen(2 + margen, 2 + margen),
+    isoAScreen(-margen, 2 + margen),
+  ];
+  const puntosMuro = esquinasMuro.map((p) => `${p.x},${p.y}`).join(" ");
+  const grosorMuro = 8 + nivelMurallas * 3;
+  const torresMuro = esquinasMuro
+    .map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${9 + nivelMurallas * 1.5}" fill="#6b6355" stroke="#3a352b" stroke-width="2" />`)
+    .join("");
+  const puntoSuperiorMuro = esquinasMuro[0];
+  const murallaSvg =
+    nivelMurallas > 0
+      ? `<polygon points="${puntosMuro}" fill="none" stroke="#8a8070" stroke-width="${grosorMuro}" stroke-linejoin="round" opacity="0.92" />
+         ${torresMuro}
+         <text x="${puntoSuperiorMuro.x}" y="${puntoSuperiorMuro.y - 14}" text-anchor="middle" class="etiqueta-nivel-iso">Murallas · Nv.${nivelMurallas}</text>`
+      : "";
 
   const decoracion = DECORACION_RECINTO.map((d) => {
     const { x, y } = isoAScreen(d.gx, d.gy);
@@ -790,6 +831,7 @@ async function renderRecinto() {
       <rect x="-320" y="-180" width="640" height="520" fill="url(#suelo-recinto)" />
       ${decoracion}
       ${caminos}
+      ${murallaSvg}
       ${piezas}
     </svg>`;
 }

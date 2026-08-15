@@ -131,13 +131,17 @@ function construirPrompt(tipo, d) {
     const prompt =
       `Isometric video game asset sprite of a medieval castle, ${tamano}. Single isolated building ` +
       `viewed from a 45-degree top-down isometric angle, in the visual style of a classic ` +
-      `real-time-strategy city-builder game. Flat solid magenta background (#FF00FF), completely ` +
-      `plain and uniform, no gradient, no texture, no ground, no grass, no sky, no scenery, no ` +
-      `shadow cast beyond the object itself, no other buildings — just the castle sprite alone, ` +
-      `clean readable silhouette, crisp edges, saturated warm painted game-art colors.`;
+      `real-time-strategy city-builder game. The building floats by itself with NO ground, NO ` +
+      `base, NO platform, NO grass patch underneath it — only the building's own geometry, ` +
+      `nothing else touching the background. Flat solid magenta background (#FF00FF), completely ` +
+      `plain and uniform all the way to every edge and corner, no gradient, no vignette, no ` +
+      `texture, no sky, no scenery, no shadow cast beyond the object itself, no other buildings — ` +
+      `just the castle sprite alone, clean readable silhouette, crisp edges, saturated warm ` +
+      `painted game-art colors.`;
     const negativo =
       `photorealistic, photograph, landscape, sky, clouds, background scenery, grass, ground, ` +
-      `terrain, multiple buildings, collage, people, village, gradient background, blurry, ${NEGATIVO_COMUN}`;
+      `base, platform, hill, mound, terrain, dirt patch, multiple buildings, collage, people, ` +
+      `village, gradient background, vignette, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 
@@ -149,13 +153,16 @@ function construirPrompt(tipo, d) {
       `Isometric video game asset sprite of a medieval ${nombre}, level ${nivel} of development ` +
       `(${desarrollo}). Single isolated standalone building viewed from a 45-degree top-down ` +
       `isometric angle, in the visual style of a classic real-time-strategy city-builder game. ` +
-      `Flat solid magenta background (#FF00FF), completely plain and uniform, no gradient, no ` +
-      `texture, no ground, no grass, no sky, no scenery, no shadow cast beyond the object itself, ` +
-      `no other buildings — just this one building sprite alone, clean readable silhouette, crisp ` +
-      `edges, saturated warm painted game-art colors.`;
+      `The building floats by itself with NO ground, NO base, NO platform, NO grass patch ` +
+      `underneath it — only the building's own geometry, nothing else touching the background. ` +
+      `Flat solid magenta background (#FF00FF), completely plain and uniform all the way to ` +
+      `every edge and corner, no gradient, no vignette, no texture, no sky, no scenery, no ` +
+      `shadow cast beyond the object itself, no other buildings — just this one building sprite ` +
+      `alone, clean readable silhouette, crisp edges, saturated warm painted game-art colors.`;
     const negativo =
       `photorealistic, photograph, landscape, sky, clouds, background scenery, grass, ground, ` +
-      `terrain, multiple buildings, collage, castle, people, village, gradient background, blurry, ${NEGATIVO_COMUN}`;
+      `base, platform, hill, mound, terrain, dirt patch, multiple buildings, collage, castle, ` +
+      `people, village, gradient background, vignette, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 

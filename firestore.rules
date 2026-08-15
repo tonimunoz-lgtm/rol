@@ -109,7 +109,7 @@ service cloud.firestore {
            // Además de la resolución de combates (ejercito/territorios/vivo),
            // pagar un rescate implica tocar los prisioneros del OTRO reino
            // (quitárselo de la lista) y sus propios recursos al mismo tiempo.
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ejercito', 'territorios', 'vivo', 'prisioneros', 'recursos', 'ultimaActualizacionRecursos']));
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ejercito', 'territorios', 'vivo', 'prisioneros', 'recursos', 'ultimaActualizacionRecursos', 'produccionPorHora']));
         allow delete: if request.auth != null && request.auth.uid == reinoId;
       }
 

@@ -807,9 +807,11 @@ function renderRecinto() {
     return `<text x="${x}" y="${y}" text-anchor="middle" font-size="24" opacity="0.85">${d.icono}</text>`;
   }).join("");
 
-  // ---------- Edificios como sprites flotando: se pintan ya mismo con la
-  // imagen normal (nunca se espera a nada), y el recorte simple contra
-  // rojo puro la sustituye casi al instante por detrás, sin bloquear nada.
+  // ---------- Edificios como tarjetas enmarcadas: la imagen tal cual,
+  // dentro de un marco redondeado — así siempre queda limpio, pase lo que
+  // pase con el fondo. El recorte rojo se intenta encima como mejora
+  // opcional: si funciona, mejor; si no, la tarjeta ya se ve bien igual.
+  let defsRecortes = "";
   let piezas = "";
   claves.forEach((clave) => {
     const { gx, gy } = ISO_GRID[clave];
@@ -819,15 +821,19 @@ function renderRecinto() {
     const imagenUrl = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
     const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
     const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
-    const tam = esCastillo ? 110 : 82;
+    const tam = esCastillo ? 100 : 76;
+    const rx = -tam / 2, ry = -tam - 6;
+
+    if (imagenUrl) defsRecortes += `<clipPath id="clip-${clave}"><rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" /></clipPath>`;
 
     piezas += `
       <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
         <polygon class="losa-iso" points="0,${-ISO_TILE_H / 2} ${ISO_TILE_W / 2},0 0,${ISO_TILE_H / 2} ${-ISO_TILE_W / 2},0" />
         ${
           imagenUrl
-            ? `<image class="img-edificio-iso" href="${imagenUrl}" x="${-tam / 2}" y="${-tam - 4}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid meet" />`
-            : `<text x="0" y="${-tam / 2}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
+            ? `<g clip-path="url(#clip-${clave})"><image class="img-edificio-iso" href="${imagenUrl}" x="${rx}" y="${ry}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid slice" /></g>
+               <rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" fill="none" stroke="#c9a227" stroke-width="2.5" />`
+            : `<text x="0" y="${ry + tam / 2 + 8}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
         }
         <text class="etiqueta-nivel-iso" x="0" y="12">${nombre} · Nv.${nivel}</text>
       </g>`;
@@ -840,6 +846,7 @@ function renderRecinto() {
           <stop offset="0%" stop-color="#5c7a42" />
           <stop offset="100%" stop-color="#3a4a2e" />
         </radialGradient>
+        ${defsRecortes}
       </defs>
       <rect x="-320" y="-180" width="640" height="520" fill="url(#suelo-recinto)" />
       ${decoracion}

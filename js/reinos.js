@@ -18,6 +18,7 @@ const PALETA_COLORES = ["#c0392b", "#2980b9", "#27ae60", "#f39c12", "#8e44ad", "
 const FILAS = 8;
 const COLUMNAS = 12;
 const SEGUNDOS_POR_CASILLA_VIAJE = 25;
+const NOMBRES_PRISIONEROS = ["Aldric", "Beorn", "Cedric", "Doran", "Edmund", "Fenwick", "Godric", "Harold", "Ivor", "Joran", "Kellan", "Leif"];
 
 let currentUid = null;
 let mundoId = localStorage.getItem("reinos_mundoId") || null;
@@ -27,6 +28,7 @@ let todosLosReinos = {}; // uid -> reino, de TODOS los jugadores del mundo (para
 let casillaSeleccionada = null;
 let pactosActuales = [];
 let ataquesConjuntosActuales = [];
+let rescatesActuales = [];
 let ladronObjetivoSeleccionado = null;
 
 // ---------- Arranque / sesión ----------
@@ -234,6 +236,7 @@ function arrancarJuego() {
     intentarFinalizarConstruccion();
     intentarFinalizarEntrenamiento();
     intentarFinalizarEntrenamientoCaballeria();
+    renderPrisioneros();
   });
 
   // El resto de reinos del mundo, para poder pintar el mapa entero.
@@ -270,6 +273,12 @@ function arrancarJuego() {
     const ladrones = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderLadrones(ladrones);
     ladrones.forEach((l) => intentarResolverLadron(l));
+  });
+
+  onSnapshot(collection(db, "mundos", mundoId, "rescates"), (snap) => {
+    rescatesActuales = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderPrisioneros();
+    renderRescatesPorMiGente();
   });
 
   setInterval(() => {
@@ -942,12 +951,26 @@ async function intentarResolverMovimiento(movimiento) {
         const nivelMurallas = defensor.edificios?.murallas?.nivel || 0;
 
         if (fuerzaAtacante > fuerzaDefensiva) {
-          // El atacante gana: se queda la casilla, el defensor pierde todo
-          // el ejército que tenía plantado ahí.
+          // El atacante gana: se queda la casilla. El ejército derrotado no
+          // desaparece del todo — una parte se captura como prisioneros,
+          // que van al calabozo del atacante para que decida su destino.
+          const totalDefensor = (defensor.ejercito?.soldados || 0) + (defensor.ejercito?.caballeria || 0);
+          const numPrisioneros = totalDefensor > 0 ? Math.min(3, 1 + Math.floor(totalDefensor / 15)) : 0;
+          const nuevosPrisioneros = Array.from({ length: numPrisioneros }, (_, i) => ({
+            id: `${Date.now()}-${i}`,
+            nombre: NOMBRES_PRISIONEROS[Math.floor(Math.random() * NOMBRES_PRISIONEROS.length)],
+            origenUid: mov.defensorUid,
+            origenNombre: mov.defensorNombre,
+            capturadoEn: Date.now(),
+          }));
+
           const atacanteRef = doc(db, "mundos", mundoId, "reinos", mov.atacanteUid);
           const atacanteSnap = await tx.get(atacanteRef);
           const atacante = atacanteSnap.data();
-          tx.update(atacanteRef, { territorios: [...(atacante.territorios || []), mov.destino] });
+          tx.update(atacanteRef, {
+            territorios: [...(atacante.territorios || []), mov.destino],
+            prisioneros: [...(atacante.prisioneros || []), ...nuevosPrisioneros],
+          });
 
           const territoriosRestantes = (defensor.territorios || []).filter((t) => !(t.f === mov.destino.f && t.c === mov.destino.c));
           const cambiosDefensor = { "ejercito.soldados": 0, "ejercito.caballeria": 0, territorios: territoriosRestantes };
@@ -957,7 +980,7 @@ async function intentarResolverMovimiento(movimiento) {
           textoResultado =
             territoriosRestantes.length === 0
               ? `👑 ${mov.atacanteNombre} conquista el último territorio de ${mov.defensorNombre} — ¡reino derrotado!`
-              : `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}${mov.ataqueSorpresa ? " con una EMBOSCADA por sorpresa" : ""}${nivelMurallas > 0 ? ` (a pesar de sus murallas nivel ${nivelMurallas})` : ""}.`;
+              : `⚔️ ${mov.atacanteNombre} conquista una casilla de ${mov.defensorNombre}${mov.ataqueSorpresa ? " con una EMBOSCADA por sorpresa" : ""}${nivelMurallas > 0 ? ` (a pesar de sus murallas nivel ${nivelMurallas})` : ""}${numPrisioneros > 0 ? ` y captura ${numPrisioneros} prisionero(s)` : ""}.`;
         } else {
           // El defensor resiste, gracias en parte a sus murallas — pero
           // sufre bajas proporcionales al empuje del ataque recibido.
@@ -1630,5 +1653,149 @@ async function cancelarAtaqueConjunto(id) {
     });
   } catch (e) {
     alert(`No se pudo cancelar: ${e.message}`);
+  }
+}
+
+// ---------- Calabozo: qué hacer con los prisioneros capturados ----------
+function renderPrisioneros() {
+  const cont = $("lista-prisioneros");
+  if (!cont || !reinoActual) return;
+  const prisioneros = reinoActual.prisioneros || [];
+  if (prisioneros.length === 0) {
+    cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">No tienes ningún prisionero en tu calabozo.</p>`;
+    return;
+  }
+  cont.innerHTML = prisioneros
+    .map((p) => {
+      const rescateEnCurso = rescatesActuales.find((r) => r.prisioneroId === p.id && r.estado === "pendiente");
+      return `
+        <div class="reino-card" style="flex-direction:column; align-items:stretch; gap:.4em;">
+          <span>⛓️ ${p.nombre}, de ${p.origenNombre}</span>
+          ${
+            rescateEnCurso
+              ? `<span class="mono" style="font-size:.72rem; color:var(--parchment-dim);">Rescate pedido: 🪙${rescateEnCurso.cantidadOro} — esperando respuesta de ${p.origenNombre}...</span>`
+              : `<div style="display:flex; gap:.4em; flex-wrap:wrap;">
+                  <button class="btn-liberar-prisionero" data-id="${p.id}" style="font-size:.7rem;">🔓 Liberar</button>
+                  <button class="btn-pedir-rescate" data-id="${p.id}" data-nombre="${p.nombre}" data-origen-uid="${p.origenUid}" data-origen-nombre="${p.origenNombre}" style="font-size:.7rem;">💰 Pedir rescate</button>
+                  <button class="btn-ejecutar-prisionero" data-id="${p.id}" data-nombre="${p.nombre}" style="font-size:.7rem; color:var(--rust);">⚔️ Ejecutar</button>
+                </div>`
+          }
+        </div>`;
+    })
+    .join("");
+
+  cont.querySelectorAll(".btn-liberar-prisionero").forEach((btn) => btn.addEventListener("click", () => liberarPrisionero(btn.dataset.id)));
+  cont.querySelectorAll(".btn-ejecutar-prisionero").forEach((btn) => btn.addEventListener("click", () => ejecutarPrisionero(btn.dataset.id, btn.dataset.nombre)));
+  cont.querySelectorAll(".btn-pedir-rescate").forEach((btn) =>
+    btn.addEventListener("click", () => pedirRescate(btn.dataset.id, btn.dataset.nombre, btn.dataset.origenUid, btn.dataset.origenNombre))
+  );
+}
+
+async function liberarPrisionero(prisioneroId) {
+  const prisionero = (reinoActual.prisioneros || []).find((p) => p.id === prisioneroId);
+  if (!prisionero) return;
+  const nuevos = (reinoActual.prisioneros || []).filter((p) => p.id !== prisioneroId);
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    prisioneros: nuevos,
+    reputacion: Math.min(100, (reinoActual.reputacion ?? 100) + 5),
+  });
+  await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+    autorUid: "sistema",
+    autorNombre: "📯 Heraldo",
+    texto: `🔓 ${reinoActual.nombreReino} libera a ${prisionero.nombre}, de ${prisionero.origenNombre}, como gesto de buena voluntad.`,
+    timestamp: serverTimestamp(),
+  });
+}
+
+async function ejecutarPrisionero(prisioneroId, prisioneroNombre) {
+  if (!confirm(`¿Seguro que quieres ejecutar a ${prisioneroNombre}? Perderás bastante reputación, y todo el mundo se enterará.`)) return;
+  const nuevos = (reinoActual.prisioneros || []).filter((p) => p.id !== prisioneroId);
+  await updateDoc(doc(db, "mundos", mundoId, "reinos", currentUid), {
+    prisioneros: nuevos,
+    reputacion: Math.max(0, (reinoActual.reputacion ?? 100) - 20),
+  });
+  await addDoc(collection(db, "mundos", mundoId, "mensajes"), {
+    autorUid: "sistema",
+    autorNombre: "📯 Heraldo",
+    texto: `⚔️💀 ${reinoActual.nombreReino} ejecuta a ${prisioneroNombre}. Un acto que no quedará olvidado.`,
+    timestamp: serverTimestamp(),
+  });
+}
+
+async function pedirRescate(prisioneroId, prisioneroNombre, origenUid, origenNombre) {
+  const cantidadStr = prompt(`¿Cuánto oro le pides a ${origenNombre} por liberar a ${prisioneroNombre}?`, "200");
+  if (!cantidadStr) return;
+  const cantidad = Math.max(1, Number(cantidadStr) || 0);
+  await addDoc(collection(db, "mundos", mundoId, "rescates"), {
+    prisioneroId,
+    prisioneroNombre,
+    capturadorUid: currentUid,
+    capturadorNombre: reinoActual.nombreReino,
+    origenUid,
+    origenNombre,
+    cantidadOro: cantidad,
+    estado: "pendiente",
+    creadoEn: serverTimestamp(),
+  });
+}
+
+function renderRescatesPorMiGente() {
+  const cont = $("lista-rescates-por-mi-gente");
+  if (!cont) return;
+  const relevantes = rescatesActuales.filter((r) => r.origenUid === currentUid && r.estado === "pendiente");
+  if (relevantes.length === 0) {
+    cont.innerHTML = `<p style="color:var(--parchment-dim); font-size:.85rem;">Nadie te pide rescate por ninguno de los tuyos ahora mismo.</p>`;
+    return;
+  }
+  cont.innerHTML = relevantes
+    .map(
+      (r) => `
+      <div class="reino-card">
+        <span>${r.capturadorNombre} pide 🪙${r.cantidadOro} por liberar a ${r.prisioneroNombre}</span>
+        <div style="display:flex; gap:.4em;">
+          <button class="btn-pagar-rescate" data-id="${r.id}" style="font-size:.7rem;">💰 Pagar</button>
+          <button class="btn-rechazar-rescate" data-id="${r.id}" style="font-size:.7rem;">❌ No pagar</button>
+        </div>
+      </div>`
+    )
+    .join("");
+  cont.querySelectorAll(".btn-pagar-rescate").forEach((btn) => btn.addEventListener("click", () => pagarRescate(btn.dataset.id)));
+  cont.querySelectorAll(".btn-rechazar-rescate").forEach((btn) =>
+    btn.addEventListener("click", () => updateDoc(doc(db, "mundos", mundoId, "rescates", btn.dataset.id), { estado: "rechazado" }))
+  );
+}
+
+async function pagarRescate(rescateId) {
+  try {
+    await runTransaction(db, async (tx) => {
+      const rescateRef = doc(db, "mundos", mundoId, "rescates", rescateId);
+      const rescateSnap = await tx.get(rescateRef);
+      const r = rescateSnap.data();
+      if (!r || r.estado !== "pendiente") return;
+
+      const origenRef = doc(db, "mundos", mundoId, "reinos", r.origenUid);
+      const origenSnap = await tx.get(origenRef);
+      const origen = origenSnap.data();
+      const recursosOrigen = recursosActuales(origen);
+      if (recursosOrigen.oro < r.cantidadOro) throw new Error("No tienes suficiente oro para pagar este rescate.");
+
+      const capturadorRef = doc(db, "mundos", mundoId, "reinos", r.capturadorUid);
+      const capturadorSnap = await tx.get(capturadorRef);
+      const capturador = capturadorSnap.data();
+      const recursosCapturador = recursosActuales(capturador);
+
+      tx.update(origenRef, {
+        recursos: { ...recursosOrigen, oro: recursosOrigen.oro - r.cantidadOro },
+        ultimaActualizacionRecursos: serverTimestamp(),
+      });
+      tx.update(capturadorRef, {
+        recursos: { ...recursosCapturador, oro: recursosCapturador.oro + r.cantidadOro },
+        ultimaActualizacionRecursos: serverTimestamp(),
+        prisioneros: (capturador.prisioneros || []).filter((p) => p.id !== r.prisioneroId),
+      });
+      tx.update(rescateRef, { estado: "pagado" });
+    });
+  } catch (e) {
+    alert(`No se pudo pagar el rescate: ${e.message}`);
   }
 }

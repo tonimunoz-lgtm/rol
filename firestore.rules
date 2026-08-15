@@ -167,6 +167,15 @@ service cloud.firestore {
         allow create: if request.auth != null && request.resource.data.capturadorUid == request.auth.uid;
         allow update: if request.auth != null;
       }
+
+      // Ofertas de comercio entre reinos: quien propone la crea en su
+      // propio nombre; el destinatario (o cualquiera, para la resolución)
+      // puede aceptarla o rechazarla después.
+      match /comercios/{id} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && request.resource.data.proponenteUid == request.auth.uid;
+        allow update: if request.auth != null;
+      }
     }
   }
 }

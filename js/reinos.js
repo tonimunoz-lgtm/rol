@@ -403,7 +403,17 @@ function renderCastillo() {
 // sin recortar, ni siquiera un instante.
 function mostrarImagenRecortada(contenedor, url, iconoPorDefecto) {
   if (!contenedor) return;
-  contenedor.innerHTML = url ? `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />` : iconoPorDefecto;
+  if (!url) {
+    contenedor.innerHTML = iconoPorDefecto;
+    return;
+  }
+  contenedor.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;" />`;
+  const urlEnEsteMomento = url;
+  contenedor.dataset.urlOrigen = urlEnEsteMomento;
+  quitarFondoRojo(url).then((sinFondo) => {
+    if (contenedor.dataset.urlOrigen !== urlEnEsteMomento || sinFondo === url) return;
+    contenedor.innerHTML = `<img src="${sinFondo}" style="width:100%; height:100%; object-fit:contain;" />`;
+  });
 }
 
 $("btn-mejorar-castillo").addEventListener("click", () => iniciarConstruccion("castillo"));
@@ -654,6 +664,47 @@ function isoAScreen(gx, gy) {
   return { x: (gx - gy) * (ISO_TILE_W / 2), y: (gx + gy) * (ISO_TILE_H / 2) };
 }
 
+// ---------- Quitar el fondo rojo: un recorte simple de verdad, sin
+// inundación ni modelos de IA — un único paso por los píxeles comparando
+// contra rojo puro. Rápido (no bloquea nada) y predecible, a cambio de
+// pedirle a la IA que dibuje el edificio evitando el rojo.
+const cacheImagenesSinFondo = new Map();
+function quitarFondoRojo(url) {
+  if (!url) return Promise.resolve(null);
+  if (cacheImagenesSinFondo.has(url)) return cacheImagenesSinFondo.get(url);
+
+  const promesa = new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const datos = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = datos.data;
+        const UMBRAL = 105; // distancia a rojo puro (255,0,0) por debajo de la cual se considera fondo
+        for (let i = 0; i < d.length; i += 4) {
+          const dist = Math.sqrt((d[i] - 255) ** 2 + d[i + 1] ** 2 + d[i + 2] ** 2);
+          if (dist < UMBRAL) d[i + 3] = 0;
+        }
+        ctx.putImageData(datos, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (e) {
+        console.warn("No se pudo quitar el fondo rojo, se usa la imagen tal cual:", e.message);
+        resolve(url);
+      }
+    };
+    img.onerror = () => resolve(url);
+    img.src = url;
+  });
+
+  cacheImagenesSinFondo.set(url, promesa);
+  return promesa;
+}
+
 // Árboles/decoración fija en los huecos de la cuadrícula — usan las mismas
 // coordenadas isométricas que los edificios (posiciones intermedias entre
 // casillas), así encajan de verdad con el suelo en vez de flotar sueltos.
@@ -756,10 +807,9 @@ function renderRecinto() {
     return `<text x="${x}" y="${y}" text-anchor="middle" font-size="24" opacity="0.85">${d.icono}</text>`;
   }).join("");
 
-  // ---------- Edificios como tarjetas enmarcadas: la imagen tal cual,
-  // dentro de un marco redondeado — fiable y rápido, sin depender de
-  // ningún recorte de fondo (ni por color ni por IA).
-  let defsRecortes = "";
+  // ---------- Edificios como sprites flotando: se pintan ya mismo con la
+  // imagen normal (nunca se espera a nada), y el recorte simple contra
+  // rojo puro la sustituye casi al instante por detrás, sin bloquear nada.
   let piezas = "";
   claves.forEach((clave) => {
     const { gx, gy } = ISO_GRID[clave];
@@ -769,19 +819,15 @@ function renderRecinto() {
     const imagenUrl = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
     const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
     const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
-    const tam = esCastillo ? 100 : 76;
-    const rx = -tam / 2, ry = -tam - 6;
-
-    if (imagenUrl) defsRecortes += `<clipPath id="clip-${clave}"><rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" /></clipPath>`;
+    const tam = esCastillo ? 110 : 82;
 
     piezas += `
       <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
         <polygon class="losa-iso" points="0,${-ISO_TILE_H / 2} ${ISO_TILE_W / 2},0 0,${ISO_TILE_H / 2} ${-ISO_TILE_W / 2},0" />
         ${
           imagenUrl
-            ? `<g clip-path="url(#clip-${clave})"><image href="${imagenUrl}" x="${rx}" y="${ry}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid slice" /></g>
-               <rect x="${rx}" y="${ry}" width="${tam}" height="${tam}" rx="10" fill="none" stroke="#c9a227" stroke-width="2.5" />`
-            : `<text x="0" y="${ry + tam / 2 + 8}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
+            ? `<image class="img-edificio-iso" href="${imagenUrl}" x="${-tam / 2}" y="${-tam - 4}" width="${tam}" height="${tam}" preserveAspectRatio="xMidYMid meet" />`
+            : `<text x="0" y="${-tam / 2}" text-anchor="middle" font-size="${esCastillo ? 34 : 24}">${icono}</text>`
         }
         <text class="etiqueta-nivel-iso" x="0" y="12">${nombre} · Nv.${nivel}</text>
       </g>`;
@@ -794,7 +840,6 @@ function renderRecinto() {
           <stop offset="0%" stop-color="#5c7a42" />
           <stop offset="100%" stop-color="#3a4a2e" />
         </radialGradient>
-        ${defsRecortes}
       </defs>
       <rect x="-320" y="-180" width="640" height="520" fill="url(#suelo-recinto)" />
       ${decoracion}
@@ -802,6 +847,17 @@ function renderRecinto() {
       ${murallaSvg}
       ${piezas}
     </svg>`;
+
+  claves.forEach((clave) => {
+    const esCastillo = clave === "castillo";
+    const imagenUrlOriginal = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
+    if (!imagenUrlOriginal) return;
+    quitarFondoRojo(imagenUrlOriginal).then((sinFondo) => {
+      if (!sinFondo || sinFondo === imagenUrlOriginal) return;
+      const el = cont.querySelector(`.edificio-iso[data-clave="${clave}"] .img-edificio-iso`);
+      if (el) el.setAttribute("href", sinFondo);
+    });
+  });
 }
 
 // Zoom y paneo del recinto — mismo patrón que el del mapa del mundo, con

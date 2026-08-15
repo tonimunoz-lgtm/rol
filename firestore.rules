@@ -106,7 +106,10 @@ service cloud.firestore {
            // ejército/territorios de OTRO reino — nunca sus recursos,
            // edificios ni nada más. Lo puede hacer cualquier jugador
            // conectado, no hace falta que sea el propio dueño.
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ejercito', 'territorios', 'vivo']));
+           // Además de la resolución de combates (ejercito/territorios/vivo),
+           // pagar un rescate implica tocar los prisioneros del OTRO reino
+           // (quitárselo de la lista) y sus propios recursos al mismo tiempo.
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ejercito', 'territorios', 'vivo', 'prisioneros', 'recursos', 'ultimaActualizacionRecursos']));
         allow delete: if request.auth != null && request.auth.uid == reinoId;
       }
 
@@ -153,6 +156,15 @@ service cloud.firestore {
       match /ataquesConjuntos/{id} {
         allow read: if request.auth != null;
         allow create: if request.auth != null && request.resource.data.iniciadorUid == request.auth.uid;
+        allow update: if request.auth != null;
+      }
+
+      // Peticiones de rescate por un prisionero: el captor la crea en su
+      // propio nombre; el reino de origen del prisionero (o cualquiera,
+      // para simplificar la resolución) puede marcarla pagada/rechazada.
+      match /rescates/{id} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && request.resource.data.capturadorUid == request.auth.uid;
         allow update: if request.auth != null;
       }
     }

@@ -346,9 +346,7 @@ function renderCastillo() {
   $("resumen-reputacion").textContent = reinoActual.reputacion ?? 100;
 
   $("castillo-nivel").textContent = reinoActual.castilloNivel || 1;
-  $("castillo-imagen").innerHTML = reinoActual.castilloImagenUrl
-    ? `<img src="${reinoActual.castilloImagenUrl}" />`
-    : "🏰";
+  mostrarImagenRecortada($("castillo-imagen"), reinoActual.castilloImagenUrl, "🏰");
   const boton = $("btn-mejorar-castillo");
   if (reinoActual.construyendo) {
     boton.disabled = true;
@@ -358,6 +356,24 @@ function renderCastillo() {
     const coste = costeMejora(reinoActual.castilloNivel || 1);
     boton.textContent = `Mejorar (🌾${coste.comida} 🪨${coste.piedra} 🪙${coste.oro}, ${coste.segundos}s)`;
   }
+}
+
+// Muestra un icono simple ya mismo, y en cuanto el recorte de fondo esté
+// listo, lo sustituye por la imagen de verdad — así nunca se ve la versión
+// sin recortar, ni siquiera un instante.
+function mostrarImagenRecortada(contenedor, url, iconoPorDefecto) {
+  if (!contenedor) return;
+  if (!url) {
+    contenedor.innerHTML = iconoPorDefecto;
+    return;
+  }
+  const urlEnEsteMomento = url;
+  obtenerImagenTransparente(url).then((transparente) => {
+    // Si mientras se recortaba llegó una imagen más nueva, no pisamos esa.
+    if (contenedor.dataset.urlOrigen && contenedor.dataset.urlOrigen !== urlEnEsteMomento) return;
+    contenedor.innerHTML = `<img src="${transparente}" style="width:100%; height:100%; object-fit:contain;" />`;
+  });
+  contenedor.dataset.urlOrigen = urlEnEsteMomento;
 }
 
 $("btn-mejorar-castillo").addEventListener("click", () => iniciarConstruccion("castillo"));
@@ -372,7 +388,7 @@ function renderEdificios() {
     const enConstruccion = reinoActual.construyendo?.clave === clave;
     return `
       <div class="edificio-card">
-        <div class="edificio-imagen">${reinoActual.edificios?.[clave]?.imagenUrl ? `<img src="${reinoActual.edificios[clave].imagenUrl}" />` : def.icono}</div>
+        <div class="edificio-imagen" id="edificio-imagen-${clave}">${def.icono}</div>
         <div style="flex:1;">
           <strong>${def.nombre} — Nivel ${nivel}</strong>
           <p style="color:var(--parchment-dim); font-size:.78rem; margin:.2em 0;">${def.descripcion}</p>
@@ -383,6 +399,9 @@ function renderEdificios() {
         </div>
       </div>`;
   }).join("");
+  ORDEN_EDIFICIOS.forEach((clave) => {
+    mostrarImagenRecortada($(`edificio-imagen-${clave}`), reinoActual.edificios?.[clave]?.imagenUrl, EDIFICIOS_DEF[clave].icono);
+  });
   cont.querySelectorAll(".btn-mejorar-edificio").forEach((btn) => {
     btn.addEventListener("click", () => iniciarConstruccion(btn.dataset.clave));
   });
@@ -610,21 +629,62 @@ function obtenerImagenTransparente(url) {
     img.onload = () => {
       try {
         const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
+        const ancho = img.naturalWidth;
+        const alto = img.naturalHeight;
+        canvas.width = ancho;
+        canvas.height = alto;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0);
-        const datos = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const datos = ctx.getImageData(0, 0, ancho, alto);
         const d = datos.data;
-        // Tomamos el color real de la esquina como referencia del fondo
-        // (en vez de asumir un magenta exacto) — así funciona aunque la
-        // IA no saque el tono pedido exactamente igual.
-        const refR = d[0], refG = d[1], refB = d[2];
-        const UMBRAL = 70;
-        for (let i = 0; i < d.length; i += 4) {
-          const dist = Math.sqrt((d[i] - refR) ** 2 + (d[i + 1] - refG) ** 2 + (d[i + 2] - refB) ** 2);
-          if (dist < UMBRAL) d[i + 3] = 0;
+
+        // Referencia del fondo: promedio de las 4 esquinas (más fiable que
+        // una sola esquina, por si hay algo de ruido).
+        const esquinas = [0, ancho - 1, (alto - 1) * ancho, ancho * alto - 1];
+        let refR = 0, refG = 0, refB = 0;
+        esquinas.forEach((idx) => {
+          refR += d[idx * 4];
+          refG += d[idx * 4 + 1];
+          refB += d[idx * 4 + 2];
+        });
+        refR /= 4; refG /= 4; refB /= 4;
+        const UMBRAL = 45;
+
+        // Solo borramos el fondo que está CONECTADO al borde de la imagen
+        // (inundación desde fuera hacia dentro) — así, aunque el propio
+        // edificio tenga algún tono parecido al fondo, nunca se toca,
+        // porque esos píxeles no están unidos al borde por un camino de
+        // color de fondo.
+        const visitado = new Uint8Array(ancho * alto);
+        const cola = new Int32Array(ancho * alto);
+        let colaFin = 0;
+        for (let x = 0; x < ancho; x++) {
+          cola[colaFin++] = x;
+          cola[colaFin++] = (alto - 1) * ancho + x;
         }
+        for (let y = 0; y < alto; y++) {
+          cola[colaFin++] = y * ancho;
+          cola[colaFin++] = y * ancho + (ancho - 1);
+        }
+
+        let colaInicio = 0;
+        while (colaInicio < colaFin) {
+          const idx = cola[colaInicio++];
+          if (visitado[idx]) continue;
+          const p = idx * 4;
+          const dist = Math.sqrt((d[p] - refR) ** 2 + (d[p + 1] - refG) ** 2 + (d[p + 2] - refB) ** 2);
+          if (dist >= UMBRAL) continue;
+          visitado[idx] = 1;
+          d[p + 3] = 0;
+
+          const x = idx % ancho;
+          const y = (idx / ancho) | 0;
+          if (x > 0) cola[colaFin++] = idx - 1;
+          if (x < ancho - 1) cola[colaFin++] = idx + 1;
+          if (y > 0) cola[colaFin++] = idx - ancho;
+          if (y < alto - 1) cola[colaFin++] = idx + ancho;
+        }
+
         ctx.putImageData(datos, 0, 0);
         resolve(canvas.toDataURL("image/png"));
       } catch (e) {

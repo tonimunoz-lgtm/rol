@@ -101,7 +101,12 @@
       <select id="sel-tipo-pacto">
         <option value="no_agresion">🕊️ No agresión (no os podéis atacar ni robar)</option>
         <option value="alianza_militar">⚔️ Alianza militar (no agresión + podéis atacar juntos)</option>
+        <option value="matrimonio">💍 Matrimonio (unión permanente, +15% producción en ambos reinos, requiere dote)</option>
       </select>
+    </div>
+    <div id="campo-dote" class="field" style="display:none;">
+      <label>Dote que entregas al sellar la unión (oro)</label>
+      <input id="in-dote-pacto" type="number" min="0" value="100" />
     </div>
     <div class="field"><label>Mensaje (opcional)</label><input id="in-mensaje-pacto" placeholder="Propongo que unamos fuerzas contra..." /></div>
     <div style="display:flex; gap:.5em;">

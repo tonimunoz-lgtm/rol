@@ -129,19 +129,12 @@ function construirPrompt(tipo, d) {
             ? "a proper stone castle with towers and a curtain wall"
             : "a grand, imposing fortress-castle with tall towers, multiple wall rings and banners";
     const prompt =
-      `Isometric video game asset sprite of a medieval castle, ${tamano}. Single isolated building ` +
-      `viewed from a 45-degree top-down isometric angle, in the visual style of a classic ` +
-      `real-time-strategy city-builder game. The building floats by itself with NO ground, NO ` +
-      `base, NO platform, NO grass patch underneath it — only the building's own geometry, ` +
-      `nothing else touching the background. Flat solid bright pure green chroma-key background (#00FF00, classic film green-screen color), completely ` +
-      `plain and uniform all the way to every edge and corner, no gradient, no vignette, no ` +
-      `texture, no sky, no scenery, no shadow cast beyond the object itself, no other buildings — ` +
-      `just the castle sprite alone, clean readable silhouette, crisp edges, saturated warm ` +
-      `painted game-art colors.`;
+      `Isometric video game asset illustration of a medieval castle, ${tamano}. Single clear ` +
+      `building viewed from a 45-degree top-down isometric angle, in the visual style of a ` +
+      `classic real-time-strategy city-builder game — clean readable silhouette, painted game-art ` +
+      `colors, simple uncluttered background so the building itself stands out clearly.`;
     const negativo =
-      `photorealistic, photograph, landscape, sky, clouds, background scenery, grass, ground, ` +
-      `base, platform, hill, mound, terrain, dirt patch, multiple buildings, collage, people, ` +
-      `village, gradient background, vignette, pink tint, magenta tint, purple tint, blurry, ${NEGATIVO_COMUN}`;
+      `photorealistic, photograph, multiple buildings, collage, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 
@@ -150,19 +143,13 @@ function construirPrompt(tipo, d) {
     const nivel = Number(d.nivel) || 1;
     const desarrollo = nivel <= 1 ? "small and humble" : nivel <= 3 ? "sturdy and functional" : "grand and well-developed";
     const prompt =
-      `Isometric video game asset sprite of a medieval ${nombre}, level ${nivel} of development ` +
-      `(${desarrollo}). Single isolated standalone building viewed from a 45-degree top-down ` +
-      `isometric angle, in the visual style of a classic real-time-strategy city-builder game. ` +
-      `The building floats by itself with NO ground, NO base, NO platform, NO grass patch ` +
-      `underneath it — only the building's own geometry, nothing else touching the background. ` +
-      `Flat solid bright pure green chroma-key background (#00FF00, classic film green-screen color), completely plain and uniform all the way to ` +
-      `every edge and corner, no gradient, no vignette, no texture, no sky, no scenery, no ` +
-      `shadow cast beyond the object itself, no other buildings — just this one building sprite ` +
-      `alone, clean readable silhouette, crisp edges, saturated warm painted game-art colors.`;
+      `Isometric video game asset illustration of a medieval ${nombre}, level ${nivel} of ` +
+      `development (${desarrollo}). Single standalone building viewed from a 45-degree top-down ` +
+      `isometric angle, in the visual style of a classic real-time-strategy city-builder game — ` +
+      `clean readable silhouette, painted game-art colors, simple uncluttered background so the ` +
+      `building itself stands out clearly.`;
     const negativo =
-      `photorealistic, photograph, landscape, sky, clouds, background scenery, grass, ground, ` +
-      `base, platform, hill, mound, terrain, dirt patch, multiple buildings, collage, castle, ` +
-      `people, village, gradient background, vignette, pink tint, magenta tint, purple tint, blurry, ${NEGATIVO_COMUN}`;
+      `photorealistic, photograph, multiple buildings, collage, castle, people, village, text, watermark, blurry, ${NEGATIVO_COMUN}`;
     return { prompt, negativo };
   }
 

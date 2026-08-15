@@ -129,20 +129,34 @@ function construirPrompt(tipo, d) {
             ? "a proper stone castle with towers and a curtain wall"
             : "a grand, imposing fortress-castle with tall towers, multiple wall rings and banners";
     const prompt =
-      `A medieval castle, ${tamano}, seen from a three-quarter elevated angle, sitting on a hill ` +
-      `surrounded by farmland and a small village outside the walls. ${ESTILO_BASE}, painterly ` +
-      `concept art, single clear subject, daytime, no people in close-up.`;
-    return { prompt, negativo: `multiple castles, collage, ${NEGATIVO_COMUN}` };
+      `Isometric video game asset sprite of a medieval castle, ${tamano}. Single isolated building ` +
+      `viewed from a 45-degree top-down isometric angle, in the visual style of a classic ` +
+      `real-time-strategy city-builder game. Flat solid magenta background (#FF00FF), completely ` +
+      `plain and uniform, no gradient, no texture, no ground, no grass, no sky, no scenery, no ` +
+      `shadow cast beyond the object itself, no other buildings — just the castle sprite alone, ` +
+      `clean readable silhouette, crisp edges, saturated warm painted game-art colors.`;
+    const negativo =
+      `photorealistic, photograph, landscape, sky, clouds, background scenery, grass, ground, ` +
+      `terrain, multiple buildings, collage, people, village, gradient background, blurry, ${NEGATIVO_COMUN}`;
+    return { prompt, negativo };
   }
 
   if (tipo === "edificio") {
     const nombre = d.nombre || "edificio medieval";
     const nivel = Number(d.nivel) || 1;
+    const desarrollo = nivel <= 1 ? "small and humble" : nivel <= 3 ? "sturdy and functional" : "grand and well-developed";
     const prompt =
-      `A medieval ${nombre}, level ${nivel} of development (${nivel <= 1 ? "small and humble" : nivel <= 3 ? "sturdy and functional" : "grand and well-developed"}), ` +
-      `standalone building within a castle's grounds, seen from a three-quarter angle. ${ESTILO_BASE}, ` +
-      `painterly concept art, single clear building, daytime.`;
-    return { prompt, negativo: `multiple buildings, collage, castle in background dominating the shot, ${NEGATIVO_COMUN}` };
+      `Isometric video game asset sprite of a medieval ${nombre}, level ${nivel} of development ` +
+      `(${desarrollo}). Single isolated standalone building viewed from a 45-degree top-down ` +
+      `isometric angle, in the visual style of a classic real-time-strategy city-builder game. ` +
+      `Flat solid magenta background (#FF00FF), completely plain and uniform, no gradient, no ` +
+      `texture, no ground, no grass, no sky, no scenery, no shadow cast beyond the object itself, ` +
+      `no other buildings — just this one building sprite alone, clean readable silhouette, crisp ` +
+      `edges, saturated warm painted game-art colors.`;
+    const negativo =
+      `photorealistic, photograph, landscape, sky, clouds, background scenery, grass, ground, ` +
+      `terrain, multiple buildings, collage, castle, people, village, gradient background, blurry, ${NEGATIVO_COMUN}`;
+    return { prompt, negativo };
   }
 
   if (tipo === "unidad") {

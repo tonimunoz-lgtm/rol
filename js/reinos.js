@@ -233,6 +233,7 @@ function arrancarJuego() {
     renderRecursos();
     renderCastillo();
     renderEdificios();
+    renderRecinto();
     renderMapaMundo();
     intentarFinalizarConstruccion();
     intentarFinalizarEntrenamiento();
@@ -573,6 +574,137 @@ function actualizarCuentasAtras() {
   if (elCaballeria) elCaballeria.textContent = reinoActual.entrenandoCaballeria ? formatearTiempoRestante(reinoActual.entrenandoCaballeria.finalizaEn) : "";
 }
 setInterval(actualizarCuentasAtras, 1000);
+
+// ---------- Recinto isométrico: tu castillo y edificios vistos desde
+// arriba en ángulo, cada uno con su imagen real según su nivel. ----------
+const ISO_GRID = {
+  granja: { gx: 0, gy: 0 },
+  cantera: { gx: 1, gy: 0 },
+  mina: { gx: 2, gy: 0 },
+  murallas: { gx: 0, gy: 1 },
+  castillo: { gx: 1, gy: 1 },
+  cuadras: { gx: 2, gy: 1 },
+  barracones: { gx: 0, gy: 2 },
+  iglesia: { gx: 1, gy: 2 },
+  biblioteca: { gx: 2, gy: 2 },
+};
+const ISO_TILE_W = 140;
+const ISO_TILE_H = 70;
+
+function isoAScreen(gx, gy) {
+  return { x: (gx - gy) * (ISO_TILE_W / 2), y: (gx + gy) * (ISO_TILE_H / 2) };
+}
+
+function renderRecinto() {
+  const cont = $("recinto-lienzo");
+  if (!cont || !reinoActual) return;
+
+  // Orden de dibujado: de atrás (gy bajo) a delante (gy alto), para que lo
+  // que está "más cerca de la cámara" tape a lo que está detrás — como en
+  // cualquier vista isométrica de verdad.
+  const claves = Object.keys(ISO_GRID).sort((a, b) => ISO_GRID[a].gy - ISO_GRID[b].gy || ISO_GRID[a].gx - ISO_GRID[b].gx);
+
+  let piezas = "";
+  claves.forEach((clave) => {
+    const { gx, gy } = ISO_GRID[clave];
+    const { x, y } = isoAScreen(gx, gy);
+    const esCastillo = clave === "castillo";
+    const nivel = esCastillo ? reinoActual.castilloNivel || 1 : reinoActual.edificios?.[clave]?.nivel || 0;
+    const imagenUrl = esCastillo ? reinoActual.castilloImagenUrl : reinoActual.edificios?.[clave]?.imagenUrl;
+    const nombre = esCastillo ? "Castillo" : EDIFICIOS_DEF[clave]?.nombre || clave;
+    const icono = esCastillo ? "🏰" : EDIFICIOS_DEF[clave]?.icono || "🏗️";
+    const anchoImg = esCastillo ? 130 : 96;
+    const altoImg = esCastillo ? 130 : 96;
+
+    piezas += `
+      <g class="edificio-iso" data-clave="${clave}" transform="translate(${x}, ${y})">
+        <polygon class="losa-iso" points="0,${-ISO_TILE_H / 2} ${ISO_TILE_W / 2},0 0,${ISO_TILE_H / 2} ${-ISO_TILE_W / 2},0" />
+        ${
+          imagenUrl
+            ? `<image href="${imagenUrl}" x="${-anchoImg / 2}" y="${-altoImg - 6}" width="${anchoImg}" height="${altoImg}" preserveAspectRatio="xMidYMid meet" />`
+            : `<text x="0" y="${-altoImg / 2}" text-anchor="middle" font-size="${esCastillo ? 44 : 30}">${icono}</text>`
+        }
+        <text class="etiqueta-nivel-iso" x="0" y="14">${nombre} · Nv.${nivel}</text>
+      </g>`;
+  });
+
+  cont.innerHTML = `<svg id="recinto-svg" viewBox="-320 -160 640 400" xmlns="http://www.w3.org/2000/svg">${piezas}</svg>`;
+  cont.querySelectorAll(".edificio-iso").forEach((el) => {
+    el.addEventListener("click", () => {
+      document.querySelector('.reinos-tab-btn[data-tab="castillo"]').click();
+    });
+  });
+}
+
+// Zoom y paneo del recinto — mismo patrón que el del mapa del mundo, con
+// sus propias variables para no interferir entre sí.
+let zoomRecinto = 1;
+let panXRecinto = 0;
+let panYRecinto = 0;
+
+function aplicarTransformRecinto() {
+  $("recinto-lienzo").style.transform = `translate(${panXRecinto}px, ${panYRecinto}px) scale(${zoomRecinto})`;
+}
+function centrarRecinto() {
+  zoomRecinto = 1;
+  panXRecinto = 0;
+  panYRecinto = 0;
+  aplicarTransformRecinto();
+}
+$("btn-recinto-zoom-mas").addEventListener("click", () => {
+  zoomRecinto = Math.min(ZOOM_MAX, zoomRecinto * 1.3);
+  aplicarTransformRecinto();
+});
+$("btn-recinto-zoom-menos").addEventListener("click", () => {
+  zoomRecinto = Math.max(ZOOM_MIN, zoomRecinto / 1.3);
+  aplicarTransformRecinto();
+});
+$("btn-recinto-centrar").addEventListener("click", centrarRecinto);
+
+const punterosRecinto = new Map();
+let distanciaPinchInicialRecinto = null;
+let escalaPinchInicialRecinto = 1;
+const viewportRecinto = $("recinto-viewport");
+viewportRecinto.addEventListener("pointerdown", (e) => {
+  viewportRecinto.setPointerCapture(e.pointerId);
+  punterosRecinto.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (punterosRecinto.size === 2) {
+    const [p1, p2] = Array.from(punterosRecinto.values());
+    distanciaPinchInicialRecinto = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    escalaPinchInicialRecinto = zoomRecinto;
+  }
+});
+viewportRecinto.addEventListener("pointermove", (e) => {
+  if (!punterosRecinto.has(e.pointerId)) return;
+  const anterior = punterosRecinto.get(e.pointerId);
+  punterosRecinto.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (punterosRecinto.size === 2 && distanciaPinchInicialRecinto) {
+    const [p1, p2] = Array.from(punterosRecinto.values());
+    const distancia = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    zoomRecinto = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, escalaPinchInicialRecinto * (distancia / distanciaPinchInicialRecinto)));
+    aplicarTransformRecinto();
+  } else if (punterosRecinto.size === 1) {
+    panXRecinto += e.clientX - anterior.x;
+    panYRecinto += e.clientY - anterior.y;
+    aplicarTransformRecinto();
+  }
+});
+function soltarPunteroRecinto(e) {
+  punterosRecinto.delete(e.pointerId);
+  if (punterosRecinto.size < 2) distanciaPinchInicialRecinto = null;
+}
+viewportRecinto.addEventListener("pointerup", soltarPunteroRecinto);
+viewportRecinto.addEventListener("pointercancel", soltarPunteroRecinto);
+viewportRecinto.addEventListener("pointerleave", soltarPunteroRecinto);
+viewportRecinto.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    zoomRecinto = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomRecinto * (e.deltaY < 0 ? 1.15 : 0.87)));
+    aplicarTransformRecinto();
+  },
+  { passive: false }
+);
 
 async function iniciarConstruccion(clave) {
   if (reinoActual.construyendo) return alert("Ya tienes una construcción en marcha. Espera a que termine.");

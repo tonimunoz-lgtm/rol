@@ -40,10 +40,17 @@ onAuthStateChanged(auth, async (user) => {
   }
   currentUid = user.uid;
   if (mundoId) {
-    const reinoSnap = await getDoc(doc(db, "mundos", mundoId, "reinos", currentUid));
-    if (reinoSnap.exists()) {
-      arrancarJuego();
-      return;
+    try {
+      const reinoSnap = await getDoc(doc(db, "mundos", mundoId, "reinos", currentUid));
+      if (reinoSnap.exists()) {
+        arrancarJuego();
+        return;
+      }
+    } catch (e) {
+      // Puede pasar justo al arrancar, antes de que la sesión esté del
+      // todo lista para Firestore, o si el mundo guardado ya no existe.
+      // Sea cual sea el motivo, nunca debe dejar la app sin mostrar nada.
+      console.warn("No se pudo comprobar el mundo guardado, se muestra la entrada:", e.message);
     }
   }
   // Sin mundo guardado (o el reino ya no existe): mostramos la entrada.
